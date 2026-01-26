@@ -1,0 +1,9 @@
+[package]
+name = "fusion-engine"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fusion-core = { path = "../core" }
+serde.workspace = true
+thiserror.workspace = true
