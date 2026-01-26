@@ -1,0 +1,11 @@
+[package]
+name = "fusion-analysis"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+fusion-core = { path = "../core" }
+fusion-engine = { path = "../engine" }
+fusion-eval = { path = "../eval" }
+fusion-search = { path = "../search" }
