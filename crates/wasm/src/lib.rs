@@ -32,7 +32,7 @@ impl JsBoard {
         }
     }
 
-    pub fn from_rows(rows: &[u64]) -> Self {
+    pub fn from_rows(rows: &[u16]) -> Self {
         let mut board = Board::new();
         let limit = rows.len().min(Board::HEIGHT);
         for y in 0..limit {
@@ -64,7 +64,7 @@ impl JsBoard {
         self.inner.clear_lines()
     }
 
-    pub fn to_rows(&self) -> Vec<u64> {
+    pub fn to_rows(&self) -> Vec<u16> {
         (0..Board::HEIGHT).map(|y| self.inner.row(y)).collect()
     }
 }

@@ -1,13 +1,13 @@
-//! Board representation using u64 bitfields for fast operations.
+//! Board representation using u16 bitfields for fast operations.
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-/// 10x40 Tetris board using u64 bitfields.
+/// 10x40 Tetris board using u16 bitfields.
 /// Each row uses 10 bits (columns 0-9).
 /// Row 0 is bottom, Row 39 is top (only 0-19 visible).
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Board {
-    rows: [u64; 40],
+    rows: [u16; 40],
 }
 
 impl Serialize for Board {
@@ -24,11 +24,11 @@ impl<'de> Deserialize<'de> for Board {
     where
         D: Deserializer<'de>,
     {
-        let vec: Vec<u64> = Vec::deserialize(deserializer)?;
+        let vec: Vec<u16> = Vec::deserialize(deserializer)?;
         if vec.len() != 40 {
             return Err(serde::de::Error::custom("expected 40 rows"));
         }
-        let mut rows = [0u64; 40];
+        let mut rows = [0u16; 40];
         for (i, &value) in vec.iter().enumerate() {
             rows[i] = value & 0x3FF;
         }
@@ -89,7 +89,7 @@ impl Board {
     }
 
     /// Get raw row data for collision detection
-    pub fn row(&self, y: usize) -> u64 {
+    pub fn row(&self, y: usize) -> u16 {
         self.rows[y]
     }
 }

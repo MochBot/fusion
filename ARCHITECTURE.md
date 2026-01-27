@@ -24,7 +24,7 @@ fusion/
 
 | Type | Purpose |
 |------|---------|
-| `Board` | 10x40 grid using `[u64; 40]` bitfield |
+| `Board` | 10x40 grid using `[u16; 40]` bitfield |
 | `Piece` | I, O, T, S, Z, J, L tetrominos |
 | `Rotation` | North, East, South, West |
 | `Move` | Placement with position, rotation, spin type |
