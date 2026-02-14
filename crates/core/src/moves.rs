@@ -21,6 +21,15 @@ pub struct Move {
 }
 
 impl Move {
+    pub const ZERO: Self = Self {
+        piece: Piece::I,
+        rotation: Rotation::North,
+        x: 0,
+        y: 0,
+        hold_used: false,
+        spin_type: SpinType::None,
+    };
+
     pub fn new(piece: Piece, rotation: Rotation, x: i8, y: i8) -> Self {
         Self {
             piece,

@@ -171,7 +171,7 @@ fn detect_tspin(
     }
 }
 
-fn detect_all_spin_with_kick(
+pub(crate) fn detect_all_spin_with_kick(
     board: &Board,
     piece: Piece,
     x: i8,

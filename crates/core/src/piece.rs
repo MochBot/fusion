@@ -1,6 +1,60 @@
-//! Piece types and mino definitions for Tetris pieces.
+//! piece definitions - the 7 sacred tetrominos
 
 use serde::{Deserialize, Serialize};
+
+/// mino offsets - precomputed so we don't burn cycles in hot loops
+/// [piece][rotation] -> 4 (x,y) offsets from center
+const PIECE_MINOS: [[[(i8, i8); 4]; 4]; 7] = [
+    // I piece - 4 distinct states (SRS+ grid-intersection pivot, N≠S E≠W)
+    [
+        [(-1, 0), (0, 0), (1, 0), (2, 0)],  // North - extends right
+        [(0, -2), (0, -1), (0, 0), (0, 1)], // East - extends down (Y-up)
+        [(1, 0), (0, 0), (-1, 0), (-2, 0)], // South - extends left (reversed from N)
+        [(0, -1), (0, 0), (0, 1), (0, 2)],  // West - extends up (reversed from E)
+    ],
+    // O piece (all rotations identical)
+    [
+        [(0, 0), (1, 0), (0, 1), (1, 1)],
+        [(0, 0), (1, 0), (0, 1), (1, 1)],
+        [(0, 0), (1, 0), (0, 1), (1, 1)],
+        [(0, 0), (1, 0), (0, 1), (1, 1)],
+    ],
+    // T piece
+    [
+        [(-1, 0), (0, 0), (1, 0), (0, 1)],  // North
+        [(0, -1), (0, 0), (0, 1), (1, 0)],  // East
+        [(-1, 0), (0, 0), (1, 0), (0, -1)], // South
+        [(0, -1), (0, 0), (0, 1), (-1, 0)], // West
+    ],
+    // S piece
+    [
+        [(-1, 0), (0, 0), (0, 1), (1, 1)],   // North
+        [(0, 1), (0, 0), (1, 0), (1, -1)],   // East
+        [(-1, -1), (0, -1), (0, 0), (1, 0)], // South
+        [(-1, 1), (-1, 0), (0, 0), (0, -1)], // West
+    ],
+    // Z piece
+    [
+        [(0, 0), (1, 0), (-1, 1), (0, 1)],   // North
+        [(0, -1), (0, 0), (1, 0), (1, 1)],   // East
+        [(0, -1), (1, -1), (-1, 0), (0, 0)], // South
+        [(-1, -1), (-1, 0), (0, 0), (0, 1)], // West
+    ],
+    // J piece
+    [
+        [(-1, 0), (0, 0), (1, 0), (-1, 1)],  // North
+        [(0, -1), (0, 0), (0, 1), (1, 1)],   // East
+        [(1, -1), (-1, 0), (0, 0), (1, 0)],  // South
+        [(-1, -1), (0, -1), (0, 0), (0, 1)], // West
+    ],
+    // L piece
+    [
+        [(-1, 0), (0, 0), (1, 0), (1, 1)],   // North
+        [(0, -1), (0, 0), (0, 1), (1, -1)],  // East
+        [(-1, -1), (-1, 0), (0, 0), (1, 0)], // South
+        [(-1, 1), (0, -1), (0, 0), (0, 1)],  // West
+    ],
+];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 pub enum Piece {
@@ -23,6 +77,7 @@ pub enum Rotation {
 }
 
 impl Rotation {
+    #[inline(always)]
     pub fn cw(self) -> Self {
         match self {
             Self::North => Self::East,
@@ -32,6 +87,7 @@ impl Rotation {
         }
     }
 
+    #[inline(always)]
     pub fn ccw(self) -> Self {
         match self {
             Self::North => Self::West,
@@ -41,6 +97,7 @@ impl Rotation {
         }
     }
 
+    #[inline(always)]
     pub fn flip(self) -> Self {
         match self {
             Self::North => Self::South,
@@ -62,57 +119,14 @@ impl Piece {
         Piece::L,
     ];
 
-    /// Get mino offsets for this piece at given rotation.
-    /// Returns 4 (x, y) offsets relative to piece center.
+    /// mino offsets for a rotation - O(1) lookup
+    #[inline(always)]
     pub fn minos(self, rot: Rotation) -> [(i8, i8); 4] {
-        let idx = match rot {
-            Rotation::North => 0,
-            Rotation::East => 1,
-            Rotation::South => 2,
-            Rotation::West => 3,
-        };
-        match self {
-            Piece::I => [
-                [(-1, 0), (0, 0), (1, 0), (2, 0)],
-                [(0, -1), (0, 0), (0, 1), (0, 2)],
-                [(-1, 0), (0, 0), (1, 0), (2, 0)],
-                [(0, -1), (0, 0), (0, 1), (0, 2)],
-            ][idx],
-            Piece::O => [(0, 0), (1, 0), (0, 1), (1, 1)],
-            Piece::T => [
-                [(-1, 0), (0, 0), (1, 0), (0, 1)],
-                [(0, -1), (0, 0), (0, 1), (1, 0)],
-                [(-1, 0), (0, 0), (1, 0), (0, -1)],
-                [(0, -1), (0, 0), (0, 1), (-1, 0)],
-            ][idx],
-            Piece::S => [
-                [(-1, 0), (0, 0), (0, 1), (1, 1)],
-                [(0, 1), (0, 0), (1, 0), (1, -1)],
-                [(-1, -1), (0, -1), (0, 0), (1, 0)],
-                [(-1, 1), (-1, 0), (0, 0), (0, -1)],
-            ][idx],
-            Piece::Z => [
-                [(0, 0), (1, 0), (-1, 1), (0, 1)],
-                [(0, -1), (0, 0), (1, 0), (1, 1)],
-                [(0, -1), (1, -1), (-1, 0), (0, 0)],
-                [(-1, -1), (-1, 0), (0, 0), (0, 1)],
-            ][idx],
-            Piece::J => [
-                [(-1, 0), (0, 0), (1, 0), (-1, 1)],
-                [(0, -1), (0, 0), (0, 1), (1, 1)],
-                [(1, -1), (-1, 0), (0, 0), (1, 0)],
-                [(-1, -1), (0, -1), (0, 0), (0, 1)],
-            ][idx],
-            Piece::L => [
-                [(-1, 0), (0, 0), (1, 0), (1, 1)],
-                [(0, -1), (0, 0), (0, 1), (1, -1)],
-                [(-1, -1), (-1, 0), (0, 0), (1, 0)],
-                [(-1, 1), (0, -1), (0, 0), (0, 1)],
-            ][idx],
-        }
+        PIECE_MINOS[self as usize][rot as usize]
     }
 
     /// Spawn x position (center column)
+    #[inline(always)]
     pub fn spawn_x(self) -> i8 {
         match self {
             Piece::I => 4,
@@ -121,9 +135,10 @@ impl Piece {
         }
     }
 
-    /// Spawn y position
+    /// Spawn y position - TETR.IO uses row 21
+    #[inline(always)]
     pub fn spawn_y(self) -> i8 {
-        20
+        21
     }
 }
 

@@ -7,3 +7,16 @@ edition.workspace = true
 fusion-core = { path = "../core" }
 serde.workspace = true
 thiserror.workspace = true
+rayon = "1.10"
+rustc-hash = "2.0"
+
+[features]
+default = []
+simd = []
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "movegen"
+harness = false

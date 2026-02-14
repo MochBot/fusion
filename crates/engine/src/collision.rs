@@ -1,39 +1,28 @@
-//! Collision detection for piece placement.
+//! collision detection - walls, floor, other blocks
 
 use fusion_core::{Board, Piece, Rotation};
 
-/// Check if a piece at given position collides with the board or walls.
+use crate::collision_specialized::collides_specialized;
+
+/// does piece collide with anything?
+/// Uses macro-generated specialized functions for each piece/rotation combo
+#[inline(always)]
 pub fn collides(board: &Board, piece: Piece, rotation: Rotation, x: i8, y: i8) -> bool {
-    let minos = piece.minos(rotation);
-    for (dx, dy) in minos {
-        let nx = x + dx;
-        let ny = y + dy;
-
-        // Check bounds
-        if nx < 0 || nx >= Board::WIDTH as i8 || ny < 0 || ny >= Board::HEIGHT as i8 {
-            return true;
-        }
-
-        // Check board collision
-        if board.get(nx as usize, ny as usize) {
-            return true;
-        }
-    }
-    false
+    collides_specialized(board, piece, rotation, x, y)
 }
 
-/// Check if piece can be placed (not colliding)
+/// can we place here? (just !collides)
 pub fn can_place(board: &Board, piece: Piece, rotation: Rotation, x: i8, y: i8) -> bool {
     !collides(board, piece, rotation, x, y)
 }
 
-/// Find the lowest Y position for a piece (hard drop destination)
+#[inline]
 pub fn hard_drop_y(board: &Board, piece: Piece, rotation: Rotation, x: i8, y: i8) -> i8 {
-    let mut final_y = y;
-    while !collides(board, piece, rotation, x, final_y - 1) {
-        final_y -= 1;
+    let mut landing_y = y;
+    while !collides(board, piece, rotation, x, landing_y - 1) {
+        landing_y -= 1;
     }
-    final_y
+    landing_y
 }
 
 #[cfg(test)]
@@ -81,7 +70,7 @@ mod tests {
     fn test_hard_drop_with_obstacle() {
         let mut board = Board::new();
         // Fill row 5
-        for x in 0..10 {
+        for x in 0..Board::WIDTH {
             board.set(x, 5, true);
         }
         let y = hard_drop_y(&board, Piece::T, Rotation::North, 4, 20);

@@ -20,7 +20,7 @@ pub const TSPIN_QUAD: u8 = 10;
 pub const TSPIN_PENTA: u8 = 12;
 
 pub const BACK_TO_BACK_BONUS: u8 = 1;
-/// Perfect Clear attack values (S2 - changed from 10 in S1)
+/// PC attack values (S2 changed these from 10 in S1)
 // S2 PC values: tetrio.wiki.gg/wiki/TETRA_LEAGUE (Aug 2024)
 pub const ALL_CLEAR_TL: u8 = 5;
 pub const ALL_CLEAR_QP: u8 = 3;

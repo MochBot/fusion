@@ -37,7 +37,7 @@ struct TestReplayFrame {
     pub frame_number: u32,
     pub piece: u8,
     pub player_move: JsMoveData,
-    pub board: Vec<u16>,
+    pub board: Vec<u64>,
     pub lines_cleared: u8,
 }
 

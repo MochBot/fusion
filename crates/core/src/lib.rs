@@ -1,11 +1,13 @@
 //! Fusion core crate - fundamental types for TETR.IO analysis.
 
 mod board;
+mod board_heights;
 mod moves;
 mod piece;
 mod state;
 
 pub use board::Board;
+pub use board_heights::BoardWithHeights;
 pub use moves::{Move, SpinType};
 pub use piece::{Piece, Rotation};
 pub use state::GameState;
