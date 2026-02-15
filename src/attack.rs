@@ -128,10 +128,10 @@ fn apply_combo(base: f32, combo: u8, table: ComboTable) -> f32 {
     match table {
         ComboTable::Multiplier => {
             let multiplied = base * (1.0 + COMBO_BONUS * combo as f32);
-            // for combo > 1, log floor is a MINIMUM guarantee, not additive
+            // for combo > 1, log floor is a MINIMUM guarantee (matches Triangle.js)
             if combo > 1 {
-                let log_floor = (1.0 + combo as f32 * COMBO_FLOOR_SCALE).ln().floor();
-                f32::max(multiplied, base + log_floor)
+                let log_floor = (1.0 + combo as f32 * COMBO_FLOOR_SCALE).ln();
+                f32::max(multiplied, log_floor)
             } else {
                 multiplied
             }
@@ -476,10 +476,14 @@ mod tests {
     fn test_combo_high_combo_log_floor_as_minimum() {
         // combo=8, base=0 (single=0 base, no b2b)
         // multiplied = 0*(1+0.25*8) = 0.0
-        // log_floor = floor(ln(1+8*1.25)) = floor(ln(11)) = floor(2.39) = 2
-        // result = max(0.0, 0.0+2.0) = 2.0 (log floor guarantees minimum)
+        // log_floor = ln(1+8*1.25) = ln(11) ≈ 2.397 (matches Triangle.js: no floor())
+        // result = max(0.0, 2.397) ≈ 2.397
         let dmg = calculate_attack(1, SpinType::NoSpin, 0, 8, &tl(), false);
-        assert_eq!(dmg, 2.0);
+        let expected = (1.0_f32 + 8.0 * COMBO_FLOOR_SCALE).ln();
+        assert!(
+            (dmg - expected).abs() < 0.001,
+            "expected ~{expected}, got {dmg}"
+        );
     }
 
     // --- Fix #1: Surge release ---
