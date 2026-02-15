@@ -1,110 +1,26 @@
-   0.007143746s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="direct_cobra_copy"}: cargo::core::compiler::fingerprint: stale: changed "/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/lib.rs"
-   0.007169859s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="direct_cobra_copy"}: cargo::core::compiler::fingerprint:           (vs) "/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/target/debug/.fingerprint/direct-cobra-copy-5bca885e40253326/dep-lib-direct_cobra_copy"
-   0.007173435s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="direct_cobra_copy"}: cargo::core::compiler::fingerprint:                FileTime { seconds: 1771139948, nanos: 147143675 } < FileTime { seconds: 1771139993, nanos: 300670642 }
-   0.007204986s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="direct_cobra_copy"}: cargo::core::compiler::fingerprint: fingerprint dirty for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("direct_cobra_copy", ["lib"], "/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/lib.rs", Edition2021) }
-   0.007217517s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="direct_cobra_copy"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleItem(ChangedFile { reference: "/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/target/debug/.fingerprint/direct-cobra-copy-5bca885e40253326/dep-lib-direct_cobra_copy", reference_mtime: FileTime { seconds: 1771139948, nanos: 147143675 }, stale: "/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/lib.rs", stale_mtime: FileTime { seconds: 1771139993, nanos: 300670642 } }))
-   0.007387069s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="direct_cobra_copy"}: cargo::core::compiler::fingerprint: stale: changed "/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/lib.rs"
-   0.007401927s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="direct_cobra_copy"}: cargo::core::compiler::fingerprint:           (vs) "/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/target/debug/.fingerprint/direct-cobra-copy-1e8d36248a591fc8/dep-test-lib-direct_cobra_copy"
-   0.007405048s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="direct_cobra_copy"}: cargo::core::compiler::fingerprint:                FileTime { seconds: 1771139948, nanos: 147143675 } < FileTime { seconds: 1771139993, nanos: 300670642 }
-   0.007421299s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="direct_cobra_copy"}: cargo::core::compiler::fingerprint: fingerprint dirty for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("direct_cobra_copy", ["lib"], "/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/lib.rs", Edition2021) }
-   0.007434435s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="direct_cobra_copy"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleItem(ChangedFile { reference: "/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/target/debug/.fingerprint/direct-cobra-copy-1e8d36248a591fc8/dep-test-lib-direct_cobra_copy", reference_mtime: FileTime { seconds: 1771139948, nanos: 147143675 }, stale: "/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/lib.rs", stale_mtime: FileTime { seconds: 1771139993, nanos: 300670642 } }))
-   0.007767923s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="bench_perft"}: cargo::core::compiler::fingerprint: fingerprint error for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: false }/TargetInner { name: "bench_perft", doc: true, ..: with_path("/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/bin/bench_perft.rs", Edition2021) }
-   0.007789578s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="bench_perft"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/target/debug/.fingerprint/direct-cobra-copy-15b2bdb726a24b5f/bin-bench_perft`
-
-Caused by:
-    No such file or directory (os error 2)
-
-Stack backtrace:
-   0: cargo_util::paths::read_bytes
-   1: cargo_util::paths::read
-   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
-   3: cargo::core::compiler::fingerprint::prepare_target
-   4: cargo::core::compiler::compile
-   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
-   6: cargo::ops::cargo_compile::compile_ws
-   7: cargo::ops::cargo_compile::compile_with_exec
-   8: cargo::ops::cargo_compile::compile
-   9: cargo::commands::check::exec
-  10: <cargo::cli::Exec>::exec
-  11: cargo::main
-  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
-  13: std::rt::lang_start::<()>::{closure#0}
-  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
-             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:287:21
-  15: std::panicking::catch_unwind::do_call
-             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:581:40
-  16: std::panicking::catch_unwind
-             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:544:19
-  17: std::panic::catch_unwind
-             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panic.rs:359:14
-  18: std::rt::lang_start_internal::{{closure}}
-             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/rt.rs:175:24
-  19: std::panicking::catch_unwind::do_call
-             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:581:40
-  20: std::panicking::catch_unwind
-             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:544:19
-  21: std::panic::catch_unwind
-             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panic.rs:359:14
-  22: std::rt::lang_start_internal
-             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/rt.rs:171:5
-  23: main
-  24: <unknown>
-  25: __libc_start_main
-  26: <unknown>
-   0.020021002s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="bench_perft"}: cargo::core::compiler::fingerprint: fingerprint error for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: true }/TargetInner { name: "bench_perft", doc: true, ..: with_path("/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/bin/bench_perft.rs", Edition2021) }
-   0.020046145s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="bench_perft"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/target/debug/.fingerprint/direct-cobra-copy-7a50be4a72774256/test-bin-bench_perft`
-
-Caused by:
-    No such file or directory (os error 2)
-
-Stack backtrace:
-   0: cargo_util::paths::read_bytes
-   1: cargo_util::paths::read
-   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
-   3: cargo::core::compiler::fingerprint::prepare_target
-   4: cargo::core::compiler::compile
-   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
-   6: cargo::ops::cargo_compile::compile_ws
-   7: cargo::ops::cargo_compile::compile_with_exec
-   8: cargo::ops::cargo_compile::compile
-   9: cargo::commands::check::exec
-  10: <cargo::cli::Exec>::exec
-  11: cargo::main
-  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
-  13: std::rt::lang_start::<()>::{closure#0}
-  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
-             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:287:21
-  15: std::panicking::catch_unwind::do_call
-             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:581:40
-  16: std::panicking::catch_unwind
-             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:544:19
-  17: std::panic::catch_unwind
-             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panic.rs:359:14
-  18: std::rt::lang_start_internal::{{closure}}
-             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/rt.rs:175:24
-  19: std::panicking::catch_unwind::do_call
-             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:581:40
-  20: std::panicking::catch_unwind
-             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:544:19
-  21: std::panic::catch_unwind
-             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panic.rs:359:14
-  22: std::rt::lang_start_internal
-             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/rt.rs:171:5
-  23: main
-  24: <unknown>
-  25: __libc_start_main
-  26: <unknown>
-   0.020230781s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="perft_cli"}: cargo::core::compiler::fingerprint: fingerprint dirty for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: false }/TargetInner { name: "perft_cli", doc: true, ..: with_path("/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/bin/perft_cli.rs", Edition2021) }
-   0.020245801s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="perft_cli"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleDepFingerprint { name: "direct_cobra_copy" })
-   0.020341015s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="perft_cli"}: cargo::core::compiler::fingerprint: fingerprint dirty for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: true }/TargetInner { name: "perft_cli", doc: true, ..: with_path("/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/bin/perft_cli.rs", Edition2021) }
-   0.020353576s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="perft_cli"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleDepFingerprint { name: "direct_cobra_copy" })
-   0.020427797s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="profile_perft"}: cargo::core::compiler::fingerprint: fingerprint dirty for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: false }/TargetInner { name: "profile_perft", doc: true, ..: with_path("/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/bin/profile_perft.rs", Edition2021) }
-   0.020439808s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="profile_perft"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleDepFingerprint { name: "direct_cobra_copy" })
-   0.020538995s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="profile_perft"}: cargo::core::compiler::fingerprint: fingerprint dirty for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: true }/TargetInner { name: "profile_perft", doc: true, ..: with_path("/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/bin/profile_perft.rs", Edition2021) }
-   0.020551083s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="profile_perft"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleDepFingerprint { name: "direct_cobra_copy" })
-   0.020657657s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="perft"}: cargo::core::compiler::fingerprint: fingerprint dirty for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: true }/TargetInner { kind: "test", name: "perft", benched: false, ..: with_path("/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/tests/perft.rs", Edition2021) }
-   0.020670554s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="perft"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleDepFingerprint { name: "direct_cobra_copy" })
-   0.020749174s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="ssa_parity"}: cargo::core::compiler::fingerprint: fingerprint dirty for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: true }/TargetInner { kind: "test", name: "ssa_parity", benched: false, ..: with_path("/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/tests/ssa_parity.rs", Edition2021) }
-   0.020761564s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="ssa_parity"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleDepFingerprint { name: "direct_cobra_copy" })
+   0.015139726s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="direct_cobra_copy"}: cargo::core::compiler::fingerprint: stale: changed "/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/lib.rs"
+   0.015195673s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="direct_cobra_copy"}: cargo::core::compiler::fingerprint:           (vs) "/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/target/debug/.fingerprint/direct-cobra-copy-03220a49bb875046/dep-lib-direct_cobra_copy"
+   0.015204478s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="direct_cobra_copy"}: cargo::core::compiler::fingerprint:                FileTime { seconds: 1771149976, nanos: 145767870 } < FileTime { seconds: 1771150034, nanos: 505039252 }
+   0.015659803s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="direct_cobra_copy"}: cargo::core::compiler::fingerprint: fingerprint dirty for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("direct_cobra_copy", ["lib"], "/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/lib.rs", Edition2021) }
+   0.015715260s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="direct_cobra_copy"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleItem(ChangedFile { reference: "/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/target/debug/.fingerprint/direct-cobra-copy-03220a49bb875046/dep-lib-direct_cobra_copy", reference_mtime: FileTime { seconds: 1771149976, nanos: 145767870 }, stale: "/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/lib.rs", stale_mtime: FileTime { seconds: 1771150034, nanos: 505039252 } }))
+   0.020444400s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="direct_cobra_copy"}: cargo::core::compiler::fingerprint: stale: changed "/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/lib.rs"
+   0.020468503s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="direct_cobra_copy"}: cargo::core::compiler::fingerprint:           (vs) "/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/target/debug/.fingerprint/direct-cobra-copy-46db7786a1325b5e/dep-test-lib-direct_cobra_copy"
+   0.020472438s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="direct_cobra_copy"}: cargo::core::compiler::fingerprint:                FileTime { seconds: 1771149976, nanos: 145767870 } < FileTime { seconds: 1771150034, nanos: 505039252 }
+   0.020987774s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="direct_cobra_copy"}: cargo::core::compiler::fingerprint: fingerprint dirty for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("direct_cobra_copy", ["lib"], "/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/lib.rs", Edition2021) }
+   0.021025968s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="direct_cobra_copy"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleItem(ChangedFile { reference: "/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/target/debug/.fingerprint/direct-cobra-copy-46db7786a1325b5e/dep-test-lib-direct_cobra_copy", reference_mtime: FileTime { seconds: 1771149976, nanos: 145767870 }, stale: "/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/lib.rs", stale_mtime: FileTime { seconds: 1771150034, nanos: 505039252 } }))
+   0.021823436s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="bench_perft"}: cargo::core::compiler::fingerprint: fingerprint dirty for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: false }/TargetInner { name: "bench_perft", doc: true, ..: with_path("/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/bin/bench_perft.rs", Edition2021) }
+   0.021890427s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="bench_perft"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleDepFingerprint { name: "direct_cobra_copy" })
+   0.023028388s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="bench_perft"}: cargo::core::compiler::fingerprint: fingerprint dirty for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: true }/TargetInner { name: "bench_perft", doc: true, ..: with_path("/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/bin/bench_perft.rs", Edition2021) }
+   0.023089220s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="bench_perft"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleDepFingerprint { name: "direct_cobra_copy" })
+   0.024430002s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="perft_cli"}: cargo::core::compiler::fingerprint: fingerprint dirty for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: false }/TargetInner { name: "perft_cli", doc: true, ..: with_path("/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/bin/perft_cli.rs", Edition2021) }
+   0.024479296s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="perft_cli"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleDepFingerprint { name: "direct_cobra_copy" })
+   0.025433259s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="perft_cli"}: cargo::core::compiler::fingerprint: fingerprint dirty for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: true }/TargetInner { name: "perft_cli", doc: true, ..: with_path("/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/bin/perft_cli.rs", Edition2021) }
+   0.025464332s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="perft_cli"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleDepFingerprint { name: "direct_cobra_copy" })
+   0.025994091s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="profile_perft"}: cargo::core::compiler::fingerprint: fingerprint dirty for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: false }/TargetInner { name: "profile_perft", doc: true, ..: with_path("/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/bin/profile_perft.rs", Edition2021) }
+   0.026018315s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="profile_perft"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleDepFingerprint { name: "direct_cobra_copy" })
+   0.026699834s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="profile_perft"}: cargo::core::compiler::fingerprint: fingerprint dirty for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: true }/TargetInner { name: "profile_perft", doc: true, ..: with_path("/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/bin/profile_perft.rs", Edition2021) }
+   0.026726020s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="profile_perft"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleDepFingerprint { name: "direct_cobra_copy" })
+   0.027234292s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="perft"}: cargo::core::compiler::fingerprint: fingerprint dirty for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: true }/TargetInner { kind: "test", name: "perft", benched: false, ..: with_path("/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/tests/perft.rs", Edition2021) }
+   0.027257031s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="perft"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleDepFingerprint { name: "direct_cobra_copy" })
     Checking direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.26s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.67s
