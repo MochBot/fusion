@@ -1,6 +1,6 @@
-// bench_perft.rs -- full speed + accuracy benchmark, serial only
+// bench_perft.rs -- full speed + accuracy benchmark
 use direct_cobra_copy::board::Board;
-use direct_cobra_copy::perft::perft;
+use direct_cobra_copy::perft::{perft, perft_parallel};
 use std::time::Instant;
 
 const COBRA_REF: [u64; 7] = [
@@ -37,7 +37,15 @@ fn fmt_time(secs: f64) -> String {
 }
 
 fn main() {
-    println!("=== Fusion-2 Perft Benchmark (Serial Only) ===");
+    let args: Vec<String> = std::env::args().collect();
+    let parallel = args.iter().any(|a| a == "--parallel" || a == "-p");
+    let mode = if parallel {
+        "Parallel (Rayon)"
+    } else {
+        "Serial"
+    };
+
+    println!("=== Fusion-2 Perft Benchmark ({}) ===", mode);
     println!();
 
     println!(
@@ -49,7 +57,11 @@ fn main() {
     for depth in 1..=7 {
         let board = Board::new();
         let t = Instant::now();
-        let nodes = perft(&board, 0, depth);
+        let nodes = if parallel {
+            perft_parallel(&board, depth)
+        } else {
+            perft(&board, 0, depth)
+        };
         let elapsed = t.elapsed().as_secs_f64();
         let expected = COBRA_REF[depth - 1];
         let delta: i64 = nodes as i64 - expected as i64;

@@ -15,6 +15,9 @@ path = "src/bin/profile_perft.rs"
 name = "bench_perft"
 path = "src/bin/bench_perft.rs"
 
+[dependencies]
+rayon = "1.10"
+
 [profile.release]
 opt-level = 3
 lto = true

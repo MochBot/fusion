@@ -2,6 +2,7 @@
 use crate::board::Board;
 use crate::header::*;
 use crate::movegen::MoveList;
+use rayon::prelude::*;
 
 const QUEUE: [Piece; 7] = [
     Piece::I,
@@ -66,6 +67,36 @@ pub fn divide(board: &Board, depth: usize) -> u64 {
     }
     println!("Total: {total}");
     total
+}
+
+/// parallel perft — two-level work split for high core saturation
+pub fn perft_parallel(board: &Board, depth: usize) -> u64 {
+    if depth <= 2 {
+        return perft(board, 0, depth);
+    }
+
+    // expand first 2 plies into work units
+    let piece0 = queue_piece(0);
+    let ml0 = MoveList::new(board, piece0);
+
+    let work_units: Vec<Board> = ml0
+        .iter()
+        .flat_map(|m0| {
+            let mut b1 = board.clone();
+            b1.do_move(m0);
+            let piece1 = queue_piece(1);
+            let ml1 = MoveList::new(&b1, piece1);
+            ml1.iter()
+                .map(|m1| {
+                    let mut b2 = b1.clone();
+                    b2.do_move(m1);
+                    b2
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+
+    work_units.par_iter().map(|b| perft(b, 2, depth - 2)).sum()
 }
 
 #[cfg(test)]
