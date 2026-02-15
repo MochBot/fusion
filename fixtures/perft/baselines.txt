@@ -1,0 +1,8 @@
+# Cobra perft baselines (queue: IOLJSZT, empty board, ACTIVE_RULES default)
+# As-of: 2026-02-14, cobra-movegen commit d7054ef
+# Command: cobra-perft-cli <depth> IOLJSZT
+D1 17
+D2 153
+D3 5266
+D4 188561
+D5 3500883

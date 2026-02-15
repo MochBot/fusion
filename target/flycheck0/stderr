@@ -1,0 +1,303 @@
+   0.009993233s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="direct_cobra_copy"}: cargo::core::compiler::fingerprint: fingerprint error for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("direct_cobra_copy", ["lib"], "/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/lib.rs", Edition2021) }
+   0.010034897s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="direct_cobra_copy"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/target/debug/.fingerprint/direct-cobra-copy-5bca885e40253326/lib-direct_cobra_copy`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:287:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:581:40
+  16: std::panicking::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:544:19
+  17: std::panic::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:581:40
+  20: std::panicking::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:544:19
+  21: std::panic::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.030052645s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="direct_cobra_copy"}: cargo::core::compiler::fingerprint: fingerprint error for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("direct_cobra_copy", ["lib"], "/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/lib.rs", Edition2021) }
+   0.030111009s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="direct_cobra_copy"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/target/debug/.fingerprint/direct-cobra-copy-1e8d36248a591fc8/test-lib-direct_cobra_copy`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:287:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:581:40
+  16: std::panicking::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:544:19
+  17: std::panic::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:581:40
+  20: std::panicking::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:544:19
+  21: std::panic::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.030721461s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="perft_cli"}: cargo::core::compiler::fingerprint: fingerprint error for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: false }/TargetInner { name: "perft_cli", doc: true, ..: with_path("/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/bin/perft_cli.rs", Edition2021) }
+   0.030763096s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="perft_cli"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/target/debug/.fingerprint/direct-cobra-copy-d566fbc0ea12c5ed/bin-perft_cli`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:287:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:581:40
+  16: std::panicking::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:544:19
+  17: std::panic::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:581:40
+  20: std::panicking::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:544:19
+  21: std::panic::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.031559148s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="perft_cli"}: cargo::core::compiler::fingerprint: fingerprint error for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: true }/TargetInner { name: "perft_cli", doc: true, ..: with_path("/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/bin/perft_cli.rs", Edition2021) }
+   0.031590176s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="perft_cli"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/target/debug/.fingerprint/direct-cobra-copy-48eb9c0acb60533c/test-bin-perft_cli`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:287:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:581:40
+  16: std::panicking::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:544:19
+  17: std::panic::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:581:40
+  20: std::panicking::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:544:19
+  21: std::panic::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.032234975s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="profile_perft"}: cargo::core::compiler::fingerprint: fingerprint error for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: false }/TargetInner { name: "profile_perft", doc: true, ..: with_path("/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/bin/profile_perft.rs", Edition2021) }
+   0.032263780s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="profile_perft"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/target/debug/.fingerprint/direct-cobra-copy-85b150809530f845/bin-profile_perft`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:287:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:581:40
+  16: std::panicking::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:544:19
+  17: std::panic::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:581:40
+  20: std::panicking::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:544:19
+  21: std::panic::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.032773163s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="profile_perft"}: cargo::core::compiler::fingerprint: fingerprint error for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: true }/TargetInner { name: "profile_perft", doc: true, ..: with_path("/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/src/bin/profile_perft.rs", Edition2021) }
+   0.032798116s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="profile_perft"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/target/debug/.fingerprint/direct-cobra-copy-0c804b434d692ac2/test-bin-profile_perft`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:287:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:581:40
+  16: std::panicking::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:544:19
+  17: std::panic::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:581:40
+  20: std::panicking::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:544:19
+  21: std::panic::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.033336819s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="perft"}: cargo::core::compiler::fingerprint: fingerprint error for direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)/Check { test: true }/TargetInner { kind: "test", name: "perft", benched: false, ..: with_path("/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/tests/perft.rs", Edition2021) }
+   0.033369845s  INFO prepare_target{force=false package_id=direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy) target="perft"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy/target/debug/.fingerprint/direct-cobra-copy-9febaffe9af7bcce/test-integration-test-perft`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:287:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:581:40
+  16: std::panicking::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:544:19
+  17: std::panic::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:581:40
+  20: std::panicking::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panicking.rs:544:19
+  21: std::panic::catch_unwind
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+    Checking direct-cobra-copy v0.1.0 (/home/li859/projects/mosaic-fusion-engine-coaching/direct-cobra-copy)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.54s
