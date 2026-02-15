@@ -2,6 +2,7 @@
 use crate::board::Board;
 use crate::header::*;
 use crate::movegen::MoveList;
+#[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
 const QUEUE: [Piece; 7] = [
@@ -96,7 +97,14 @@ pub fn perft_parallel(board: &Board, depth: usize) -> u64 {
         })
         .collect();
 
-    work_units.par_iter().map(|b| perft(b, 2, depth - 2)).sum()
+    #[cfg(feature = "rayon")]
+    {
+        work_units.par_iter().map(|b| perft(b, 2, depth - 2)).sum()
+    }
+    #[cfg(not(feature = "rayon"))]
+    {
+        work_units.iter().map(|b| perft(b, 2, depth - 2)).sum()
+    }
 }
 
 #[cfg(test)]

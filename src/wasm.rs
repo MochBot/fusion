@@ -13,6 +13,23 @@ use crate::search::{self, SearchConfig};
 use crate::state::GameState;
 
 // ---------------------------------------------------------------------------
+// Serialization helpers (serde_json + js_sys to avoid serde-wasm-bindgen 0.6 bug)
+// ---------------------------------------------------------------------------
+
+fn to_js<T: serde::Serialize>(val: &T) -> JsValue {
+    serde_json::to_string(val)
+        .ok()
+        .and_then(|s| js_sys::JSON::parse(&s).ok())
+        .unwrap_or(JsValue::NULL)
+}
+
+fn from_js<T: serde::de::DeserializeOwned>(js_val: JsValue) -> Option<T> {
+    js_sys::JSON::stringify(&js_val)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s.as_string().unwrap_or_default()).ok())
+}
+
+// ---------------------------------------------------------------------------
 // init
 // ---------------------------------------------------------------------------
 
@@ -127,7 +144,7 @@ impl JsBoard {
         }
     }
 
-    #[wasm_bindgen(js_name = "fromRows")]
+    #[wasm_bindgen(js_name = "from_rows")]
     pub fn from_rows(rows: &[u64]) -> Self {
         Self {
             inner: board_from_row_bitmasks(rows),
@@ -156,7 +173,7 @@ impl JsBoard {
         }
     }
 
-    #[wasm_bindgen(js_name = "clearLines")]
+    #[wasm_bindgen(js_name = "clear_lines")]
     pub fn clear_lines(&mut self) -> u8 {
         let clears = self.inner.line_clears();
         if clears == 0 {
@@ -167,19 +184,19 @@ impl JsBoard {
         count
     }
 
-    #[wasm_bindgen(js_name = "toRows")]
+    #[wasm_bindgen(js_name = "to_rows")]
     pub fn to_rows(&self) -> Vec<u64> {
         board_to_row_bitmasks(&self.inner)
     }
 
-    #[wasm_bindgen(js_name = "applyMove")]
+    #[wasm_bindgen(js_name = "apply_move")]
     pub fn apply_move(&mut self, m: &JsMove) -> u8 {
         let internal_move = m.to_internal();
         let lines = self.inner.do_move(&internal_move);
         lines as u8
     }
 
-    #[wasm_bindgen(js_name = "cloneBoard")]
+    #[wasm_bindgen(js_name = "clone_board")]
     pub fn clone_board(&self) -> JsBoard {
         JsBoard {
             inner: self.inner.clone(),
@@ -231,12 +248,12 @@ impl JsMove {
         self.y_val
     }
 
-    #[wasm_bindgen(js_name = "holdUsed")]
+    #[wasm_bindgen(js_name = "hold_used")]
     pub fn hold_used(&self) -> bool {
         self.hold_used_val
     }
 
-    #[wasm_bindgen(js_name = "setHoldUsed")]
+    #[wasm_bindgen(js_name = "set_hold_used")]
     pub fn set_hold_used(&mut self, val: bool) {
         self.hold_used_val = val;
     }
@@ -245,7 +262,7 @@ impl JsMove {
         self.spin_val
     }
 
-    #[wasm_bindgen(js_name = "setSpin")]
+    #[wasm_bindgen(js_name = "set_spin")]
     pub fn set_spin(&mut self, val: u8) {
         self.spin_val = val;
     }
@@ -340,7 +357,7 @@ pub fn calculate_attack_wasm(
     attack::calculate_attack(lines, spin_type, b2b, combo, &config.inner, is_pc)
 }
 
-#[wasm_bindgen(js_name = "findBestMove")]
+#[wasm_bindgen(js_name = "find_best_move")]
 pub fn find_best_move_wasm(board: &JsBoard, piece: u8) -> JsValue {
     let p = match piece_from_external(piece) {
         Some(p) => p,
@@ -354,7 +371,7 @@ pub fn find_best_move_wasm(board: &JsBoard, piece: u8) -> JsValue {
     match search::find_best_move(&state, &config, &weights) {
         Some(result) => {
             let m = &result.best_move;
-            let obj = serde_wasm_bindgen::to_value(&MoveResultJson {
+            to_js(&MoveResultJson {
                 piece: piece_to_external(m.piece()),
                 rotation: m.rotation() as u8,
                 x: m.x() as i8,
@@ -362,14 +379,13 @@ pub fn find_best_move_wasm(board: &JsBoard, piece: u8) -> JsValue {
                 score: result.score,
                 spin: m.spin() as u8,
                 hold_used: result.hold_used,
-            });
-            obj.unwrap_or(JsValue::NULL)
+            })
         }
         None => JsValue::NULL,
     }
 }
 
-#[wasm_bindgen(js_name = "getAllMoves")]
+#[wasm_bindgen(js_name = "get_all_moves")]
 pub fn get_all_moves_wasm(board: &JsBoard, piece: u8) -> JsValue {
     let p = match piece_from_external(piece) {
         Some(p) => p,
@@ -413,16 +429,16 @@ pub fn get_all_moves_wasm(board: &JsBoard, piece: u8) -> JsValue {
         })
         .collect();
 
-    serde_wasm_bindgen::to_value(&results).unwrap_or(JsValue::NULL)
+    to_js(&results)
 }
 
-#[wasm_bindgen(js_name = "evaluateBoard")]
+#[wasm_bindgen(js_name = "evaluate_board")]
 pub fn evaluate_board_wasm(board: &JsBoard) -> f32 {
     let weights = EvalWeights::default();
     eval::evaluate(&board.inner, &weights) as f32
 }
 
-#[wasm_bindgen(js_name = "evaluateWithWeights")]
+#[wasm_bindgen(js_name = "evaluate_with_weights")]
 pub fn evaluate_with_weights_wasm(
     board: &JsBoard,
     height: f32,
@@ -438,7 +454,7 @@ pub fn evaluate_with_weights_wasm(
     eval::evaluate(&board.inner, &weights) as f32
 }
 
-#[wasm_bindgen(js_name = "detectMisdrop")]
+#[wasm_bindgen(js_name = "detect_misdrop")]
 pub fn detect_misdrop_wasm(
     board: &JsBoard,
     piece: u8,
@@ -486,16 +502,14 @@ pub fn detect_misdrop_wasm(
         meter_value: result.meter_value,
     };
 
-    serde_wasm_bindgen::to_value(&json).unwrap_or(JsValue::NULL)
+    to_js(&json)
 }
 
-#[wasm_bindgen(js_name = "analyzeReplay")]
+#[wasm_bindgen(js_name = "analyze_replay")]
 pub fn analyze_replay_wasm(frames: JsValue) -> JsValue {
-    // Parse frames from JS — each frame: {board: u64[], piece: u8, move: {piece,rotation,x,y,spin}}
-    let parsed: Result<Vec<ReplayFrameJson>, _> = serde_wasm_bindgen::from_value(frames);
-    let frames_vec = match parsed {
-        Ok(f) => f,
-        Err(_) => return JsValue::NULL,
+    let frames_vec = match from_js::<Vec<ReplayFrameJson>>(frames) {
+        Some(f) => f,
+        None => return JsValue::NULL,
     };
 
     let weights = EvalWeights::default();
@@ -547,7 +561,7 @@ pub fn analyze_replay_wasm(frames: JsValue) -> JsValue {
         }
     }
 
-    serde_wasm_bindgen::to_value(&results).unwrap_or(JsValue::NULL)
+    to_js(&results)
 }
 
 // ---------------------------------------------------------------------------
