@@ -1,4 +1,5 @@
 pub mod analysis;
+pub mod attack;
 pub mod board;
 pub mod default_ruleset;
 pub mod eval;

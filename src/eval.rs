@@ -1,11 +1,10 @@
-// eval.rs -- Cold Clear-inspired heuristic evaluation
-// board quality + move rewards for coaching engine
+// eval.rs -- heuristic evaluation using real TETR.IO S2 attack values
+// board quality + garbage-based move scoring for coaching engine
 
+use crate::attack::{calculate_attack, AttackConfig};
 use crate::board::Board;
 use crate::header::*;
 
-/// weight set — higher score = better position
-/// defaults tuned from Cold Clear's eval + some local adjustments
 #[derive(Clone, Debug)]
 pub struct EvalWeights {
     // board quality (static)
@@ -27,18 +26,14 @@ pub struct EvalWeights {
     pub well_depth: i32,
     pub max_well_depth: i32,
 
-    // clear rewards
-    pub clear1: i32,
-    pub clear2: i32,
-    pub clear3: i32,
-    pub clear4: i32,
-    pub tspin1: i32,
-    pub tspin2: i32,
-    pub tspin3: i32,
-    pub perfect_clear: i32,
-    pub b2b_clear: i32,
-    pub combo_garbage: i32,
+    // attack scaling
+    pub attack_weight: i32,
+    pub surge_value: i32,
+    pub surge_break_penalty: i32,
+
+    // T-piece waste
     pub wasted_t: i32,
+    pub tslot: i32,
 }
 
 impl Default for EvalWeights {
@@ -59,17 +54,12 @@ impl Default for EvalWeights {
             well_depth: 57,
             max_well_depth: 17,
 
-            clear1: -143,
-            clear2: -100,
-            clear3: -58,
-            clear4: 390,
-            tspin1: 121,
-            tspin2: 410,
-            tspin3: 602,
-            perfect_clear: 999,
-            b2b_clear: 104,
-            combo_garbage: 150,
+            attack_weight: 150,
+            surge_value: 50,
+            surge_break_penalty: -200,
+
             wasted_t: -152,
+            tslot: 0,
         }
     }
 }
@@ -244,55 +234,39 @@ pub fn evaluate(board: &Board, weights: &EvalWeights) -> i32 {
     score
 }
 
-/// evaluate a move result — combines board eval with clear/spin rewards
-/// called after applying the move to get the resulting board
+/// evaluate a move — board quality + real garbage sent via attack calc
+#[allow(clippy::too_many_arguments)]
 pub fn evaluate_move(
     result_board: &Board,
     m: &Move,
     lines_cleared: u8,
-    b2b: bool,
+    spin: SpinType,
+    b2b_before: u8,
     combo: u32,
+    is_pc: bool,
+    config: &AttackConfig,
     weights: &EvalWeights,
 ) -> i32 {
     let mut score = evaluate(result_board, weights);
 
-    // clear rewards
-    let spin = m.spin();
-    let is_spin = spin != SpinType::NoSpin;
-
-    match (lines_cleared, is_spin) {
-        (0, _) => {
-            // no clear — penalize wasted T if it was a T piece with no spin
-            if m.piece() == Piece::T && spin == SpinType::NoSpin {
-                score += weights.wasted_t;
-            }
+    if lines_cleared == 0 {
+        // no clear — penalize wasted T
+        if m.piece() == Piece::T && spin == SpinType::NoSpin {
+            score += weights.wasted_t;
         }
-        (1, false) => score += weights.clear1,
-        (2, false) => score += weights.clear2,
-        (3, false) => score += weights.clear3,
-        (4, false) => score += weights.clear4,
-        (1, true) => score += weights.tspin1,
-        (2, true) => score += weights.tspin2,
-        (3, true) => score += weights.tspin3,
-        _ => {
-            // 4+ with spin shouldn't happen, but handle gracefully
-            score += weights.clear4;
-        }
+        return score;
     }
 
-    // b2b bonus
-    if b2b && lines_cleared > 0 {
-        score += weights.b2b_clear;
-    }
+    // real garbage via S2 attack formula
+    let garbage = calculate_attack(lines_cleared, spin, b2b_before, combo as u8, config, is_pc);
+    score += (garbage * weights.attack_weight as f32) as i32;
 
-    // combo reward (scales with combo count)
-    if combo > 0 && lines_cleared > 0 {
-        score += weights.combo_garbage * (combo as i32);
-    }
-
-    // perfect clear
-    if lines_cleared > 0 && result_board.empty() {
-        score += weights.perfect_clear;
+    // surge tracking: B2B chain maintenance
+    let is_b2b_eligible = spin != SpinType::NoSpin || lines_cleared >= 4;
+    if is_b2b_eligible {
+        score += weights.surge_value;
+    } else {
+        score += weights.surge_break_penalty;
     }
 
     score
@@ -301,6 +275,7 @@ pub fn evaluate_move(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::attack::AttackConfig;
     use crate::board::{Board, FULL_ROW};
 
     #[test]
@@ -358,14 +333,32 @@ mod tests {
     #[test]
     fn test_tetris_clear_scores_high() {
         let weights = EvalWeights::default();
-        let board = Board::new(); // result board is empty after clear
+        let config = AttackConfig::tetra_league();
+        let board = Board::new();
 
-        // simulate tetris (4 lines cleared, no spin)
         let m = Move::new(Piece::I, Rotation::North, 5, 0, false);
-        let score_tetris = evaluate_move(&board, &m, 4, false, 0, &weights);
-
-        // simulate single clear
-        let score_single = evaluate_move(&board, &m, 1, false, 0, &weights);
+        let score_tetris = evaluate_move(
+            &board,
+            &m,
+            4,
+            SpinType::NoSpin,
+            0,
+            0,
+            false,
+            &config,
+            &weights,
+        );
+        let score_single = evaluate_move(
+            &board,
+            &m,
+            1,
+            SpinType::NoSpin,
+            0,
+            0,
+            false,
+            &config,
+            &weights,
+        );
 
         assert!(
             score_tetris > score_single,
@@ -378,15 +371,34 @@ mod tests {
     #[test]
     fn test_tspin_double_scores_very_high() {
         let weights = EvalWeights::default();
+        let config = AttackConfig::tetra_league();
         let board = Board::new();
 
-        // t-spin double — 2 lines with spin
         let m = Move::new_tspin(Rotation::South, 4, 0, true);
-        let score_tsd = evaluate_move(&board, &m, 2, false, 0, &weights);
+        let score_tsd = evaluate_move(
+            &board,
+            &m,
+            2,
+            SpinType::Full,
+            0,
+            0,
+            false,
+            &config,
+            &weights,
+        );
 
-        // regular double — 2 lines no spin
         let m_reg = Move::new(Piece::L, Rotation::North, 4, 0, false);
-        let score_double = evaluate_move(&board, &m_reg, 2, false, 0, &weights);
+        let score_double = evaluate_move(
+            &board,
+            &m_reg,
+            2,
+            SpinType::NoSpin,
+            0,
+            0,
+            false,
+            &config,
+            &weights,
+        );
 
         assert!(
             score_tsd > score_double,
@@ -399,15 +411,34 @@ mod tests {
     #[test]
     fn test_wasted_t_penalty() {
         let weights = EvalWeights::default();
+        let config = AttackConfig::tetra_league();
         let board = Board::new();
 
-        // T placed with no clear and no spin
         let m_t = Move::new(Piece::T, Rotation::North, 4, 0, false);
-        let score_t = evaluate_move(&board, &m_t, 0, false, 0, &weights);
+        let score_t = evaluate_move(
+            &board,
+            &m_t,
+            0,
+            SpinType::NoSpin,
+            0,
+            0,
+            false,
+            &config,
+            &weights,
+        );
 
-        // L placed with no clear — no wasted_t penalty
         let m_l = Move::new(Piece::L, Rotation::North, 4, 0, false);
-        let score_l = evaluate_move(&board, &m_l, 0, false, 0, &weights);
+        let score_l = evaluate_move(
+            &board,
+            &m_l,
+            0,
+            SpinType::NoSpin,
+            0,
+            0,
+            false,
+            &config,
+            &weights,
+        );
 
         assert!(
             score_t < score_l,
@@ -420,15 +451,127 @@ mod tests {
     #[test]
     fn test_b2b_and_combo_bonuses() {
         let weights = EvalWeights::default();
+        let config = AttackConfig::tetra_league();
         let board = Board::new();
         let m = Move::new(Piece::I, Rotation::North, 5, 0, false);
 
-        let score_plain = evaluate_move(&board, &m, 4, false, 0, &weights);
-        let score_b2b = evaluate_move(&board, &m, 4, true, 0, &weights);
-        let score_combo = evaluate_move(&board, &m, 4, false, 3, &weights);
+        let score_plain = evaluate_move(
+            &board,
+            &m,
+            4,
+            SpinType::NoSpin,
+            0,
+            0,
+            false,
+            &config,
+            &weights,
+        );
+        let score_b2b = evaluate_move(
+            &board,
+            &m,
+            4,
+            SpinType::NoSpin,
+            1,
+            0,
+            false,
+            &config,
+            &weights,
+        );
+        let score_combo = evaluate_move(
+            &board,
+            &m,
+            4,
+            SpinType::NoSpin,
+            0,
+            3,
+            false,
+            &config,
+            &weights,
+        );
 
         assert!(score_b2b > score_plain, "b2b should add bonus");
         assert!(score_combo > score_plain, "combo should add bonus");
+    }
+
+    #[test]
+    fn test_surge_break_penalty() {
+        let weights = EvalWeights::default();
+        let config = AttackConfig::tetra_league();
+        let board = Board::new();
+
+        // quad clear — B2B eligible, gets surge_value
+        let m_quad = Move::new(Piece::I, Rotation::North, 5, 0, false);
+        let score_quad = evaluate_move(
+            &board,
+            &m_quad,
+            4,
+            SpinType::NoSpin,
+            0,
+            0,
+            false,
+            &config,
+            &weights,
+        );
+
+        // double clear — not B2B eligible, gets surge_break_penalty
+        let score_double = evaluate_move(
+            &board,
+            &m_quad,
+            2,
+            SpinType::NoSpin,
+            0,
+            0,
+            false,
+            &config,
+            &weights,
+        );
+
+        // quad should beat double (more garbage + surge_value vs surge_break_penalty)
+        assert!(
+            score_quad > score_double,
+            "quad ({}) should beat double ({}) due to surge",
+            score_quad,
+            score_double
+        );
+    }
+
+    #[test]
+    fn test_allspin_eval_bonus() {
+        let weights = EvalWeights::default();
+        let config = AttackConfig::tetra_league();
+        let board = Board::new();
+
+        // S-spin double vs regular S double
+        let m_s = Move::new(Piece::S, Rotation::North, 4, 0, false);
+        let score_spin = evaluate_move(
+            &board,
+            &m_s,
+            2,
+            SpinType::Full,
+            0,
+            0,
+            false,
+            &config,
+            &weights,
+        );
+        let score_nospin = evaluate_move(
+            &board,
+            &m_s,
+            2,
+            SpinType::NoSpin,
+            0,
+            0,
+            false,
+            &config,
+            &weights,
+        );
+
+        assert!(
+            score_spin > score_nospin,
+            "S-spin double ({}) should beat regular S double ({})",
+            score_spin,
+            score_nospin
+        );
     }
 
     #[test]

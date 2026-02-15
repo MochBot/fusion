@@ -11,7 +11,7 @@ pub struct GameState {
     pub current: Piece,
     pub hold: Option<Piece>,
     pub queue: Vec<Piece>,
-    pub b2b: bool,
+    pub b2b: u8, // surge level (0 = no B2B chain)
     pub combo: u32,
 }
 
@@ -22,7 +22,7 @@ impl GameState {
             current,
             hold: None,
             queue,
-            b2b: false,
+            b2b: 0,
             combo: 0,
         }
     }
@@ -52,7 +52,7 @@ mod tests {
         assert_eq!(state.queue_piece(0), Some(Piece::I));
         assert_eq!(state.queue_piece(2), Some(Piece::S));
         assert_eq!(state.queue_piece(5), None);
-        assert!(!state.b2b);
+        assert_eq!(state.b2b, 0);
         assert_eq!(state.combo, 0);
     }
 }

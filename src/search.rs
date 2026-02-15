@@ -1,6 +1,7 @@
 // search.rs -- beam search with hold for coaching engine
 // expands moves breadth-first, pruned to beam_width at each depth
 
+use crate::attack::AttackConfig;
 use crate::board::Board;
 use crate::eval::{evaluate_move, EvalWeights};
 use crate::header::*;
@@ -10,6 +11,7 @@ use crate::state::GameState;
 pub struct SearchConfig {
     pub beam_width: usize,
     pub depth: usize,
+    pub attack_config: AttackConfig,
 }
 
 impl Default for SearchConfig {
@@ -17,6 +19,7 @@ impl Default for SearchConfig {
         Self {
             beam_width: 400,
             depth: 2,
+            attack_config: AttackConfig::tetra_league(),
         }
     }
 }
@@ -33,7 +36,7 @@ pub struct SearchResult {
 struct SearchNode {
     board: Board,
     score: i32,
-    b2b: bool,
+    b2b: u8,
     combo: u32,
     hold: Option<Piece>,
     /// first move in the path (what we actually return)
@@ -58,7 +61,7 @@ pub fn find_best_move(
     }
 
     // expand root: generate moves for current piece, and hold piece if available
-    let mut beam = expand_root(state, weights);
+    let mut beam = expand_root(state, weights, &config.attack_config);
     if beam.is_empty() {
         return None;
     }
@@ -81,13 +84,27 @@ pub fn find_best_move(
             let current_piece = queue_piece;
 
             // generate moves for current piece (hold unchanged)
-            expand_node(node, current_piece, node.hold, weights, &mut next_beam);
+            expand_node(
+                node,
+                current_piece,
+                node.hold,
+                weights,
+                &config.attack_config,
+                &mut next_beam,
+            );
 
             // also try hold swap if it gives a different piece
             if let Some(held) = node.hold {
                 if held != current_piece {
                     // play held piece, queue piece goes into hold
-                    expand_node(node, held, Some(current_piece), weights, &mut next_beam);
+                    expand_node(
+                        node,
+                        held,
+                        Some(current_piece),
+                        weights,
+                        &config.attack_config,
+                        &mut next_beam,
+                    );
                 }
             }
         }
@@ -111,10 +128,13 @@ pub fn find_best_move(
 }
 
 /// expand the root position — generate all moves for current and hold pieces
-fn expand_root(state: &GameState, weights: &EvalWeights) -> Vec<SearchNode> {
+fn expand_root(
+    state: &GameState,
+    weights: &EvalWeights,
+    attack_config: &AttackConfig,
+) -> Vec<SearchNode> {
     let mut nodes = Vec::with_capacity(128);
 
-    // moves for current piece
     gen_and_eval_root(
         &state.board,
         state.current,
@@ -123,13 +143,12 @@ fn expand_root(state: &GameState, weights: &EvalWeights) -> Vec<SearchNode> {
         state.hold,
         false,
         weights,
+        attack_config,
         &mut nodes,
     );
 
-    // moves for hold piece
     match state.hold {
         Some(held) if held != state.current => {
-            // swap: play hold piece, current goes to hold
             gen_and_eval_root(
                 &state.board,
                 held,
@@ -138,12 +157,11 @@ fn expand_root(state: &GameState, weights: &EvalWeights) -> Vec<SearchNode> {
                 Some(state.current),
                 true,
                 weights,
+                attack_config,
                 &mut nodes,
             );
         }
         None if !state.queue.is_empty() => {
-            // no hold yet — hold current, play queue[0]
-            // but only if queue has something
             let next = state.queue[0];
             if next != state.current {
                 gen_and_eval_root(
@@ -154,6 +172,7 @@ fn expand_root(state: &GameState, weights: &EvalWeights) -> Vec<SearchNode> {
                     Some(state.current),
                     true,
                     weights,
+                    attack_config,
                     &mut nodes,
                 );
             }
@@ -169,11 +188,12 @@ fn expand_root(state: &GameState, weights: &EvalWeights) -> Vec<SearchNode> {
 fn gen_and_eval_root(
     board: &Board,
     piece: Piece,
-    b2b: bool,
+    b2b: u8,
     combo: u32,
     new_hold: Option<Piece>,
     hold_used: bool,
     weights: &EvalWeights,
+    attack_config: &AttackConfig,
     nodes: &mut Vec<SearchNode>,
 ) {
     let mut moves = MoveBuffer::new();
@@ -183,15 +203,32 @@ fn gen_and_eval_root(
         let mut result_board = board.clone();
         let lines = result_board.do_move(m);
         let lines_u8 = lines as u8;
+        let spin = m.spin();
+        let is_pc = lines > 0 && result_board.empty();
 
+        let is_b2b_eligible = spin != SpinType::NoSpin || lines >= 4;
         let new_b2b = if lines > 0 {
-            m.spin() != SpinType::NoSpin || lines == 4
+            if is_b2b_eligible {
+                b2b + 1
+            } else {
+                0
+            }
         } else {
             b2b
         };
         let new_combo = if lines > 0 { combo + 1 } else { 0 };
 
-        let score = evaluate_move(&result_board, m, lines_u8, b2b, combo, weights);
+        let score = evaluate_move(
+            &result_board,
+            m,
+            lines_u8,
+            spin,
+            b2b,
+            combo,
+            is_pc,
+            attack_config,
+            weights,
+        );
 
         nodes.push(SearchNode {
             board: result_board,
@@ -206,12 +243,12 @@ fn gen_and_eval_root(
     }
 }
 
-/// expand a single node with a piece — used at depth > 0
 fn expand_node(
     parent: &SearchNode,
     piece: Piece,
     new_hold: Option<Piece>,
     weights: &EvalWeights,
+    attack_config: &AttackConfig,
     out: &mut Vec<SearchNode>,
 ) {
     let mut moves = MoveBuffer::new();
@@ -221,9 +258,16 @@ fn expand_node(
         let mut result_board = parent.board.clone();
         let lines = result_board.do_move(m);
         let lines_u8 = lines as u8;
+        let spin = m.spin();
+        let is_pc = lines > 0 && result_board.empty();
 
+        let is_b2b_eligible = spin != SpinType::NoSpin || lines >= 4;
         let new_b2b = if lines > 0 {
-            m.spin() != SpinType::NoSpin || lines == 4
+            if is_b2b_eligible {
+                parent.b2b + 1
+            } else {
+                0
+            }
         } else {
             parent.b2b
         };
@@ -233,8 +277,11 @@ fn expand_node(
             &result_board,
             m,
             lines_u8,
+            spin,
             parent.b2b,
             parent.combo,
+            is_pc,
+            attack_config,
             weights,
         );
 
@@ -278,6 +325,7 @@ mod tests {
         let config = SearchConfig {
             beam_width: 100,
             depth: 1,
+            ..SearchConfig::default()
         };
         let weights = EvalWeights::default();
 
@@ -303,6 +351,7 @@ mod tests {
         let config = SearchConfig {
             beam_width: 50,
             depth: 1,
+            ..SearchConfig::default()
         };
         let weights = EvalWeights::default();
 
@@ -326,24 +375,21 @@ mod tests {
         let config = SearchConfig {
             beam_width: 200,
             depth: 1,
+            ..SearchConfig::default()
         };
         let weights = EvalWeights::default();
 
         let result = find_best_move(&state, &config, &weights);
         assert!(result.is_some(), "should find a move with hold available");
-
-        // the search should at least consider the hold piece
-        // (whether it uses it depends on the eval, but it shouldn't crash)
     }
 
     #[test]
     fn test_hold_none_uses_queue() {
-        // hold=None, current=T, queue=[I, O]
-        // search should try: play T (hold stays None) OR hold T and play I
         let state = GameState::new(Board::new(), Piece::T, vec![Piece::I, Piece::O]);
         let config = SearchConfig {
             beam_width: 200,
             depth: 2,
+            ..SearchConfig::default()
         };
         let weights = EvalWeights::default();
 
@@ -360,6 +406,7 @@ mod tests {
         let config = SearchConfig {
             beam_width: 3,
             depth: 3,
+            ..SearchConfig::default()
         };
         let weights = EvalWeights::default();
 

@@ -120,16 +120,20 @@ fn analyze_move_inner(
 ) -> MoveAnalysis {
     let eval_before = evaluate(&state.board, weights);
 
+    let mut result_board = state.board.clone();
+    result_board.do_move(actual_move);
+    let spin = actual_move.spin();
+    let is_pc = lines_cleared > 0 && result_board.empty();
+
     let eval_after = evaluate_move(
-        &{
-            let mut b = state.board.clone();
-            b.do_move(actual_move);
-            b
-        },
+        &result_board,
         actual_move,
         lines_cleared,
+        spin,
         state.b2b,
         state.combo,
+        is_pc,
+        &config.attack_config,
         weights,
     );
 
@@ -177,6 +181,7 @@ mod tests {
         let config = SearchConfig {
             beam_width: 200,
             depth: 1,
+            ..SearchConfig::default()
         };
         let weights = EvalWeights::default();
         let sr = find_best_move(state, &config, &weights)
@@ -196,6 +201,7 @@ mod tests {
         let config = SearchConfig {
             beam_width: 200,
             depth: 1,
+            ..SearchConfig::default()
         };
         let analysis = detect_misdrop(&state, &best, lines, &weights, &config);
 
@@ -214,11 +220,11 @@ mod tests {
         let config = SearchConfig {
             beam_width: 200,
             depth: 2,
+            ..SearchConfig::default()
         };
 
         let sr = find_best_move(&state, &config, &weights).unwrap_or_else(|| panic!("no moves"));
 
-        // find all legal moves and pick one that's worse than best
         let mut moves = MoveBuffer::new();
         generate(&state.board, &mut moves, state.current, false);
 
@@ -227,7 +233,19 @@ mod tests {
         for m in moves.as_slice() {
             let mut b = state.board.clone();
             let lines = b.do_move(m) as u8;
-            let score = evaluate_move(&b, m, lines, state.b2b, state.combo, &weights);
+            let spin = m.spin();
+            let is_pc = lines > 0 && b.empty();
+            let score = evaluate_move(
+                &b,
+                m,
+                lines,
+                spin,
+                state.b2b,
+                state.combo,
+                is_pc,
+                &config.attack_config,
+                &weights,
+            );
             if score < worst_score {
                 worst_score = score;
                 worst_move = *m;
@@ -247,11 +265,9 @@ mod tests {
 
     #[test]
     fn test_blunder_detection() {
-        // stack up some rows to make it possible to create a real blunder
         let mut board = Board::new();
-        // fill rows 0-5 with columns 0-8 (leave col 9 open for well)
         for y in 0..6 {
-            let row = 0x1FF; // bits 0-8
+            let row = 0x1FF;
             board.rows[y] = row;
             for x in 0..9 {
                 board.cols[x] |= 1u64 << y;
@@ -263,9 +279,9 @@ mod tests {
         let config = SearchConfig {
             beam_width: 200,
             depth: 2,
+            ..SearchConfig::default()
         };
 
-        // find best and worst moves
         let sr = find_best_move(&state, &config, &weights)
             .unwrap_or_else(|| panic!("no moves on test board"));
 
@@ -277,7 +293,19 @@ mod tests {
         for m in moves.as_slice() {
             let mut b = state.board.clone();
             let lines = b.do_move(m) as u8;
-            let score = evaluate_move(&b, m, lines, state.b2b, state.combo, &weights);
+            let spin = m.spin();
+            let is_pc = lines > 0 && b.empty();
+            let score = evaluate_move(
+                &b,
+                m,
+                lines,
+                spin,
+                state.b2b,
+                state.combo,
+                is_pc,
+                &config.attack_config,
+                &weights,
+            );
             if score < worst_score {
                 worst_score = score;
                 worst_move = *m;
@@ -288,7 +316,6 @@ mod tests {
             let mut b = state.board.clone();
             let lines = b.do_move(&worst_move) as u8;
             let analysis = detect_misdrop(&state, &worst_move, lines, &weights, &config);
-            // with a well setup the gap should be significant
             assert!(analysis.eval_loss > 0);
         }
     }
@@ -300,6 +327,7 @@ mod tests {
         let config = SearchConfig {
             beam_width: 200,
             depth: 1,
+            ..SearchConfig::default()
         };
 
         let mut moves = MoveBuffer::new();
@@ -325,7 +353,6 @@ mod tests {
         let mut moves = MoveBuffer::new();
         generate(&state.board, &mut moves, state.current, false);
 
-        // play two moves and check history grows
         let m1 = &moves.as_slice()[0];
         let mut b1 = state.board.clone();
         let lines1 = b1.do_move(m1) as u8;
@@ -367,6 +394,7 @@ mod tests {
         let config = SearchConfig {
             beam_width: 200,
             depth: 1,
+            ..SearchConfig::default()
         };
 
         let mut moves = MoveBuffer::new();
