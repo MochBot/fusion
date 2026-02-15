@@ -1,9 +1,7 @@
 // board.rs -- row-major board using [u16; 40]
-// Y-down convention (row 0 = bottom), matching Cobra
+// Y-up convention (row 0 = bottom), matching Cobra
 
 use crate::header::*;
-
-// -- Board --
 
 pub const BOARD_HEIGHT: usize = 40;
 pub const FULL_ROW: u16 = (1 << COL_NB) - 1; // 0x3FF
@@ -218,6 +216,10 @@ impl Board {
             }
         }
         output
+    }
+
+    pub fn row(&self, y: usize) -> u16 {
+        self.rows[y]
     }
 }
 
