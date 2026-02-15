@@ -11,3 +11,6 @@ pub mod perft;
 pub mod ruleset;
 pub mod search;
 pub mod state;
+
+#[cfg(feature = "wasm")]
+pub mod wasm;

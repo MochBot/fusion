@@ -3,6 +3,9 @@ name = "direct-cobra-copy"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [[bin]]
 name = "perft_cli"
 path = "src/bin/perft_cli.rs"
@@ -15,8 +18,16 @@ path = "src/bin/profile_perft.rs"
 name = "bench_perft"
 path = "src/bin/bench_perft.rs"
 
+[features]
+default = []
+wasm = ["dep:wasm-bindgen", "dep:serde", "dep:serde-wasm-bindgen", "dep:console_error_panic_hook"]
+
 [dependencies]
 rayon = "1.10"
+wasm-bindgen = { version = "0.2", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde-wasm-bindgen = { version = "0.6", optional = true }
+console_error_panic_hook = { version = "0.1", optional = true }
 
 [profile.release]
 opt-level = 3

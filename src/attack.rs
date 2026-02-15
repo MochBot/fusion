@@ -78,14 +78,16 @@ fn base_attack(lines: u8, spin: SpinType) -> f32 {
             2 => DOUBLE as f32,
             3 => TRIPLE as f32,
             4 => QUAD as f32,
-            _ => PENTA as f32,
+            5 => PENTA as f32,
+            _ => PENTA as f32 + (lines - 5) as f32,
         },
         SpinType::Mini => match lines {
             0 => SPIN_MINI as f32,
             1 => SPIN_MINI_SINGLE as f32,
             2 => SPIN_MINI_DOUBLE as f32,
             3 => SPIN_MINI_TRIPLE as f32,
-            _ => SPIN_QUAD as f32,
+            4 => SPIN_QUAD as f32,
+            _ => SPIN_QUAD as f32 + 2.0 * (lines - 4) as f32,
         },
         SpinType::Full => match lines {
             0 => SPIN as f32,
@@ -93,7 +95,8 @@ fn base_attack(lines: u8, spin: SpinType) -> f32 {
             2 => SPIN_DOUBLE as f32,
             3 => SPIN_TRIPLE as f32,
             4 => SPIN_QUAD as f32,
-            _ => SPIN_PENTA as f32,
+            5 => SPIN_PENTA as f32,
+            _ => SPIN_PENTA as f32 + 2.0 * (lines - 5) as f32,
         },
     }
 }
@@ -125,10 +128,10 @@ fn apply_combo(base: f32, combo: u8, table: ComboTable) -> f32 {
     match table {
         ComboTable::Multiplier => {
             let multiplied = base * (1.0 + COMBO_BONUS * combo as f32);
-            // for combo > 1, add a log floor component
+            // for combo > 1, log floor is a MINIMUM guarantee, not additive
             if combo > 1 {
                 let log_floor = (1.0 + combo as f32 * COMBO_FLOOR_SCALE).ln().floor();
-                multiplied + log_floor
+                f32::max(multiplied, base + log_floor)
             } else {
                 multiplied
             }
@@ -155,6 +158,34 @@ pub fn calculate_attack(
     config: &AttackConfig,
     is_perfect_clear: bool,
 ) -> f32 {
+    calculate_attack_full(
+        lines,
+        spin,
+        b2b,
+        combo,
+        config,
+        is_perfect_clear,
+        None,
+        false,
+    )
+}
+
+/// Extended attack calculation with surge release and garbage clear boost.
+///
+/// `b2b_broken_from`: if Some(prev_b2b) and prev_b2b >= 4, a non-difficult
+/// clear just broke a long B2B chain — release stored surge as bonus attack.
+///
+/// `clears_garbage`: if true and the clear is b2b-eligible, add +1.
+pub fn calculate_attack_full(
+    lines: u8,
+    spin: SpinType,
+    b2b: u8,
+    combo: u8,
+    config: &AttackConfig,
+    is_perfect_clear: bool,
+    b2b_broken_from: Option<u8>,
+    clears_garbage: bool,
+) -> f32 {
     if lines == 0 {
         return 0.0;
     }
@@ -179,6 +210,18 @@ pub fn calculate_attack(
     // perfect clear B2B bonus (separate from regular B2B)
     if is_perfect_clear && b2b > 0 {
         attack += config.pc_b2b as f32;
+    }
+
+    // surge release: non-difficult clear breaks a long B2B chain
+    if let Some(prev_b2b) = b2b_broken_from {
+        if prev_b2b >= 4 && !is_b2b_eligible {
+            attack += 4.0 + (prev_b2b - 4) as f32;
+        }
+    }
+
+    // garbage clear boost: difficult clear that also clears garbage
+    if clears_garbage && is_b2b_eligible {
+        attack += 1.0;
     }
 
     // combo
@@ -368,5 +411,143 @@ mod tests {
         let dmg = calculate_attack(2, SpinType::Full, 3, 2, &tl(), false);
         // base=4, b2b chaining bonus for b2b=3, combo multiplier
         assert!(dmg > 4.0, "stacked bonuses should exceed base");
+    }
+
+    // --- Fix #3: >5 line scaling ---
+
+    #[test]
+    fn test_nospin_6_lines() {
+        // 5 + (6-5) = 6
+        let dmg = calculate_attack(6, SpinType::NoSpin, 0, 0, &tl(), false);
+        assert_eq!(dmg, 6.0);
+    }
+
+    #[test]
+    fn test_nospin_8_lines() {
+        // 5 + (8-5) = 8
+        let dmg = calculate_attack(8, SpinType::NoSpin, 0, 0, &tl(), false);
+        assert_eq!(dmg, 8.0);
+    }
+
+    #[test]
+    fn test_full_spin_6_lines() {
+        // 12 + 2*(6-5) = 14
+        let dmg = calculate_attack(6, SpinType::Full, 0, 0, &tl(), false);
+        assert_eq!(dmg, 14.0);
+    }
+
+    #[test]
+    fn test_mini_spin_5_lines() {
+        // SPIN_QUAD(10) + 2*(5-4) = 12
+        let dmg = calculate_attack(5, SpinType::Mini, 0, 0, &tl(), false);
+        assert_eq!(dmg, 12.0);
+    }
+
+    #[test]
+    fn test_full_spin_7_lines() {
+        // 12 + 2*(7-5) = 16
+        let dmg = calculate_attack(7, SpinType::Full, 0, 0, &tl(), false);
+        assert_eq!(dmg, 16.0);
+    }
+
+    // --- Fix #2: Combo minifier (max semantics) ---
+
+    #[test]
+    fn test_combo_multiplier_max_semantics() {
+        // combo=2, base=4 (quad, no b2b)
+        // multiplied = 4*(1+0.25*2) = 6.0
+        // log_floor = floor(ln(1+2*1.25)) = floor(ln(3.5)) = floor(1.25) = 1
+        // result = max(6.0, 4.0+1.0) = 6.0 (multiplier wins)
+        let dmg = calculate_attack(4, SpinType::NoSpin, 0, 2, &tl(), false);
+        assert_eq!(dmg, 6.0);
+    }
+
+    #[test]
+    fn test_combo_log_floor_kicks_in_low_base() {
+        // combo=4, base=1 (double, no b2b)
+        // multiplied = 1*(1+0.25*4) = 2.0
+        // log_floor = floor(ln(1+4*1.25)) = floor(ln(6)) = floor(1.79) = 1
+        // result = max(2.0, 1.0+1.0) = 2.0 (multiplier still wins here)
+        let dmg = calculate_attack(2, SpinType::NoSpin, 0, 4, &tl(), false);
+        assert_eq!(dmg, 2.0);
+    }
+
+    #[test]
+    fn test_combo_high_combo_log_floor_as_minimum() {
+        // combo=8, base=0 (single=0 base, no b2b)
+        // multiplied = 0*(1+0.25*8) = 0.0
+        // log_floor = floor(ln(1+8*1.25)) = floor(ln(11)) = floor(2.39) = 2
+        // result = max(0.0, 0.0+2.0) = 2.0 (log floor guarantees minimum)
+        let dmg = calculate_attack(1, SpinType::NoSpin, 0, 8, &tl(), false);
+        assert_eq!(dmg, 2.0);
+    }
+
+    // --- Fix #1: Surge release ---
+
+    #[test]
+    fn test_surge_release_b2b4_broken() {
+        // single clear (non-difficult) breaks b2b=4 chain
+        // base=0, surge = 4 + (4-4) = 4
+        let dmg = calculate_attack_full(1, SpinType::NoSpin, 0, 0, &tl(), false, Some(4), false);
+        assert_eq!(dmg, 4.0);
+    }
+
+    #[test]
+    fn test_surge_release_b2b7_broken() {
+        // double clear (non-difficult) breaks b2b=7 chain
+        // base=1, surge = 4 + (7-4) = 7, total = 8
+        let dmg = calculate_attack_full(2, SpinType::NoSpin, 0, 0, &tl(), false, Some(7), false);
+        assert_eq!(dmg, 8.0);
+    }
+
+    #[test]
+    fn test_surge_release_not_triggered_by_difficult_clear() {
+        // quad (b2b-eligible) should NOT trigger surge release even if b2b_broken_from
+        let with_surge =
+            calculate_attack_full(4, SpinType::NoSpin, 0, 0, &tl(), false, Some(6), false);
+        let without_surge =
+            calculate_attack_full(4, SpinType::NoSpin, 0, 0, &tl(), false, None, false);
+        assert_eq!(with_surge, without_surge);
+    }
+
+    #[test]
+    fn test_surge_release_not_triggered_below_4() {
+        // b2b_broken_from=3, below threshold — no surge
+        let dmg = calculate_attack_full(1, SpinType::NoSpin, 0, 0, &tl(), false, Some(3), false);
+        assert_eq!(dmg, 0.0);
+    }
+
+    #[test]
+    fn test_old_api_unchanged() {
+        // old 6-arg API passes defaults (no surge, no garbage boost)
+        let old = calculate_attack(4, SpinType::NoSpin, 0, 0, &tl(), false);
+        let new = calculate_attack_full(4, SpinType::NoSpin, 0, 0, &tl(), false, None, false);
+        assert_eq!(old, new);
+    }
+
+    // --- Fix #4: Garbage clear boost ---
+
+    #[test]
+    fn test_garbage_clear_boost_on_quad() {
+        // quad (b2b-eligible) + clears garbage = +1
+        let without = calculate_attack_full(4, SpinType::NoSpin, 0, 0, &tl(), false, None, false);
+        let with = calculate_attack_full(4, SpinType::NoSpin, 0, 0, &tl(), false, None, true);
+        assert_eq!(with - without, 1.0);
+    }
+
+    #[test]
+    fn test_garbage_clear_boost_on_spin() {
+        // spin single (b2b-eligible) + clears garbage = +1
+        let without = calculate_attack_full(1, SpinType::Full, 0, 0, &tl(), false, None, false);
+        let with = calculate_attack_full(1, SpinType::Full, 0, 0, &tl(), false, None, true);
+        assert_eq!(with - without, 1.0);
+    }
+
+    #[test]
+    fn test_garbage_clear_boost_not_on_non_difficult() {
+        // double clear (not b2b-eligible, no spin) — no boost
+        let without = calculate_attack_full(2, SpinType::NoSpin, 0, 0, &tl(), false, None, false);
+        let with = calculate_attack_full(2, SpinType::NoSpin, 0, 0, &tl(), false, None, true);
+        assert_eq!(without, with);
     }
 }
