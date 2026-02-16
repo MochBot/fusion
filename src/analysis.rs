@@ -1,27 +1,27 @@
-// analysis.rs -- misdrop detection + eval meter for coaching
+// analysis.rs -- move evaluation + eval meter for coaching
 
-use crate::eval::{evaluate, evaluate_move, EvalWeights};
+use crate::eval::{evaluate, EvalWeights};
 use crate::header::Move;
 use crate::search::{find_best_move, SearchConfig};
 use crate::state::GameState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MisdropSeverity {
+pub enum Severity {
     None,
     Inaccuracy,
     Mistake,
     Blunder,
 }
 
-fn classify(eval_loss: f32) -> MisdropSeverity {
+fn classify(eval_loss: f32) -> Severity {
     if eval_loss < 0.5 {
-        MisdropSeverity::None
-    } else if eval_loss < 2.0 {
-        MisdropSeverity::Inaccuracy
-    } else if eval_loss < 5.0 {
-        MisdropSeverity::Mistake
+        Severity::None
+    } else if eval_loss < 1.5 {
+        Severity::Inaccuracy
+    } else if eval_loss < 3.0 {
+        Severity::Mistake
     } else {
-        MisdropSeverity::Blunder
+        Severity::Blunder
     }
 }
 
@@ -33,7 +33,7 @@ pub struct MoveAnalysis {
     pub best_move: Move,
     pub best_hold_used: bool,
     pub eval_loss: f32,
-    pub severity: MisdropSeverity,
+    pub severity: Severity,
     pub meter_value: f32,
 }
 
@@ -113,7 +113,7 @@ impl Default for EvalMeter {
 fn analyze_move_inner(
     state: &GameState,
     actual_move: &Move,
-    lines_cleared: u8,
+    _lines_cleared: u8,
     weights: &EvalWeights,
     config: &SearchConfig,
 ) -> MoveAnalysis {
@@ -121,20 +121,8 @@ fn analyze_move_inner(
 
     let mut result_board = state.board.clone();
     result_board.do_move(actual_move);
-    let spin = actual_move.spin();
-    let is_pc = lines_cleared > 0 && result_board.empty();
 
-    let eval_after = evaluate_move(
-        &result_board,
-        actual_move,
-        lines_cleared,
-        spin,
-        state.b2b,
-        state.combo,
-        is_pc,
-        &config.attack_config,
-        weights,
-    );
+    let eval_after = evaluate(&result_board, weights);
 
     let search_result = find_best_move(state, config, weights);
 
@@ -159,7 +147,7 @@ fn analyze_move_inner(
     }
 }
 
-pub fn detect_misdrop(
+pub fn evaluate_move(
     state: &GameState,
     actual_move: &Move,
     lines_cleared: u8,
@@ -173,6 +161,7 @@ pub fn detect_misdrop(
 mod tests {
     use super::*;
     use crate::board::Board;
+    use crate::eval::evaluate;
     use crate::header::Piece;
     use crate::movegen::{generate, MoveBuffer};
 
@@ -189,7 +178,7 @@ mod tests {
     }
 
     #[test]
-    fn test_perfect_play_no_misdrop() {
+    fn test_perfect_play_no_eval_loss() {
         let state = GameState::new(Board::new(), Piece::T, vec![Piece::I]);
         let (best, _) = find_engine_best(&state);
 
@@ -202,11 +191,11 @@ mod tests {
             depth: 1,
             ..SearchConfig::default()
         };
-        let analysis = detect_misdrop(&state, &best, lines, &weights, &config);
+        let analysis = evaluate_move(&state, &best, lines, &weights, &config);
 
         assert_eq!(
             analysis.severity,
-            MisdropSeverity::None,
+            Severity::None,
             "playing the engine's best move should be None, loss={}",
             analysis.eval_loss
         );
@@ -231,20 +220,8 @@ mod tests {
         let mut worst_score = f32::INFINITY;
         for m in moves.as_slice() {
             let mut b = state.board.clone();
-            let lines = b.do_move(m) as u8;
-            let spin = m.spin();
-            let is_pc = lines > 0 && b.empty();
-            let score = evaluate_move(
-                &b,
-                m,
-                lines,
-                spin,
-                state.b2b,
-                state.combo,
-                is_pc,
-                &config.attack_config,
-                &weights,
-            );
+            b.do_move(m);
+            let score = evaluate(&b, &weights);
             if score < worst_score {
                 worst_score = score;
                 worst_move = *m;
@@ -254,7 +231,7 @@ mod tests {
         if worst_move.raw() != sr.best_move.raw() {
             let mut b = state.board.clone();
             let lines = b.do_move(&worst_move) as u8;
-            let analysis = detect_misdrop(&state, &worst_move, lines, &weights, &config);
+            let analysis = evaluate_move(&state, &worst_move, lines, &weights, &config);
             assert!(
                 analysis.eval_loss > 0.0,
                 "worst move should have positive eval loss"
@@ -291,20 +268,8 @@ mod tests {
         let mut worst_score = f32::INFINITY;
         for m in moves.as_slice() {
             let mut b = state.board.clone();
-            let lines = b.do_move(m) as u8;
-            let spin = m.spin();
-            let is_pc = lines > 0 && b.empty();
-            let score = evaluate_move(
-                &b,
-                m,
-                lines,
-                spin,
-                state.b2b,
-                state.combo,
-                is_pc,
-                &config.attack_config,
-                &weights,
-            );
+            b.do_move(m);
+            let score = evaluate(&b, &weights);
             if score < worst_score {
                 worst_score = score;
                 worst_move = *m;
@@ -314,7 +279,7 @@ mod tests {
         if worst_move.raw() != sr.best_move.raw() {
             let mut b = state.board.clone();
             let lines = b.do_move(&worst_move) as u8;
-            let analysis = detect_misdrop(&state, &worst_move, lines, &weights, &config);
+            let analysis = evaluate_move(&state, &worst_move, lines, &weights, &config);
             assert!(analysis.eval_loss > 0.0);
         }
     }
@@ -335,7 +300,7 @@ mod tests {
 
         let mut b = state.board.clone();
         let lines = b.do_move(m) as u8;
-        let analysis = detect_misdrop(&state, m, lines, &weights, &config);
+        let analysis = evaluate_move(&state, m, lines, &weights, &config);
 
         assert!(
             analysis.meter_value >= -100.0 && analysis.meter_value <= 100.0,
@@ -387,7 +352,7 @@ mod tests {
     }
 
     #[test]
-    fn test_detect_misdrop_matches_meter() {
+    fn test_evaluate_move_matches_meter() {
         let state = GameState::new(Board::new(), Piece::T, vec![Piece::I, Piece::O]);
         let weights = EvalWeights::default();
         let config = SearchConfig {
@@ -402,7 +367,7 @@ mod tests {
         let mut b = state.board.clone();
         let lines = b.do_move(m) as u8;
 
-        let standalone = detect_misdrop(&state, m, lines, &weights, &config);
+        let standalone = evaluate_move(&state, m, lines, &weights, &config);
 
         let mut meter = EvalMeter::with_config(weights.clone(), config);
         let metered = meter.analyze_move(&state, m, lines);

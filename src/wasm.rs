@@ -396,27 +396,14 @@ pub fn get_all_moves_wasm(board: &JsBoard, piece: u8) -> JsValue {
     generate(&board.inner, &mut moves, p, true);
 
     let weights = EvalWeights::default();
-    let config = AttackConfig::tetra_league();
 
     let results: Vec<MoveResultJson> = moves
         .as_slice()
         .iter()
         .map(|m| {
             let mut result_board = board.inner.clone();
-            let lines = result_board.do_move(m);
-            let spin = m.spin();
-            let is_pc = lines > 0 && result_board.empty();
-            let score = eval::evaluate_move(
-                &result_board,
-                m,
-                lines as u8,
-                spin,
-                0,
-                0,
-                is_pc,
-                &config,
-                &weights,
-            );
+            result_board.do_move(m);
+            let score = eval::evaluate(&result_board, &weights);
             MoveResultJson {
                 piece: piece_to_external(m.piece()),
                 rotation: m.rotation() as u8,
@@ -450,17 +437,12 @@ pub fn evaluate_with_weights_wasm(
     weights.height = height;
     weights.holes = holes;
     weights.bumpiness = bumpiness;
-    weights.tetris_well_depth = wells;
+    weights.well_depth = wells;
     eval::evaluate(&board.inner, &weights)
 }
 
-#[wasm_bindgen(js_name = "detect_misdrop")]
-pub fn detect_misdrop_wasm(
-    board: &JsBoard,
-    piece: u8,
-    player_move: &JsMove,
-    frame: u32,
-) -> JsValue {
+#[wasm_bindgen(js_name = "evaluate_move")]
+pub fn evaluate_move_wasm(board: &JsBoard, piece: u8, player_move: &JsMove, frame: u32) -> JsValue {
     let p = match piece_from_external(piece) {
         Some(p) => p,
         None => return JsValue::NULL,
@@ -476,9 +458,9 @@ pub fn detect_misdrop_wasm(
     let mut result_board = board.inner.clone();
     let lines = result_board.do_move(&internal_move);
 
-    let result = analysis::detect_misdrop(&state, &internal_move, lines as u8, &weights, &config);
+    let result = analysis::evaluate_move(&state, &internal_move, lines as u8, &weights, &config);
 
-    let json = MisdropResultJson {
+    let json = MoveEvalResultJson {
         eval_before: result.eval_before,
         eval_after: result.eval_after,
         best_eval: result.best_eval,
@@ -493,10 +475,10 @@ pub fn detect_misdrop_wasm(
         },
         eval_loss: result.eval_loss,
         severity: match result.severity {
-            analysis::MisdropSeverity::None => "none",
-            analysis::MisdropSeverity::Inaccuracy => "inaccuracy",
-            analysis::MisdropSeverity::Mistake => "mistake",
-            analysis::MisdropSeverity::Blunder => "blunder",
+            analysis::Severity::None => "none",
+            analysis::Severity::Inaccuracy => "inaccuracy",
+            analysis::Severity::Mistake => "mistake",
+            analysis::Severity::Blunder => "blunder",
         }
         .to_string(),
         meter_value: result.meter_value,
@@ -542,7 +524,7 @@ pub fn analyze_replay_wasm(frames: JsValue) -> JsValue {
             let lines = result_board.do_move(&internal_move);
 
             let analysis =
-                analysis::detect_misdrop(&state, &internal_move, lines as u8, &weights, &config);
+                analysis::evaluate_move(&state, &internal_move, lines as u8, &weights, &config);
 
             results.push(ReplayAnalysisJson {
                 eval_before: analysis.eval_before,
@@ -550,10 +532,10 @@ pub fn analyze_replay_wasm(frames: JsValue) -> JsValue {
                 best_eval: analysis.best_eval,
                 eval_loss: analysis.eval_loss,
                 severity: match analysis.severity {
-                    analysis::MisdropSeverity::None => "none",
-                    analysis::MisdropSeverity::Inaccuracy => "inaccuracy",
-                    analysis::MisdropSeverity::Mistake => "mistake",
-                    analysis::MisdropSeverity::Blunder => "blunder",
+                    analysis::Severity::None => "none",
+                    analysis::Severity::Inaccuracy => "inaccuracy",
+                    analysis::Severity::Mistake => "mistake",
+                    analysis::Severity::Blunder => "blunder",
                 }
                 .to_string(),
                 meter_value: analysis.meter_value,
@@ -580,7 +562,7 @@ struct MoveResultJson {
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
-struct MisdropResultJson {
+struct MoveEvalResultJson {
     eval_before: f32,
     eval_after: f32,
     best_eval: f32,

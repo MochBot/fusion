@@ -3,7 +3,7 @@
 
 use crate::attack::AttackConfig;
 use crate::board::Board;
-use crate::eval::{evaluate_move, EvalWeights};
+use crate::eval::{evaluate, EvalWeights};
 use crate::header::*;
 use crate::movegen::{generate, MoveBuffer};
 use crate::state::GameState;
@@ -31,19 +31,13 @@ pub struct SearchResult {
     pub pv: Vec<Move>,
 }
 
-/// internal node tracked during search
 #[derive(Clone)]
 struct SearchNode {
     board: Board,
     score: f32,
-    b2b: u8,
-    combo: u32,
     hold: Option<Piece>,
-    /// first move in the path (what we actually return)
     root_move: Move,
-    /// whether the first move used hold
     root_hold_used: bool,
-    /// full move sequence for PV
     path: Vec<Move>,
 }
 
@@ -127,23 +121,19 @@ pub fn find_best_move(
     })
 }
 
-/// expand the root position — generate all moves for current and hold pieces
 fn expand_root(
     state: &GameState,
     weights: &EvalWeights,
-    attack_config: &AttackConfig,
+    _attack_config: &AttackConfig,
 ) -> Vec<SearchNode> {
     let mut nodes = Vec::with_capacity(128);
 
     gen_and_eval_root(
         &state.board,
         state.current,
-        state.b2b,
-        state.combo,
         state.hold,
         false,
         weights,
-        attack_config,
         &mut nodes,
     );
 
@@ -152,12 +142,9 @@ fn expand_root(
             gen_and_eval_root(
                 &state.board,
                 held,
-                state.b2b,
-                state.combo,
                 Some(state.current),
                 true,
                 weights,
-                attack_config,
                 &mut nodes,
             );
         }
@@ -167,12 +154,9 @@ fn expand_root(
                 gen_and_eval_root(
                     &state.board,
                     next,
-                    state.b2b,
-                    state.combo,
                     Some(state.current),
                     true,
                     weights,
-                    attack_config,
                     &mut nodes,
                 );
             }
@@ -183,17 +167,12 @@ fn expand_root(
     nodes
 }
 
-/// generate all moves for a piece on a board, evaluate each, push to nodes
-#[allow(clippy::too_many_arguments)]
 fn gen_and_eval_root(
     board: &Board,
     piece: Piece,
-    b2b: u8,
-    combo: u32,
     new_hold: Option<Piece>,
     hold_used: bool,
     weights: &EvalWeights,
-    attack_config: &AttackConfig,
     nodes: &mut Vec<SearchNode>,
 ) {
     let mut moves = MoveBuffer::new();
@@ -201,40 +180,13 @@ fn gen_and_eval_root(
 
     for m in moves.as_slice() {
         let mut result_board = board.clone();
-        let lines = result_board.do_move(m);
-        let lines_u8 = lines as u8;
-        let spin = m.spin();
-        let is_pc = lines > 0 && result_board.empty();
+        result_board.do_move(m);
 
-        let is_b2b_eligible = spin != SpinType::NoSpin || lines >= 4;
-        let new_b2b = if lines > 0 {
-            if is_b2b_eligible {
-                b2b + 1
-            } else {
-                0
-            }
-        } else {
-            b2b
-        };
-        let new_combo = if lines > 0 { combo + 1 } else { 0 };
-
-        let score = evaluate_move(
-            &result_board,
-            m,
-            lines_u8,
-            spin,
-            b2b,
-            combo,
-            is_pc,
-            attack_config,
-            weights,
-        );
+        let score = evaluate(&result_board, weights);
 
         nodes.push(SearchNode {
             board: result_board,
             score,
-            b2b: new_b2b,
-            combo: new_combo,
             hold: new_hold,
             root_move: *m,
             root_hold_used: hold_used,
@@ -248,7 +200,7 @@ fn expand_node(
     piece: Piece,
     new_hold: Option<Piece>,
     weights: &EvalWeights,
-    attack_config: &AttackConfig,
+    _attack_config: &AttackConfig,
     out: &mut Vec<SearchNode>,
 ) {
     let mut moves = MoveBuffer::new();
@@ -256,34 +208,9 @@ fn expand_node(
 
     for m in moves.as_slice() {
         let mut result_board = parent.board.clone();
-        let lines = result_board.do_move(m);
-        let lines_u8 = lines as u8;
-        let spin = m.spin();
-        let is_pc = lines > 0 && result_board.empty();
+        result_board.do_move(m);
 
-        let is_b2b_eligible = spin != SpinType::NoSpin || lines >= 4;
-        let new_b2b = if lines > 0 {
-            if is_b2b_eligible {
-                parent.b2b + 1
-            } else {
-                0
-            }
-        } else {
-            parent.b2b
-        };
-        let new_combo = if lines > 0 { parent.combo + 1 } else { 0 };
-
-        let score = evaluate_move(
-            &result_board,
-            m,
-            lines_u8,
-            spin,
-            parent.b2b,
-            parent.combo,
-            is_pc,
-            attack_config,
-            weights,
-        );
+        let score = evaluate(&result_board, weights);
 
         let mut path = parent.path.clone();
         path.push(*m);
@@ -291,8 +218,6 @@ fn expand_node(
         out.push(SearchNode {
             board: result_board,
             score,
-            b2b: new_b2b,
-            combo: new_combo,
             hold: new_hold,
             root_move: parent.root_move,
             root_hold_used: parent.root_hold_used,
