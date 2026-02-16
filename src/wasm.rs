@@ -393,7 +393,7 @@ pub fn get_all_moves_wasm(board: &JsBoard, piece: u8) -> JsValue {
     };
 
     let mut moves = MoveBuffer::new();
-    generate(&board.inner, &mut moves, p, false);
+    generate(&board.inner, &mut moves, p, true);
 
     let weights = EvalWeights::default();
     let config = AttackConfig::tetra_league();

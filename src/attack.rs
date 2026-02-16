@@ -197,9 +197,12 @@ pub fn calculate_attack_full(
         attack += config.pc_garbage as f32;
     }
 
-    // B2B bonus: only if b2b > 0 and this clear qualifies (spin or quad+)
     let is_b2b_eligible = spin != SpinType::NoSpin || lines >= 4;
-    if b2b > 0 && is_b2b_eligible {
+
+    // B2B bonus: trust the caller's b2b value — eligibility is enforced
+    // upstream (engine resets b2b to -1 for non-eligible clears). A positive
+    // b2b here is always legitimate (e.g. PC preserves the chain).
+    if b2b > 0 {
         if config.b2b_chaining {
             attack += b2b_chaining_bonus(b2b);
         } else {
@@ -337,11 +340,13 @@ mod tests {
     }
 
     #[test]
-    fn test_b2b_not_applied_to_singles() {
-        // single clear with b2b=5 should NOT get B2B bonus (not eligible)
+    fn test_b2b_applied_when_caller_passes_positive() {
         let dmg_no_b2b = calculate_attack(1, SpinType::NoSpin, 0, 0, &tl(), false);
         let dmg_with_b2b = calculate_attack(1, SpinType::NoSpin, 5, 0, &tl(), false);
-        assert_eq!(dmg_no_b2b, dmg_with_b2b);
+        assert!(
+            dmg_with_b2b > dmg_no_b2b,
+            "b2b>0 must always apply bonus (caller enforces eligibility)"
+        );
     }
 
     #[test]
