@@ -435,7 +435,7 @@ pub fn get_all_moves_wasm(board: &JsBoard, piece: u8) -> JsValue {
 #[wasm_bindgen(js_name = "evaluate_board")]
 pub fn evaluate_board_wasm(board: &JsBoard) -> f32 {
     let weights = EvalWeights::default();
-    eval::evaluate(&board.inner, &weights) as f32
+    eval::evaluate(&board.inner, &weights)
 }
 
 #[wasm_bindgen(js_name = "evaluate_with_weights")]
@@ -447,11 +447,11 @@ pub fn evaluate_with_weights_wasm(
     wells: f32,
 ) -> f32 {
     let mut weights = EvalWeights::default();
-    weights.height = height as i32;
-    weights.hole_cells = holes as i32;
-    weights.bumpiness = bumpiness as i32;
-    weights.well_depth = wells as i32;
-    eval::evaluate(&board.inner, &weights) as f32
+    weights.height = height;
+    weights.holes = holes;
+    weights.bumpiness = bumpiness;
+    weights.tetris_well_depth = wells;
+    eval::evaluate(&board.inner, &weights)
 }
 
 #[wasm_bindgen(js_name = "detect_misdrop")]
@@ -574,20 +574,20 @@ struct MoveResultJson {
     rotation: u8,
     x: i8,
     y: i8,
-    score: i32,
+    score: f32,
     spin: u8,
     hold_used: bool,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct MisdropResultJson {
-    eval_before: i32,
-    eval_after: i32,
-    best_eval: i32,
+    eval_before: f32,
+    eval_after: f32,
+    best_eval: f32,
     best_move: MoveResultJson,
-    eval_loss: i32,
+    eval_loss: f32,
     severity: String,
-    meter_value: i32,
+    meter_value: f32,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -609,10 +609,10 @@ struct ReplayMoveJson {
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct ReplayAnalysisJson {
-    eval_before: i32,
-    eval_after: i32,
-    best_eval: i32,
-    eval_loss: i32,
+    eval_before: f32,
+    eval_after: f32,
+    best_eval: f32,
+    eval_loss: f32,
     severity: String,
-    meter_value: i32,
+    meter_value: f32,
 }

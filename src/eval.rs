@@ -1,65 +1,70 @@
 // eval.rs -- heuristic evaluation using real TETR.IO S2 attack values
 // board quality + garbage-based move scoring for coaching engine
 
-use crate::attack::{calculate_attack, AttackConfig};
+use crate::attack::AttackConfig;
 use crate::board::Board;
 use crate::header::*;
 
 #[derive(Clone, Debug)]
 pub struct EvalWeights {
     // board quality (static)
-    pub hole_cells: i32,
-    pub covered_cells: i32,
-    pub covered_cells_sq: i32,
+    pub holes: f32,
+    pub cell_coveredness: f32,
 
     // height danger
-    pub height: i32,
-    pub top_half: i32,
-    pub top_quarter: i32,
+    pub height: f32,
+    pub height_upper_half: f32,
+    pub height_upper_quarter: f32,
 
     // surface quality
-    pub bumpiness: i32,
-    pub bumpiness_sq: i32,
-    pub row_transitions: i32,
+    pub bumpiness: f32,
+    pub bumpiness_sq: f32,
+    pub row_transitions: f32,
 
     // well / tetris potential
-    pub well_depth: i32,
-    pub max_well_depth: i32,
+    pub tetris_well_depth: f32,
 
-    // attack scaling
-    pub attack_weight: i32,
-    pub surge_value: i32,
-    pub surge_break_penalty: i32,
+    pub tslot: [f32; 4],
+    pub has_back_to_back: f32,
+
+    pub normal_clears: [f32; 5],
+    pub spin_clears: [f32; 4],
+    pub mini_spin_clears: [f32; 3],
+    pub back_to_back_clear: f32,
+    pub combo_attack: f32,
+    pub perfect_clear: f32,
 
     // T-piece waste
-    pub wasted_t: i32,
-    pub tslot: i32,
+    pub wasted_t: f32,
 }
 
 impl Default for EvalWeights {
     fn default() -> Self {
         Self {
-            hole_cells: -173,
-            covered_cells: -17,
-            covered_cells_sq: -1,
+            holes: -1.5,
+            cell_coveredness: -0.2,
 
-            height: -39,
-            top_half: -150,
-            top_quarter: -511,
+            height: -0.4,
+            height_upper_half: -1.5,
+            height_upper_quarter: -5.0,
 
-            bumpiness: -24,
-            bumpiness_sq: -7,
-            row_transitions: -5,
+            bumpiness: -0.2,
+            bumpiness_sq: -0.05,
+            row_transitions: -0.2,
 
-            well_depth: 57,
-            max_well_depth: 17,
+            tetris_well_depth: 0.3,
 
-            attack_weight: 150,
-            surge_value: 50,
-            surge_break_penalty: -200,
+            tslot: [0.1, 1.5, 2.0, 4.0],
+            has_back_to_back: 0.5,
 
-            wasted_t: -152,
-            tslot: 0,
+            normal_clears: [0.0, -2.0, -1.5, -1.0, 3.5],
+            spin_clears: [0.0, 1.0, 4.0, 6.0],
+            mini_spin_clears: [0.0, -1.5, -1.0],
+            back_to_back_clear: 1.0,
+            combo_attack: 1.5,
+            perfect_clear: 15.0,
+
+            wasted_t: -1.5,
         }
     }
 }
@@ -192,9 +197,25 @@ fn find_well(heights: &[usize; COL_NB]) -> (Option<usize>, i32) {
     (best_col, best_depth)
 }
 
+fn tslot_tier(heights: &[usize; COL_NB]) -> usize {
+    let mut slots = 0usize;
+
+    for x in 1..(COL_NB - 1) {
+        let left = heights[x - 1] as i32;
+        let mid = heights[x] as i32;
+        let right = heights[x + 1] as i32;
+        let notch_depth = left.min(right) - mid;
+        if notch_depth >= 2 {
+            slots += 1;
+        }
+    }
+
+    slots.min(3)
+}
+
 /// evaluate board quality (static position score)
 /// higher = better
-pub fn evaluate(board: &Board, weights: &EvalWeights) -> i32 {
+pub fn evaluate(board: &Board, weights: &EvalWeights) -> f32 {
     let heights = column_heights(board);
     let max_h = heights.iter().copied().max().unwrap_or(0);
 
@@ -202,36 +223,51 @@ pub fn evaluate(board: &Board, weights: &EvalWeights) -> i32 {
     let (well_col, well_depth) = find_well(&heights);
     let (bump, bump_sq) = bumpiness(&heights, well_col);
     let transitions = row_transitions(board, max_h);
+    let tslot_tier = tslot_tier(&heights);
 
-    let mut score = 0i32;
+    let mut score = 0.0f32;
 
     // holes
-    score += weights.hole_cells * holes;
-    score += weights.covered_cells * covered;
-    score += weights.covered_cells_sq * covered * covered;
+    score += weights.holes * holes as f32;
+    score += weights.cell_coveredness * covered as f32;
 
     // height
-    score += weights.height * (max_h as i32);
+    score += weights.height * max_h as f32;
     if max_h > 10 {
-        score += weights.top_half * ((max_h - 10) as i32);
+        score += weights.height_upper_half * (max_h - 10) as f32;
     }
     if max_h > 15 {
-        score += weights.top_quarter * ((max_h - 15) as i32);
+        score += weights.height_upper_quarter * (max_h - 15) as f32;
     }
 
     // surface
-    score += weights.bumpiness * bump;
-    score += weights.bumpiness_sq * bump_sq;
-    score += weights.row_transitions * transitions;
+    score += weights.bumpiness * bump as f32;
+    score += weights.bumpiness_sq * bump_sq as f32;
+    score += weights.row_transitions * transitions as f32;
 
     // well potential (reward having a clean well for tetrises)
-    score += weights.well_depth * well_depth;
-    // bonus for deep wells (max_well_depth applies only to depth > 1)
-    if well_depth > 1 {
-        score += weights.max_well_depth * (well_depth - 1);
-    }
+    score += weights.tetris_well_depth * well_depth as f32;
+
+    score += weights.tslot[tslot_tier];
 
     score
+}
+
+fn clear_reward(lines_cleared: u8, spin: SpinType, weights: &EvalWeights) -> f32 {
+    match spin {
+        SpinType::NoSpin => {
+            let idx = usize::from(lines_cleared).min(weights.normal_clears.len() - 1);
+            weights.normal_clears[idx]
+        }
+        SpinType::Mini => {
+            let idx = usize::from(lines_cleared).min(weights.mini_spin_clears.len() - 1);
+            weights.mini_spin_clears[idx]
+        }
+        SpinType::Full => {
+            let idx = usize::from(lines_cleared).min(weights.spin_clears.len() - 1);
+            weights.spin_clears[idx]
+        }
+    }
 }
 
 /// evaluate a move — board quality + real garbage sent via attack calc
@@ -244,10 +280,14 @@ pub fn evaluate_move(
     b2b_before: u8,
     combo: u32,
     is_pc: bool,
-    config: &AttackConfig,
+    _config: &AttackConfig,
     weights: &EvalWeights,
-) -> i32 {
+) -> f32 {
     let mut score = evaluate(result_board, weights);
+
+    if b2b_before > 0 {
+        score += weights.has_back_to_back;
+    }
 
     if lines_cleared == 0 {
         // no clear — penalize wasted T
@@ -257,16 +297,19 @@ pub fn evaluate_move(
         return score;
     }
 
-    // real garbage via S2 attack formula
-    let garbage = calculate_attack(lines_cleared, spin, b2b_before, combo as u8, config, is_pc);
-    score += (garbage * weights.attack_weight as f32) as i32;
+    score += clear_reward(lines_cleared, spin, weights);
 
-    // surge tracking: B2B chain maintenance
     let is_b2b_eligible = spin != SpinType::NoSpin || lines_cleared >= 4;
-    if is_b2b_eligible {
-        score += weights.surge_value;
-    } else {
-        score += weights.surge_break_penalty;
+    if is_b2b_eligible && b2b_before > 0 {
+        score += weights.back_to_back_clear;
+    }
+
+    if combo > 0 {
+        score += combo as f32 * weights.combo_attack;
+    }
+
+    if is_pc {
+        score += weights.perfect_clear;
     }
 
     score
@@ -283,9 +326,12 @@ mod tests {
         let board = Board::new();
         let weights = EvalWeights::default();
         let score = evaluate(&board, &weights);
-        // empty board: no holes, no height, but well_depth should be 0
-        // (no column has both neighbors taller since all are 0)
-        assert_eq!(score, 0, "empty board should eval to 0");
+        assert!(
+            (score - weights.tslot[0]).abs() < 0.001,
+            "empty board score {} should equal no-slot baseline {}",
+            score,
+            weights.tslot[0]
+        );
     }
 
     #[test]

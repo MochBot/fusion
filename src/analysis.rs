@@ -13,12 +13,12 @@ pub enum MisdropSeverity {
     Blunder,
 }
 
-fn classify(eval_loss: i32) -> MisdropSeverity {
-    if eval_loss < 30 {
+fn classify(eval_loss: f32) -> MisdropSeverity {
+    if eval_loss < 0.5 {
         MisdropSeverity::None
-    } else if eval_loss < 80 {
+    } else if eval_loss < 2.0 {
         MisdropSeverity::Inaccuracy
-    } else if eval_loss < 200 {
+    } else if eval_loss < 5.0 {
         MisdropSeverity::Mistake
     } else {
         MisdropSeverity::Blunder
@@ -27,27 +27,26 @@ fn classify(eval_loss: i32) -> MisdropSeverity {
 
 #[derive(Debug, Clone)]
 pub struct MoveAnalysis {
-    pub eval_before: i32,
-    pub eval_after: i32,
-    pub best_eval: i32,
+    pub eval_before: f32,
+    pub eval_after: f32,
+    pub best_eval: f32,
     pub best_move: Move,
     pub best_hold_used: bool,
-    pub eval_loss: i32,
+    pub eval_loss: f32,
     pub severity: MisdropSeverity,
-    pub meter_value: i32,
+    pub meter_value: f32,
 }
 
-fn normalize_meter(raw_eval: i32) -> i32 {
-    // clamp raw to [-500, 500], scale to [-1000, 1000]
-    let clamped = raw_eval.clamp(-500, 500);
-    clamped * 2
+fn normalize_meter(raw_eval: f32) -> f32 {
+    let clamped = raw_eval.clamp(-15.0, 15.0);
+    (clamped / 15.0) * 100.0
 }
 
 pub struct EvalMeter {
     weights: EvalWeights,
     search_config: SearchConfig,
-    history: Vec<i32>,
-    baseline: i32,
+    history: Vec<f32>,
+    baseline: f32,
 }
 
 impl EvalMeter {
@@ -89,14 +88,14 @@ impl EvalMeter {
         result
     }
 
-    pub fn current_value(&self) -> i32 {
+    pub fn current_value(&self) -> f32 {
         self.history
             .last()
             .copied()
             .unwrap_or(normalize_meter(self.baseline))
     }
 
-    pub fn history(&self) -> &[i32] {
+    pub fn history(&self) -> &[f32] {
         &self.history
     }
 
@@ -144,7 +143,7 @@ fn analyze_move_inner(
         None => (eval_after, *actual_move, false),
     };
 
-    let eval_loss = (best_eval - eval_after).max(0);
+    let eval_loss = (best_eval - eval_after).max(0.0);
     let severity = classify(eval_loss);
     let meter_value = normalize_meter(eval_after);
 
@@ -229,7 +228,7 @@ mod tests {
         generate(&state.board, &mut moves, state.current, false);
 
         let mut worst_move = sr.best_move;
-        let mut worst_score = i32::MAX;
+        let mut worst_score = f32::INFINITY;
         for m in moves.as_slice() {
             let mut b = state.board.clone();
             let lines = b.do_move(m) as u8;
@@ -257,7 +256,7 @@ mod tests {
             let lines = b.do_move(&worst_move) as u8;
             let analysis = detect_misdrop(&state, &worst_move, lines, &weights, &config);
             assert!(
-                analysis.eval_loss > 0,
+                analysis.eval_loss > 0.0,
                 "worst move should have positive eval loss"
             );
         }
@@ -289,7 +288,7 @@ mod tests {
         generate(&state.board, &mut moves, state.current, false);
 
         let mut worst_move = sr.best_move;
-        let mut worst_score = i32::MAX;
+        let mut worst_score = f32::INFINITY;
         for m in moves.as_slice() {
             let mut b = state.board.clone();
             let lines = b.do_move(m) as u8;
@@ -316,7 +315,7 @@ mod tests {
             let mut b = state.board.clone();
             let lines = b.do_move(&worst_move) as u8;
             let analysis = detect_misdrop(&state, &worst_move, lines, &weights, &config);
-            assert!(analysis.eval_loss > 0);
+            assert!(analysis.eval_loss > 0.0);
         }
     }
 
@@ -339,7 +338,7 @@ mod tests {
         let analysis = detect_misdrop(&state, m, lines, &weights, &config);
 
         assert!(
-            analysis.meter_value >= -1000 && analysis.meter_value <= 1000,
+            analysis.meter_value >= -100.0 && analysis.meter_value <= 100.0,
             "meter_value {} out of range",
             analysis.meter_value
         );

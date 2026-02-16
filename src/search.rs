@@ -17,8 +17,8 @@ pub struct SearchConfig {
 impl Default for SearchConfig {
     fn default() -> Self {
         Self {
-            beam_width: 400,
-            depth: 2,
+            beam_width: 800,
+            depth: 6,
             attack_config: AttackConfig::tetra_league(),
         }
     }
@@ -27,7 +27,7 @@ impl Default for SearchConfig {
 pub struct SearchResult {
     pub best_move: Move,
     pub hold_used: bool,
-    pub score: i32,
+    pub score: f32,
     pub pv: Vec<Move>,
 }
 
@@ -35,7 +35,7 @@ pub struct SearchResult {
 #[derive(Clone)]
 struct SearchNode {
     board: Board,
-    score: i32,
+    score: f32,
     b2b: u8,
     combo: u32,
     hold: Option<Piece>,
@@ -67,7 +67,7 @@ pub fn find_best_move(
     }
 
     // sort descending by score, truncate to beam width
-    beam.sort_unstable_by(|a, b| b.score.cmp(&a.score));
+    beam.sort_unstable_by(|a, b| b.score.total_cmp(&a.score));
     beam.truncate(config.beam_width);
 
     // expand remaining depths using queue pieces
@@ -113,7 +113,7 @@ pub fn find_best_move(
             break;
         }
 
-        next_beam.sort_unstable_by(|a, b| b.score.cmp(&a.score));
+        next_beam.sort_unstable_by(|a, b| b.score.total_cmp(&a.score));
         next_beam.truncate(config.beam_width);
         beam = next_beam;
     }
