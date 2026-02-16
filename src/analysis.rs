@@ -127,7 +127,13 @@ fn analyze_move_inner(
     let search_result = find_best_move(state, config, weights);
 
     let (best_eval, best_move, best_hold_used) = match search_result {
-        Some(sr) => (sr.score, sr.best_move, sr.hold_used),
+        Some(sr) => {
+            // compare immediate board quality (depth-1) not depth-N search score
+            let mut best_board = state.board.clone();
+            best_board.do_move(&sr.best_move);
+            let best_immediate_eval = evaluate(&best_board, weights);
+            (best_immediate_eval, sr.best_move, sr.hold_used)
+        }
         None => (eval_after, *actual_move, false),
     };
 

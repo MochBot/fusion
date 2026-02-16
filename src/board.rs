@@ -127,14 +127,18 @@ impl Board {
 
         let xu = x as usize;
         let yu = y as usize;
-        self.rows[yu] |= 1 << x;
-        self.cols[xu] |= 1u64 << y;
+        if xu < COL_NB && yu < BOARD_HEIGHT {
+            self.rows[yu] |= 1 << x;
+            self.cols[xu] |= 1u64 << y;
+        }
 
         for i in 0..3 {
             let cx = (pc[i].x as i32 + x) as usize;
             let cy = (pc[i].y as i32 + y) as usize;
-            self.rows[cy] |= 1 << cx;
-            self.cols[cx] |= 1u64 << cy;
+            if cx < COL_NB && cy < BOARD_HEIGHT {
+                self.rows[cy] |= 1 << cx;
+                self.cols[cx] |= 1u64 << cy;
+            }
         }
     }
 
@@ -155,6 +159,10 @@ impl Board {
     pub fn do_move(&mut self, m: &Move) -> i32 {
         debug_assert!(is_ok_move(m));
         debug_assert!(!self.obstructed_move(m));
+
+        if !is_ok_move(m) {
+            return 0;
+        }
 
         self.place(m);
         let clears = self.line_clears();

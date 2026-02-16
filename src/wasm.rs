@@ -69,6 +69,31 @@ fn piece_to_external(p: Piece) -> u8 {
     }
 }
 
+fn queue_from_external(queue: Option<&[u8]>) -> Vec<Piece> {
+    queue
+        .map(|q| {
+            q.iter()
+                .filter_map(|&id| piece_from_external(id))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn hold_from_external(hold: Option<u8>) -> Option<Piece> {
+    hold.and_then(piece_from_external)
+}
+
+fn game_state_from_external_context(
+    board: Board,
+    current: Piece,
+    queue: Option<&[u8]>,
+    hold: Option<u8>,
+) -> GameState {
+    let mut state = GameState::new(board, current, queue_from_external(queue));
+    state.hold = hold_from_external(hold);
+    state
+}
+
 fn rotation_from_u8(v: u8) -> Option<Rotation> {
     match v {
         0 => Some(Rotation::North),
@@ -364,8 +389,11 @@ pub fn find_best_move_wasm(board: &JsBoard, piece: u8) -> JsValue {
         None => return JsValue::NULL,
     };
 
-    let state = GameState::new(board.inner.clone(), p, vec![]);
-    let config = SearchConfig::default();
+    let state = game_state_from_external_context(board.inner.clone(), p, None, None);
+    let config = SearchConfig {
+        time_budget_ms: Some(50),
+        ..SearchConfig::default()
+    };
     let weights = EvalWeights::default();
 
     match search::find_best_move(&state, &config, &weights) {
@@ -442,49 +470,68 @@ pub fn evaluate_with_weights_wasm(
 }
 
 #[wasm_bindgen(js_name = "evaluate_move")]
-pub fn evaluate_move_wasm(board: &JsBoard, piece: u8, player_move: &JsMove, frame: u32) -> JsValue {
-    let p = match piece_from_external(piece) {
-        Some(p) => p,
-        None => return JsValue::NULL,
-    };
+pub fn evaluate_move_wasm(
+    board: &JsBoard,
+    piece: u8,
+    player_move: &JsMove,
+    frame: JsValue,
+) -> JsValue {
+    let board_clone = board.inner.clone();
+    let move_clone = player_move.to_internal();
 
-    let _ = frame;
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let p = match piece_from_external(piece) {
+            Some(p) => p,
+            None => return None,
+        };
 
-    let state = GameState::new(board.inner.clone(), p, vec![]);
-    let internal_move = player_move.to_internal();
-    let weights = EvalWeights::default();
-    let config = SearchConfig::default();
+        let frame_context = from_js::<ReplayFrameContextJson>(frame);
+        let state = game_state_from_external_context(
+            board_clone.clone(),
+            p,
+            frame_context.as_ref().and_then(|ctx| ctx.queue.as_deref()),
+            frame_context.as_ref().and_then(|ctx| ctx.hold),
+        );
+        let weights = EvalWeights::default();
+        let config = SearchConfig {
+            time_budget_ms: Some(50),
+            ..SearchConfig::default()
+        };
 
-    let mut result_board = board.inner.clone();
-    let lines = result_board.do_move(&internal_move);
+        let mut result_board = board_clone;
+        let lines = result_board.do_move(&move_clone);
 
-    let result = analysis::evaluate_move(&state, &internal_move, lines as u8, &weights, &config);
+        let result = analysis::evaluate_move(&state, &move_clone, lines as u8, &weights, &config);
 
-    let json = MoveEvalResultJson {
-        eval_before: result.eval_before,
-        eval_after: result.eval_after,
-        best_eval: result.best_eval,
-        best_move: MoveResultJson {
-            piece: piece_to_external(result.best_move.piece()),
-            rotation: result.best_move.rotation() as u8,
-            x: result.best_move.x() as i8,
-            y: result.best_move.y() as i8,
-            score: result.best_eval,
-            spin: result.best_move.spin() as u8,
-            hold_used: result.best_hold_used,
-        },
-        eval_loss: result.eval_loss,
-        severity: match result.severity {
-            analysis::Severity::None => "none",
-            analysis::Severity::Inaccuracy => "inaccuracy",
-            analysis::Severity::Mistake => "mistake",
-            analysis::Severity::Blunder => "blunder",
-        }
-        .to_string(),
-        meter_value: result.meter_value,
-    };
+        Some(MoveEvalResultJson {
+            eval_before: result.eval_before,
+            eval_after: result.eval_after,
+            best_eval: result.best_eval,
+            best_move: MoveResultJson {
+                piece: piece_to_external(result.best_move.piece()),
+                rotation: result.best_move.rotation() as u8,
+                x: result.best_move.x() as i8,
+                y: result.best_move.y() as i8,
+                score: result.best_eval,
+                spin: result.best_move.spin() as u8,
+                hold_used: result.best_hold_used,
+            },
+            eval_loss: result.eval_loss,
+            severity: match result.severity {
+                analysis::Severity::None => "none",
+                analysis::Severity::Inaccuracy => "inaccuracy",
+                analysis::Severity::Mistake => "mistake",
+                analysis::Severity::Blunder => "blunder",
+            }
+            .to_string(),
+            meter_value: result.meter_value,
+        })
+    }));
 
-    to_js(&json)
+    match result {
+        Ok(Some(json)) => to_js(&json),
+        _ => JsValue::NULL,
+    }
 }
 
 #[wasm_bindgen(js_name = "analyze_replay")]
@@ -495,7 +542,10 @@ pub fn analyze_replay_wasm(frames: JsValue) -> JsValue {
     };
 
     let weights = EvalWeights::default();
-    let config = SearchConfig::default();
+    let config = SearchConfig {
+        time_budget_ms: Some(50),
+        ..SearchConfig::default()
+    };
 
     let mut results: Vec<ReplayAnalysisJson> = Vec::with_capacity(frames_vec.len());
 
@@ -506,40 +556,57 @@ pub fn analyze_replay_wasm(frames: JsValue) -> JsValue {
             None => continue,
         };
 
-        let state = GameState::new(board.clone(), p, vec![]);
+        let state =
+            game_state_from_external_context(board.clone(), p, frame.queue.as_deref(), frame.hold);
 
         if let Some(ref mv) = frame.player_move {
-            let piece = piece_from_external(mv.piece).unwrap_or(Piece::I);
-            let rotation = rotation_from_u8(mv.rotation).unwrap_or(Rotation::North);
-            let spin_type = spin_from_u8(mv.spin);
-            let fullspin = spin_type == SpinType::Full;
+            let board_for_analysis = board.clone();
+            let state_for_analysis = state;
+            let weights_ref = &weights;
+            let config_ref = &config;
 
-            let internal_move = if piece == Piece::T && mv.spin > 0 {
-                Move::new_tspin(rotation, mv.x as i32, mv.y as i32, fullspin)
-            } else {
-                Move::new(piece, rotation, mv.x as i32, mv.y as i32, fullspin)
-            };
+            let frame_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let piece = piece_from_external(mv.piece).unwrap_or(Piece::I);
+                let rotation = rotation_from_u8(mv.rotation).unwrap_or(Rotation::North);
+                let spin_type = spin_from_u8(mv.spin);
+                let fullspin = spin_type == SpinType::Full;
 
-            let mut result_board = board.clone();
-            let lines = result_board.do_move(&internal_move);
+                let internal_move = if piece == Piece::T && mv.spin > 0 {
+                    Move::new_tspin(rotation, mv.x as i32, mv.y as i32, fullspin)
+                } else {
+                    Move::new(piece, rotation, mv.x as i32, mv.y as i32, fullspin)
+                };
 
-            let analysis =
-                analysis::evaluate_move(&state, &internal_move, lines as u8, &weights, &config);
+                let mut result_board = board_for_analysis;
+                let lines = result_board.do_move(&internal_move);
 
-            results.push(ReplayAnalysisJson {
-                eval_before: analysis.eval_before,
-                eval_after: analysis.eval_after,
-                best_eval: analysis.best_eval,
-                eval_loss: analysis.eval_loss,
-                severity: match analysis.severity {
-                    analysis::Severity::None => "none",
-                    analysis::Severity::Inaccuracy => "inaccuracy",
-                    analysis::Severity::Mistake => "mistake",
-                    analysis::Severity::Blunder => "blunder",
+                let analysis = analysis::evaluate_move(
+                    &state_for_analysis,
+                    &internal_move,
+                    lines as u8,
+                    weights_ref,
+                    config_ref,
+                );
+
+                ReplayAnalysisJson {
+                    eval_before: analysis.eval_before,
+                    eval_after: analysis.eval_after,
+                    best_eval: analysis.best_eval,
+                    eval_loss: analysis.eval_loss,
+                    severity: match analysis.severity {
+                        analysis::Severity::None => "none",
+                        analysis::Severity::Inaccuracy => "inaccuracy",
+                        analysis::Severity::Mistake => "mistake",
+                        analysis::Severity::Blunder => "blunder",
+                    }
+                    .to_string(),
+                    meter_value: analysis.meter_value,
                 }
-                .to_string(),
-                meter_value: analysis.meter_value,
-            });
+            }));
+
+            if let Ok(json) = frame_result {
+                results.push(json);
+            }
         }
     }
 
@@ -576,8 +643,16 @@ struct MoveEvalResultJson {
 struct ReplayFrameJson {
     board: Vec<u64>,
     piece: u8,
+    queue: Option<Vec<u8>>,
+    hold: Option<u8>,
     #[serde(rename = "move")]
     player_move: Option<ReplayMoveJson>,
+}
+
+#[derive(serde::Deserialize)]
+struct ReplayFrameContextJson {
+    queue: Option<Vec<u8>>,
+    hold: Option<u8>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]

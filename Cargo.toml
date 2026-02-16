@@ -31,6 +31,9 @@ serde_json = { version = "1", optional = true }
 js-sys = { version = "0.3", optional = true }
 console_error_panic_hook = { version = "0.1", optional = true }
 
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
 [profile.release]
 opt-level = 3
 lto = true
