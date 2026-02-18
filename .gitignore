@@ -1,1 +1,9 @@
 /target/
+
+# Replay artifacts (prevent JJ snapshot size warnings)
+*.ttrm
+.sisyphus/data/replay-corpus/
+
+# Local script caches
+__pycache__/
+*.pyc
