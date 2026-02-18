@@ -1,0 +1,2587 @@
+
+> mosaic@0.0.1 test
+> vitest run --run src/test/bulk-replay.test.ts
+
+
+[1m[46m RUN [49m[22m [36mv4.0.18 [39m[90m/home/li859/projects/mosaic-fusion-engine-coaching/mosaic-fusion-testing[39m
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma+__amns__22eb5d71b96a.ttrm — all rounds, both players
+[22m[39m
+═══ a+__amns__22eb5d71b96a.ttrm (3 rounds) ═══
+  R1 P1: 24 locks | none=8 inacc=3 mistake=6 blunder=7 | avg_loss=8.89
+  R1 P2: 28 locks | none=20 inacc=6 mistake=2 blunder=0 | avg_loss=1.24
+  R2 P1: 36 locks | none=17 inacc=3 mistake=2 blunder=14 | avg_loss=10.78
+  R2 P2: 53 locks | none=31 inacc=11 mistake=6 blunder=5 | avg_loss=3.41
+  R3 P1: 34 locks | none=11 inacc=5 mistake=7 blunder=11 | avg_loss=7.54
+  R3 P2: 36 locks | none=22 inacc=7 mistake=4 blunder=3 | avg_loss=2.80
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma+__amns__e7c91e3b99c7.ttrm — all rounds, both players
+[22m[39m
+═══ a+__amns__e7c91e3b99c7.ttrm (5 rounds) ═══
+  R1 P1: 121 locks | none=80 inacc=19 mistake=14 blunder=8 | avg_loss=2.54
+  R1 P2: 139 locks | none=75 inacc=14 mistake=23 blunder=27 | avg_loss=5.16
+  R2 P1: 97 locks | none=71 inacc=6 mistake=16 blunder=4 | avg_loss=2.74
+  R2 P2: 146 locks | none=74 inacc=26 mistake=33 blunder=13 | avg_loss=3.71
+  R3 P1: 49 locks | none=26 inacc=8 mistake=10 blunder=5 | avg_loss=3.35
+  R3 P2: 47 locks | none=27 inacc=4 mistake=8 blunder=8 | avg_loss=5.39
+  R4 P1: 46 locks | none=26 inacc=9 mistake=5 blunder=6 | avg_loss=4.08
+  R4 P2: 59 locks | none=39 inacc=12 mistake=6 blunder=2 | avg_loss=1.90
+  R5 P1: 195 locks | none=138 inacc=18 mistake=26 blunder=13 | avg_loss=2.46
+  R5 P2: 230 locks | none=164 inacc=15 mistake=24 blunder=27 | avg_loss=3.08
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma+__amns__f15fdcfa5d2e.ttrm — all rounds, both players
+[22m[39m
+═══ a+__amns__f15fdcfa5d2e.ttrm (1 rounds) ═══
+  R1 P1: 78 locks | none=43 inacc=17 mistake=9 blunder=9 | avg_loss=3.91
+  R1 P2: 44 locks | none=25 inacc=11 mistake=4 blunder=4 | avg_loss=3.60
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma+__amns__f26857dd9a1c.ttrm — all rounds, both players
+[22m[39m
+═══ a+__amns__f26857dd9a1c.ttrm (8 rounds) ═══
+  R1 P1: 118 locks | none=65 inacc=19 mistake=20 blunder=14 | avg_loss=3.42
+  R1 P2: 98 locks | none=51 inacc=18 mistake=12 blunder=17 | avg_loss=4.69
+  R2 P1: 148 locks | none=72 inacc=19 mistake=24 blunder=33 | avg_loss=6.19
+  R2 P2: 114 locks | none=73 inacc=15 mistake=18 blunder=8 | avg_loss=2.80
+  R3 P1: 109 locks | none=51 inacc=20 mistake=23 blunder=15 | avg_loss=4.24
+  R3 P2: 63 locks | none=40 inacc=10 mistake=9 blunder=4 | avg_loss=2.43
+  R4 P1: 132 locks | none=86 inacc=15 mistake=21 blunder=10 | avg_loss=2.91
+  R4 P2: 105 locks | none=61 inacc=13 mistake=13 blunder=18 | avg_loss=4.02
+  R5 P1: 76 locks | none=58 inacc=4 mistake=8 blunder=6 | avg_loss=2.30
+  R5 P2: 52 locks | none=16 inacc=7 mistake=12 blunder=17 | avg_loss=7.93
+  R6 P1: 109 locks | none=52 inacc=22 mistake=30 blunder=5 | avg_loss=3.50
+  R6 P2: 71 locks | none=46 inacc=5 mistake=15 blunder=5 | avg_loss=3.80
+  R7 P1: 68 locks | none=40 inacc=9 mistake=10 blunder=9 | avg_loss=4.66
+  R7 P2: 57 locks | none=19 inacc=15 mistake=14 blunder=9 | avg_loss=5.93
+  R8 P1: 156 locks | none=91 inacc=15 mistake=28 blunder=22 | avg_loss=4.13
+  R8 P2: 108 locks | none=67 inacc=20 mistake=16 blunder=5 | avg_loss=2.43
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma+__amns__f71c49f1d1fb.ttrm — all rounds, both players
+[22m[39m
+═══ a+__amns__f71c49f1d1fb.ttrm (3 rounds) ═══
+  R1 P1: 51 locks | none=30 inacc=7 mistake=7 blunder=7 | avg_loss=4.07
+  R1 P2: 79 locks | none=30 inacc=6 mistake=18 blunder=25 | avg_loss=6.95
+  R2 P1: 91 locks | none=56 inacc=14 mistake=11 blunder=10 | avg_loss=3.24
+  R2 P2: 105 locks | none=73 inacc=16 mistake=10 blunder=6 | avg_loss=2.11
+  R3 P1: 91 locks | none=58 inacc=14 mistake=17 blunder=2 | avg_loss=2.24
+  R3 P2: 112 locks | none=62 inacc=13 mistake=19 blunder=18 | avg_loss=4.25
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma+__kanghyu__47393409cd94.ttrm — all rounds, both players
+[22m[39m
+═══ a+__kanghyu__47393409cd94.ttrm (6 rounds) ═══
+  R1 P1: 51 locks | none=35 inacc=6 mistake=5 blunder=5 | avg_loss=3.09
+  R1 P2: 49 locks | none=33 inacc=3 mistake=10 blunder=3 | avg_loss=3.16
+  R2 P1: 69 locks | none=57 inacc=10 mistake=1 blunder=1 | avg_loss=0.87
+  R2 P2: 50 locks | none=23 inacc=8 mistake=8 blunder=11 | avg_loss=6.35
+  R3 P1: 46 locks | none=21 inacc=11 mistake=9 blunder=5 | avg_loss=4.12
+  R3 P2: 42 locks | none=29 inacc=4 mistake=6 blunder=3 | avg_loss=3.80
+  R4 P1: 55 locks | none=40 inacc=10 mistake=4 blunder=1 | avg_loss=1.78
+  R4 P2: 45 locks | none=19 inacc=6 mistake=10 blunder=10 | avg_loss=6.56
+  R5 P1: 290 locks | none=215 inacc=40 mistake=26 blunder=9 | avg_loss=1.71
+  R5 P2: 208 locks | none=132 inacc=29 mistake=26 blunder=21 | avg_loss=3.24
+  R6 P1: 314 locks | none=211 inacc=41 mistake=34 blunder=28 | avg_loss=2.75
+  R6 P2: 283 locks | none=167 inacc=40 mistake=40 blunder=36 | avg_loss=3.48
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma+__kanghyu__75fd1afc7131.ttrm — all rounds, both players
+[22m[39m
+═══ a+__kanghyu__75fd1afc7131.ttrm (8 rounds) ═══
+  R1 P1: 55 locks | none=30 inacc=11 mistake=8 blunder=6 | avg_loss=3.94
+  R1 P2: 43 locks | none=28 inacc=5 mistake=4 blunder=6 | avg_loss=2.97
+  R2 P1: 35 locks | none=24 inacc=5 mistake=4 blunder=2 | avg_loss=2.32
+  R2 P2: 40 locks | none=22 inacc=8 mistake=5 blunder=5 | avg_loss=6.32
+  R3 P1: 155 locks | none=93 inacc=19 mistake=24 blunder=19 | avg_loss=4.02
+  R3 P2: 114 locks | none=62 inacc=20 mistake=20 blunder=12 | avg_loss=3.86
+  R4 P1: 46 locks | none=22 inacc=6 mistake=9 blunder=9 | avg_loss=4.57
+  R4 P2: 59 locks | none=34 inacc=9 mistake=6 blunder=10 | avg_loss=4.51
+  R5 P1: 165 locks | none=94 inacc=28 mistake=30 blunder=13 | avg_loss=3.08
+  R5 P2: 150 locks | none=93 inacc=21 mistake=16 blunder=20 | avg_loss=3.66
+  R6 P1: 55 locks | none=31 inacc=11 mistake=8 blunder=5 | avg_loss=2.97
+  R6 P2: 59 locks | none=30 inacc=14 mistake=14 blunder=1 | avg_loss=2.90
+  R7 P1: 162 locks | none=92 inacc=25 mistake=22 blunder=23 | avg_loss=3.68
+  R7 P2: 124 locks | none=98 inacc=8 mistake=7 blunder=11 | avg_loss=2.12
+  R8 P1: 260 locks | none=172 inacc=29 mistake=34 blunder=25 | avg_loss=3.06
+  R8 P2: 237 locks | none=153 inacc=35 mistake=29 blunder=20 | avg_loss=2.57
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma+__kanghyu__c59ee611082a.ttrm — all rounds, both players
+[22m[39m
+═══ a+__kanghyu__c59ee611082a.ttrm (9 rounds) ═══
+  R1 P1: 31 locks | none=15 inacc=6 mistake=9 blunder=1 | avg_loss=3.35
+  R1 P2: 39 locks | none=26 inacc=6 mistake=2 blunder=5 | avg_loss=5.89
+  R2 P1: 102 locks | none=57 inacc=22 mistake=11 blunder=12 | avg_loss=3.50
+  R2 P2: 124 locks | none=70 inacc=15 mistake=19 blunder=20 | avg_loss=4.31
+  R3 P1: 101 locks | none=63 inacc=14 mistake=9 blunder=15 | avg_loss=3.92
+  R3 P2: 125 locks | none=69 inacc=24 mistake=20 blunder=12 | avg_loss=3.68
+  R4 P1: 42 locks | none=22 inacc=5 mistake=5 blunder=10 | avg_loss=6.31
+  R4 P2: 54 locks | none=27 inacc=4 mistake=10 blunder=13 | avg_loss=6.49
+  R5 P1: 38 locks | none=25 inacc=4 mistake=4 blunder=5 | avg_loss=4.28
+  R5 P2: 71 locks | none=25 inacc=22 mistake=19 blunder=5 | avg_loss=3.87
+  R6 P1: 39 locks | none=22 inacc=5 mistake=5 blunder=7 | avg_loss=5.42
+  R6 P2: 44 locks | none=23 inacc=10 mistake=8 blunder=3 | avg_loss=3.23
+  R7 P1: 38 locks | none=20 inacc=9 mistake=8 blunder=1 | avg_loss=2.59
+  R7 P2: 42 locks | none=33 inacc=5 mistake=4 blunder=0 | avg_loss=1.26
+  R8 P1: 364 locks | none=265 inacc=43 mistake=27 blunder=29 | avg_loss=2.42
+  R8 P2: 403 locks | none=266 inacc=44 mistake=44 blunder=49 | avg_loss=3.16
+  R9 P1: 57 locks | none=38 inacc=8 mistake=6 blunder=5 | avg_loss=3.23
+  R9 P2: 78 locks | none=49 inacc=16 mistake=12 blunder=1 | avg_loss=2.04
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma+__kanghyu__e60de51b70af.ttrm — all rounds, both players
+[22m[39m
+═══ a+__kanghyu__e60de51b70af.ttrm (9 rounds) ═══
+  R1 P1: 234 locks | none=169 inacc=18 mistake=18 blunder=29 | avg_loss=2.83
+  R1 P2: 210 locks | none=118 inacc=28 mistake=36 blunder=28 | avg_loss=4.34
+  R2 P1: 94 locks | none=48 inacc=26 mistake=14 blunder=6 | avg_loss=2.88
+  R2 P2: 81 locks | none=41 inacc=16 mistake=13 blunder=11 | avg_loss=3.99
+  R3 P1: 49 locks | none=32 inacc=5 mistake=7 blunder=5 | avg_loss=3.24
+  R3 P2: 55 locks | none=18 inacc=16 mistake=15 blunder=6 | avg_loss=4.53
+  R4 P1: 138 locks | none=82 inacc=16 mistake=13 blunder=27 | avg_loss=5.21
+  R4 P2: 139 locks | none=68 inacc=24 mistake=22 blunder=25 | avg_loss=5.00
+  R5 P1: 476 locks | none=322 inacc=64 mistake=55 blunder=35 | avg_loss=2.63
+  R5 P2: 384 locks | none=226 inacc=37 mistake=67 blunder=54 | avg_loss=4.22
+  R6 P1: 101 locks | none=54 inacc=26 mistake=10 blunder=11 | avg_loss=3.30
+  R6 P2: 99 locks | none=40 inacc=25 mistake=20 blunder=14 | avg_loss=4.91
+  R7 P1: 46 locks | none=31 inacc=12 mistake=3 blunder=0 | avg_loss=1.37
+  R7 P2: 43 locks | none=23 inacc=10 mistake=4 blunder=6 | avg_loss=4.31
+  R8 P1: 79 locks | none=61 inacc=6 mistake=6 blunder=6 | avg_loss=2.31
+  R8 P2: 74 locks | none=43 inacc=9 mistake=19 blunder=3 | avg_loss=2.99
+  R9 P1: 165 locks | none=110 inacc=24 mistake=21 blunder=10 | avg_loss=2.46
+  R9 P2: 119 locks | none=74 inacc=23 mistake=18 blunder=4 | avg_loss=2.37
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma+__kanghyu__f913a2fe32af.ttrm — all rounds, both players
+[22m[39m
+═══ a+__kanghyu__f913a2fe32af.ttrm (8 rounds) ═══
+  R1 P1: 79 locks | none=38 inacc=6 mistake=10 blunder=25 | avg_loss=8.19
+  R1 P2: 78 locks | none=42 inacc=15 mistake=12 blunder=9 | avg_loss=3.64
+  R2 P1: 35 locks | none=19 inacc=4 mistake=6 blunder=6 | avg_loss=4.43
+  R2 P2: 36 locks | none=25 inacc=4 mistake=7 blunder=0 | avg_loss=1.88
+  R3 P1: 34 locks | none=22 inacc=3 mistake=3 blunder=6 | avg_loss=4.77
+  R3 P2: 39 locks | none=23 inacc=8 mistake=6 blunder=2 | avg_loss=2.75
+  R4 P1: 62 locks | none=34 inacc=6 mistake=8 blunder=14 | avg_loss=5.86
+  R4 P2: 68 locks | none=34 inacc=18 mistake=6 blunder=10 | avg_loss=3.84
+  R5 P1: 90 locks | none=61 inacc=8 mistake=9 blunder=12 | avg_loss=3.65
+  R5 P2: 80 locks | none=48 inacc=10 mistake=12 blunder=10 | avg_loss=3.72
+  R6 P1: 66 locks | none=39 inacc=6 mistake=7 blunder=14 | avg_loss=5.78
+  R6 P2: 68 locks | none=49 inacc=8 mistake=8 blunder=3 | avg_loss=2.09
+  R7 P1: 135 locks | none=89 inacc=9 mistake=22 blunder=15 | avg_loss=3.73
+  R7 P2: 167 locks | none=71 inacc=34 mistake=42 blunder=20 | avg_loss=4.58
+  R8 P1: 110 locks | none=75 inacc=15 mistake=14 blunder=6 | avg_loss=2.46
+  R8 P2: 120 locks | none=75 inacc=19 mistake=14 blunder=12 | avg_loss=3.28
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma+__rabenous__4e586d96c6b7.ttrm — all rounds, both players
+[22m[39m
+═══ a+__rabenous__4e586d96c6b7.ttrm (6 rounds) ═══
+  R1 P1: 163 locks | none=87 inacc=25 mistake=29 blunder=22 | avg_loss=4.16
+  R1 P2: 124 locks | none=79 inacc=21 mistake=14 blunder=10 | avg_loss=2.70
+  R2 P1: 49 locks | none=29 inacc=10 mistake=9 blunder=1 | avg_loss=2.27
+  R2 P2: 28 locks | none=19 inacc=5 mistake=3 blunder=1 | avg_loss=1.91
+  R3 P1: 92 locks | none=56 inacc=19 mistake=10 blunder=7 | avg_loss=2.85
+  R3 P2: 76 locks | none=44 inacc=10 mistake=9 blunder=13 | avg_loss=4.64
+  R4 P1: 64 locks | none=38 inacc=13 mistake=10 blunder=3 | avg_loss=2.53
+  R4 P2: 46 locks | none=21 inacc=7 mistake=5 blunder=13 | avg_loss=7.25
+  R5 P1: 185 locks | none=142 inacc=19 mistake=12 blunder=12 | avg_loss=1.83
+  R5 P2: 154 locks | none=102 inacc=28 mistake=16 blunder=8 | avg_loss=2.34
+  R6 P1: 184 locks | none=123 inacc=31 mistake=15 blunder=15 | avg_loss=2.59
+  R6 P2: 167 locks | none=107 inacc=26 mistake=20 blunder=14 | avg_loss=2.83
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma+__rabenous__5b882c53ded2.ttrm — all rounds, both players
+[22m[39m
+═══ a+__rabenous__5b882c53ded2.ttrm (5 rounds) ═══
+  R1 P1: 60 locks | none=32 inacc=14 mistake=12 blunder=2 | avg_loss=3.04
+  R1 P2: 34 locks | none=20 inacc=3 mistake=2 blunder=9 | avg_loss=5.77
+  R2 P1: 151 locks | none=98 inacc=29 mistake=19 blunder=5 | avg_loss=2.24
+  R2 P2: 113 locks | none=72 inacc=6 mistake=16 blunder=19 | avg_loss=4.17
+  R3 P1: 351 locks | none=237 inacc=58 mistake=39 blunder=17 | avg_loss=2.40
+  R3 P2: 329 locks | none=207 inacc=61 mistake=48 blunder=13 | avg_loss=2.28
+  R4 P1: 114 locks | none=65 inacc=23 mistake=14 blunder=12 | avg_loss=3.42
+  R4 P2: 93 locks | none=64 inacc=12 mistake=9 blunder=8 | avg_loss=2.85
+  R5 P1: 31 locks | none=16 inacc=7 mistake=4 blunder=4 | avg_loss=3.69
+  R5 P2: 38 locks | none=17 inacc=11 mistake=9 blunder=1 | avg_loss=3.27
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma+__rabenous__78bb951b4dbf.ttrm — all rounds, both players
+[22m[39m
+═══ a+__rabenous__78bb951b4dbf.ttrm (5 rounds) ═══
+  R1 P1: 186 locks | none=111 inacc=28 mistake=25 blunder=22 | avg_loss=3.69
+  R1 P2: 179 locks | none=126 inacc=24 mistake=17 blunder=12 | avg_loss=2.53
+  R2 P1: 63 locks | none=34 inacc=9 mistake=14 blunder=6 | avg_loss=4.24
+  R2 P2: 68 locks | none=38 inacc=9 mistake=11 blunder=10 | avg_loss=4.74
+  R3 P1: 72 locks | none=42 inacc=14 mistake=6 blunder=10 | avg_loss=4.32
+  R3 P2: 72 locks | none=32 inacc=8 mistake=10 blunder=22 | avg_loss=7.22
+  R4 P1: 111 locks | none=68 inacc=17 mistake=10 blunder=16 | avg_loss=3.64
+  R4 P2: 129 locks | none=80 inacc=17 mistake=18 blunder=14 | avg_loss=3.17
+  R5 P1: 251 locks | none=168 inacc=49 mistake=27 blunder=7 | avg_loss=1.95
+  R5 P2: 257 locks | none=151 inacc=37 mistake=28 blunder=41 | avg_loss=4.24
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma+__rabenous__9a252308c019.ttrm — all rounds, both players
+[22m[39m
+═══ a+__rabenous__9a252308c019.ttrm (9 rounds) ═══
+  R1 P1: 99 locks | none=53 inacc=13 mistake=14 blunder=19 | avg_loss=5.47
+  R1 P2: 61 locks | none=45 inacc=2 mistake=4 blunder=10 | avg_loss=4.58
+  R2 P1: 75 locks | none=33 inacc=14 mistake=12 blunder=16 | avg_loss=6.25
+  R2 P2: 65 locks | none=46 inacc=12 mistake=4 blunder=3 | avg_loss=1.94
+  R3 P1: 166 locks | none=108 inacc=26 mistake=16 blunder=16 | avg_loss=3.06
+  R3 P2: 123 locks | none=82 inacc=17 mistake=13 blunder=11 | avg_loss=3.22
+  R4 P1: 99 locks | none=53 inacc=13 mistake=25 blunder=8 | avg_loss=3.45
+  R4 P2: 69 locks | none=46 inacc=7 mistake=7 blunder=9 | avg_loss=3.84
+  R5 P1: 54 locks | none=18 inacc=22 mistake=13 blunder=1 | avg_loss=3.16
+  R5 P2: 31 locks | none=14 inacc=9 mistake=5 blunder=3 | avg_loss=3.69
+  R6 P1: 44 locks | none=22 inacc=8 mistake=10 blunder=4 | avg_loss=3.66
+  R6 P2: 22 locks | none=13 inacc=5 mistake=0 blunder=4 | avg_loss=3.75
+  R7 P1: 218 locks | none=141 inacc=31 mistake=35 blunder=11 | avg_loss=2.48
+  R7 P2: 184 locks | none=123 inacc=21 mistake=29 blunder=11 | avg_loss=2.41
+  R8 P1: 370 locks | none=240 inacc=53 mistake=59 blunder=18 | avg_loss=2.46
+  R8 P2: 295 locks | none=198 inacc=37 mistake=37 blunder=23 | avg_loss=3.07
+  R9 P1: 58 locks | none=33 inacc=8 mistake=9 blunder=8 | avg_loss=4.64
+  R9 P2: 45 locks | none=19 inacc=7 mistake=6 blunder=13 | avg_loss=6.71
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma-__chiara7800__8b0ae4849fb9.ttrm — all rounds, both players
+[22m[39m
+═══ a-__chiara7800__8b0ae4849fb9.ttrm (4 rounds) ═══
+  R1 P1: 110 locks | none=72 inacc=21 mistake=9 blunder=8 | avg_loss=2.55
+  R1 P2: 108 locks | none=76 inacc=6 mistake=17 blunder=9 | avg_loss=2.68
+  R2 P1: 105 locks | none=59 inacc=14 mistake=23 blunder=9 | avg_loss=3.72
+  R2 P2: 125 locks | none=83 inacc=24 mistake=15 blunder=3 | avg_loss=1.88
+  R3 P1: 49 locks | none=33 inacc=8 mistake=5 blunder=3 | avg_loss=2.88
+  R3 P2: 47 locks | none=18 inacc=15 mistake=6 blunder=8 | avg_loss=6.01
+  R4 P1: 246 locks | none=152 inacc=38 mistake=38 blunder=18 | avg_loss=2.82
+  R4 P2: 203 locks | none=127 inacc=25 mistake=22 blunder=29 | avg_loss=3.52
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma-__chiara7800__99952633da3c.ttrm — all rounds, both players
+[22m[39m
+═══ a-__chiara7800__99952633da3c.ttrm (3 rounds) ═══
+  R1 P1: 46 locks | none=31 inacc=4 mistake=6 blunder=5 | avg_loss=3.06
+  R1 P2: 26 locks | none=14 inacc=8 mistake=0 blunder=4 | avg_loss=3.48
+  R2 P1: 78 locks | none=40 inacc=13 mistake=16 blunder=9 | avg_loss=4.57
+  R2 P2: 54 locks | none=36 inacc=9 mistake=5 blunder=4 | avg_loss=2.71
+  R3 P1: 125 locks | none=57 inacc=19 mistake=26 blunder=23 | avg_loss=5.39
+  R3 P2: 60 locks | none=47 inacc=4 mistake=5 blunder=4 | avg_loss=1.96
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma-__chiara7800__abcf79eac90e.ttrm — all rounds, both players
+[22m[39m
+═══ a-__chiara7800__abcf79eac90e.ttrm (5 rounds) ═══
+  R1 P1: 44 locks | none=28 inacc=8 mistake=6 blunder=2 | avg_loss=2.45
+  R1 P2: 46 locks | none=25 inacc=11 mistake=7 blunder=3 | avg_loss=2.83
+  R2 P1: 73 locks | none=43 inacc=12 mistake=14 blunder=4 | avg_loss=2.84
+  R2 P2: 76 locks | none=41 inacc=11 mistake=8 blunder=16 | avg_loss=4.97
+  R3 P1: 37 locks | none=23 inacc=5 mistake=9 blunder=0 | avg_loss=2.38
+  R3 P2: 37 locks | none=19 inacc=6 mistake=11 blunder=1 | avg_loss=3.01
+  R4 P1: 56 locks | none=38 inacc=10 mistake=6 blunder=2 | avg_loss=1.91
+  R4 P2: 57 locks | none=34 inacc=13 mistake=8 blunder=2 | avg_loss=2.47
+  R5 P1: 56 locks | none=33 inacc=13 mistake=7 blunder=3 | avg_loss=2.64
+  R5 P2: 52 locks | none=29 inacc=10 mistake=6 blunder=7 | avg_loss=4.10
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma-__chiara7800__b2fd393c2fb5.ttrm — all rounds, both players
+[22m[39m
+═══ a-__chiara7800__b2fd393c2fb5.ttrm (5 rounds) ═══
+  R1 P1: 77 locks | none=47 inacc=4 mistake=12 blunder=14 | avg_loss=4.61
+  R1 P2: 83 locks | none=46 inacc=9 mistake=13 blunder=15 | avg_loss=4.77
+  R2 P1: 33 locks | none=22 inacc=5 mistake=5 blunder=1 | avg_loss=2.21
+  R2 P2: 53 locks | none=27 inacc=15 mistake=7 blunder=4 | avg_loss=3.75
+  R3 P1: 24 locks | none=12 inacc=1 mistake=5 blunder=6 | avg_loss=6.96
+  R3 P2: 62 locks | none=32 inacc=16 mistake=13 blunder=1 | avg_loss=2.63
+  R4 P1: 134 locks | none=75 inacc=18 mistake=26 blunder=15 | avg_loss=3.75
+  R4 P2: 134 locks | none=105 inacc=17 mistake=9 blunder=3 | avg_loss=1.32
+  R5 P1: 73 locks | none=51 inacc=5 mistake=11 blunder=6 | avg_loss=3.09
+  R5 P2: 63 locks | none=42 inacc=10 mistake=4 blunder=7 | avg_loss=2.82
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma-__chiara7800__f6cf3cfc6a95.ttrm — all rounds, both players
+[22m[39m
+═══ a-__chiara7800__f6cf3cfc6a95.ttrm (5 rounds) ═══
+  R1 P1: 138 locks | none=71 inacc=20 mistake=25 blunder=22 | avg_loss=5.16
+  R1 P2: 190 locks | none=112 inacc=40 mistake=18 blunder=20 | avg_loss=3.31
+  R2 P1: 85 locks | none=36 inacc=16 mistake=22 blunder=11 | avg_loss=4.26
+  R2 P2: 120 locks | none=79 inacc=18 mistake=15 blunder=8 | avg_loss=2.79
+  R3 P1: 73 locks | none=47 inacc=12 mistake=9 blunder=5 | avg_loss=2.85
+  R3 P2: 106 locks | none=61 inacc=26 mistake=12 blunder=7 | avg_loss=2.59
+  R4 P1: 73 locks | none=50 inacc=6 mistake=8 blunder=9 | avg_loss=3.45
+  R4 P2: 98 locks | none=70 inacc=13 mistake=11 blunder=4 | avg_loss=2.02
+  R5 P1: 43 locks | none=23 inacc=18 mistake=2 blunder=0 | avg_loss=1.70
+  R5 P2: 43 locks | none=21 inacc=8 mistake=9 blunder=5 | avg_loss=4.28
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma-__gulmezinator__5944e084f1de.ttrm — all rounds, both players
+[22m[39m
+═══ a-__gulmezinator__5944e084f1de.ttrm (4 rounds) ═══
+  R1 P1: 99 locks | none=53 inacc=24 mistake=13 blunder=9 | avg_loss=3.13
+  R1 P2: 57 locks | none=32 inacc=8 mistake=10 blunder=7 | avg_loss=4.49
+  R2 P1: 79 locks | none=46 inacc=8 mistake=13 blunder=12 | avg_loss=3.96
+  R2 P2: 38 locks | none=22 inacc=5 mistake=7 blunder=4 | avg_loss=3.90
+  R3 P1: 178 locks | none=116 inacc=26 mistake=20 blunder=16 | avg_loss=2.75
+  R3 P2: 126 locks | none=88 inacc=7 mistake=16 blunder=15 | avg_loss=3.36
+  R4 P1: 310 locks | none=197 inacc=58 mistake=38 blunder=17 | avg_loss=2.58
+  R4 P2: 222 locks | none=155 inacc=23 mistake=27 blunder=17 | avg_loss=2.44
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma-__gulmezinator__5be500f0ef0b.ttrm — all rounds, both players
+[22m[39m
+═══ a-__gulmezinator__5be500f0ef0b.ttrm (3 rounds) ═══
+  R1 P1: 27 locks | none=16 inacc=8 mistake=3 blunder=0 | avg_loss=2.01
+  R1 P2: 15 locks | none=10 inacc=1 mistake=3 blunder=1 | avg_loss=2.78
+  R2 P1: 84 locks | none=37 inacc=8 mistake=5 blunder=34 | avg_loss=11.80
+  R2 P2: 59 locks | none=36 inacc=6 mistake=7 blunder=10 | avg_loss=4.83
+  R3 P1: 50 locks | none=20 inacc=3 mistake=11 blunder=16 | avg_loss=8.49
+  R3 P2: 43 locks | none=19 inacc=12 mistake=8 blunder=4 | avg_loss=3.21
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma-__gulmezinator__808b06450776.ttrm — all rounds, both players
+[22m[39m
+═══ a-__gulmezinator__808b06450776.ttrm (5 rounds) ═══
+  R1 P1: 53 locks | none=18 inacc=11 mistake=14 blunder=10 | avg_loss=5.32
+  R1 P2: 32 locks | none=17 inacc=9 mistake=6 blunder=0 | avg_loss=2.58
+  R2 P1: 269 locks | none=191 inacc=32 mistake=26 blunder=20 | avg_loss=2.34
+  R2 P2: 161 locks | none=101 inacc=19 mistake=25 blunder=16 | avg_loss=3.27
+  R3 P1: 267 locks | none=177 inacc=40 mistake=27 blunder=23 | avg_loss=3.00
+  R3 P2: 180 locks | none=116 inacc=28 mistake=21 blunder=15 | avg_loss=2.91
+  R4 P1: 66 locks | none=33 inacc=8 mistake=13 blunder=12 | avg_loss=5.41
+  R4 P2: 54 locks | none=37 inacc=13 mistake=4 blunder=0 | avg_loss=1.38
+  R5 P1: 317 locks | none=239 inacc=39 mistake=27 blunder=12 | avg_loss=1.84
+  R5 P2: 191 locks | none=115 inacc=19 mistake=31 blunder=26 | avg_loss=4.25
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma-__gulmezinator__e1adbf7788a3.ttrm — all rounds, both players
+[22m[39m
+═══ a-__gulmezinator__e1adbf7788a3.ttrm (4 rounds) ═══
+  R1 P1: 245 locks | none=145 inacc=38 mistake=39 blunder=23 | avg_loss=3.48
+  R1 P2: 193 locks | none=129 inacc=19 mistake=21 blunder=24 | avg_loss=3.93
+  R2 P1: 176 locks | none=97 inacc=23 mistake=38 blunder=18 | avg_loss=3.48
+  R2 P2: 132 locks | none=93 inacc=9 mistake=14 blunder=16 | avg_loss=3.40
+  R3 P1: 72 locks | none=29 inacc=28 mistake=14 blunder=1 | avg_loss=2.88
+  R3 P2: 46 locks | none=14 inacc=7 mistake=10 blunder=15 | avg_loss=7.41
+  R4 P1: 59 locks | none=28 inacc=7 mistake=11 blunder=13 | avg_loss=4.95
+  R4 P2: 34 locks | none=16 inacc=3 mistake=10 blunder=5 | avg_loss=5.77
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma-__gulmezinator__f886e38b3f91.ttrm — all rounds, both players
+[22m[39m
+═══ a-__gulmezinator__f886e38b3f91.ttrm (4 rounds) ═══
+  R1 P1: 81 locks | none=45 inacc=13 mistake=11 blunder=12 | avg_loss=4.43
+  R1 P2: 67 locks | none=40 inacc=6 mistake=17 blunder=4 | avg_loss=2.61
+  R2 P1: 81 locks | none=35 inacc=12 mistake=23 blunder=11 | avg_loss=4.50
+  R2 P2: 58 locks | none=34 inacc=5 mistake=12 blunder=7 | avg_loss=3.44
+  R3 P1: 56 locks | none=39 inacc=7 mistake=7 blunder=3 | avg_loss=2.21
+  R3 P2: 61 locks | none=54 inacc=3 mistake=3 blunder=1 | avg_loss=0.86
+  R4 P1: 67 locks | none=38 inacc=9 mistake=8 blunder=12 | avg_loss=4.00
+  R4 P2: 52 locks | none=38 inacc=4 mistake=6 blunder=4 | avg_loss=2.28
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma-__madfjun__7371e5817a1b.ttrm — all rounds, both players
+[22m[39m
+═══ a-__madfjun__7371e5817a1b.ttrm (3 rounds) ═══
+  R1 P1: 66 locks | none=46 inacc=12 mistake=4 blunder=4 | avg_loss=2.18
+  R1 P2: 66 locks | none=37 inacc=11 mistake=11 blunder=7 | avg_loss=3.64
+  R2 P1: 86 locks | none=61 inacc=7 mistake=8 blunder=10 | avg_loss=3.56
+  R2 P2: 83 locks | none=40 inacc=11 mistake=18 blunder=14 | avg_loss=5.38
+  R3 P1: 35 locks | none=19 inacc=6 mistake=6 blunder=4 | avg_loss=4.22
+  R3 P2: 28 locks | none=13 inacc=8 mistake=4 blunder=3 | avg_loss=4.80
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma-__madfjun__aacba8bb4af2.ttrm — all rounds, both players
+[22m[39m
+═══ a-__madfjun__aacba8bb4af2.ttrm (3 rounds) ═══
+  R1 P1: 131 locks | none=87 inacc=15 mistake=15 blunder=14 | avg_loss=2.95
+  R1 P2: 113 locks | none=63 inacc=11 mistake=18 blunder=21 | avg_loss=5.61
+  R2 P1: 109 locks | none=76 inacc=12 mistake=17 blunder=4 | avg_loss=2.40
+  R2 P2: 95 locks | none=65 inacc=4 mistake=11 blunder=15 | avg_loss=3.19
+  R3 P1: 41 locks | none=24 inacc=6 mistake=9 blunder=2 | avg_loss=2.64
+  R3 P2: 37 locks | none=20 inacc=6 mistake=9 blunder=2 | avg_loss=3.20
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma-__madfjun__aca9db54d1f9.ttrm — all rounds, both players
+[22m[39m
+═══ a-__madfjun__aca9db54d1f9.ttrm (4 rounds) ═══
+  R1 P1: 56 locks | none=34 inacc=9 mistake=11 blunder=2 | avg_loss=2.45
+  R1 P2: 61 locks | none=26 inacc=18 mistake=15 blunder=2 | avg_loss=3.77
+  R2 P1: 47 locks | none=24 inacc=10 mistake=8 blunder=5 | avg_loss=3.67
+  R2 P2: 46 locks | none=35 inacc=7 mistake=4 blunder=0 | avg_loss=1.14
+  R3 P1: 54 locks | none=30 inacc=7 mistake=9 blunder=8 | avg_loss=4.70
+  R3 P2: 62 locks | none=40 inacc=10 mistake=8 blunder=4 | avg_loss=2.38
+  R4 P1: 112 locks | none=66 inacc=19 mistake=19 blunder=8 | avg_loss=3.04
+  R4 P2: 128 locks | none=79 inacc=13 mistake=20 blunder=16 | avg_loss=3.17
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma-__madfjun__c533b2210753.ttrm — all rounds, both players
+[22m[39m
+═══ a-__madfjun__c533b2210753.ttrm (4 rounds) ═══
+  R1 P1: 37 locks | none=15 inacc=7 mistake=10 blunder=5 | avg_loss=6.58
+  R1 P2: 43 locks | none=15 inacc=15 mistake=11 blunder=2 | avg_loss=3.58
+  R2 P1: 33 locks | none=22 inacc=4 mistake=4 blunder=3 | avg_loss=3.89
+  R2 P2: 47 locks | none=28 inacc=12 mistake=6 blunder=1 | avg_loss=2.23
+  R3 P1: 49 locks | none=26 inacc=14 mistake=4 blunder=5 | avg_loss=3.28
+  R3 P2: 54 locks | none=33 inacc=10 mistake=11 blunder=0 | avg_loss=2.17
+  R4 P1: 28 locks | none=10 inacc=5 mistake=2 blunder=11 | avg_loss=9.19
+  R4 P2: 19 locks | none=10 inacc=2 mistake=3 blunder=4 | avg_loss=5.58
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma-__madfjun__ebb4b2135377.ttrm — all rounds, both players
+[22m[39m
+═══ a-__madfjun__ebb4b2135377.ttrm (4 rounds) ═══
+  R1 P1: 56 locks | none=39 inacc=6 mistake=4 blunder=7 | avg_loss=3.64
+  R1 P2: 72 locks | none=40 inacc=19 mistake=10 blunder=3 | avg_loss=2.79
+  R2 P1: 51 locks | none=34 inacc=6 mistake=7 blunder=4 | avg_loss=2.86
+  R2 P2: 77 locks | none=45 inacc=18 mistake=12 blunder=2 | avg_loss=2.48
+  R3 P1: 44 locks | none=21 inacc=14 mistake=8 blunder=1 | avg_loss=2.95
+  R3 P2: 54 locks | none=28 inacc=10 mistake=13 blunder=3 | avg_loss=2.97
+  R4 P1: 70 locks | none=41 inacc=5 mistake=15 blunder=9 | avg_loss=4.36
+  R4 P2: 95 locks | none=54 inacc=23 mistake=12 blunder=6 | avg_loss=2.84
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma__asdkjc__0f9335ef5872.ttrm — all rounds, both players
+[22m[39m
+═══ a__asdkjc__0f9335ef5872.ttrm (5 rounds) ═══
+  R1 P1: 73 locks | none=53 inacc=10 mistake=9 blunder=1 | avg_loss=1.39
+  R1 P2: 45 locks | none=31 inacc=4 mistake=6 blunder=4 | avg_loss=3.31
+  R2 P1: 92 locks | none=58 inacc=14 mistake=13 blunder=7 | avg_loss=2.91
+  R2 P2: 68 locks | none=45 inacc=6 mistake=10 blunder=7 | avg_loss=3.06
+  R3 P1: 279 locks | none=202 inacc=23 mistake=29 blunder=25 | avg_loss=2.47
+  R3 P2: 254 locks | none=182 inacc=27 mistake=24 blunder=21 | avg_loss=2.62
+  R4 P1: 82 locks | none=40 inacc=17 mistake=18 blunder=7 | avg_loss=4.78
+  R4 P2: 65 locks | none=50 inacc=5 mistake=7 blunder=3 | avg_loss=2.52
+  R5 P1: 47 locks | none=28 inacc=6 mistake=7 blunder=6 | avg_loss=3.93
+  R5 P2: 37 locks | none=23 inacc=7 mistake=5 blunder=2 | avg_loss=2.72
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma__asdkjc__129a54380cb8.ttrm — all rounds, both players
+[22m[39m
+═══ a__asdkjc__129a54380cb8.ttrm (4 rounds) ═══
+  R1 P1: 82 locks | none=34 inacc=11 mistake=18 blunder=19 | avg_loss=7.17
+  R1 P2: 71 locks | none=37 inacc=7 mistake=11 blunder=16 | avg_loss=5.55
+  R2 P1: 52 locks | none=14 inacc=10 mistake=9 blunder=19 | avg_loss=10.64
+  R2 P2: 32 locks | none=16 inacc=9 mistake=6 blunder=1 | avg_loss=2.81
+  R3 P1: 87 locks | none=43 inacc=8 mistake=12 blunder=24 | avg_loss=5.94
+  R3 P2: 45 locks | none=30 inacc=7 mistake=6 blunder=2 | avg_loss=2.48
+  R4 P1: 258 locks | none=142 inacc=35 mistake=37 blunder=44 | avg_loss=5.27
+  R4 P2: 163 locks | none=108 inacc=23 mistake=18 blunder=14 | avg_loss=2.78
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma__asdkjc__21e6bbf34cdd.ttrm — all rounds, both players
+[22m[39m
+═══ a__asdkjc__21e6bbf34cdd.ttrm (5 rounds) ═══
+  R1 P1: 46 locks | none=23 inacc=7 mistake=10 blunder=6 | avg_loss=3.98
+  R1 P2: 53 locks | none=24 inacc=7 mistake=11 blunder=11 | avg_loss=5.58
+  R2 P1: 166 locks | none=113 inacc=22 mistake=18 blunder=13 | avg_loss=3.14
+  R2 P2: 106 locks | none=71 inacc=12 mistake=13 blunder=10 | avg_loss=3.00
+  R3 P1: 38 locks | none=30 inacc=4 mistake=4 blunder=0 | avg_loss=1.13
+  R3 P2: 31 locks | none=17 inacc=6 mistake=4 blunder=4 | avg_loss=3.21
+  R4 P1: 59 locks | none=38 inacc=11 mistake=5 blunder=5 | avg_loss=3.08
+  R4 P2: 35 locks | none=21 inacc=4 mistake=5 blunder=5 | avg_loss=4.14
+  R5 P1: 110 locks | none=69 inacc=20 mistake=15 blunder=6 | avg_loss=2.78
+  R5 P2: 76 locks | none=53 inacc=9 mistake=10 blunder=4 | avg_loss=2.22
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma__asdkjc__2d9cdbdf1392.ttrm — all rounds, both players
+[22m[39m
+═══ a__asdkjc__2d9cdbdf1392.ttrm (4 rounds) ═══
+  R1 P1: 98 locks | none=63 inacc=16 mistake=16 blunder=3 | avg_loss=2.15
+  R1 P2: 155 locks | none=113 inacc=21 mistake=14 blunder=7 | avg_loss=1.77
+  R2 P1: 69 locks | none=46 inacc=12 mistake=6 blunder=5 | avg_loss=2.35
+  R2 P2: 109 locks | none=74 inacc=14 mistake=11 blunder=10 | avg_loss=2.52
+  R3 P1: 34 locks | none=20 inacc=4 mistake=3 blunder=7 | avg_loss=5.87
+  R3 P2: 58 locks | none=43 inacc=8 mistake=1 blunder=6 | avg_loss=3.25
+  R4 P1: 164 locks | none=106 inacc=24 mistake=18 blunder=16 | avg_loss=2.91
+  R4 P2: 271 locks | none=201 inacc=26 mistake=31 blunder=13 | avg_loss=2.02
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma__asdkjc__48fdb6c5d021.ttrm — all rounds, both players
+[22m[39m
+═══ a__asdkjc__48fdb6c5d021.ttrm (4 rounds) ═══
+  R1 P1: 109 locks | none=76 inacc=19 mistake=10 blunder=4 | avg_loss=2.73
+  R1 P2: 155 locks | none=108 inacc=24 mistake=15 blunder=8 | avg_loss=2.24
+  R2 P1: 62 locks | none=38 inacc=12 mistake=9 blunder=3 | avg_loss=2.81
+  R2 P2: 85 locks | none=55 inacc=10 mistake=13 blunder=7 | avg_loss=2.73
+  R3 P1: 163 locks | none=102 inacc=24 mistake=23 blunder=14 | avg_loss=2.90
+  R3 P2: 247 locks | none=167 inacc=36 mistake=29 blunder=15 | avg_loss=2.57
+  R4 P1: 120 locks | none=69 inacc=21 mistake=17 blunder=13 | avg_loss=3.71
+  R4 P2: 187 locks | none=114 inacc=36 mistake=24 blunder=13 | avg_loss=2.83
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma__henry0423__211a7e7af14a.ttrm — all rounds, both players
+[22m[39m
+═══ a__henry0423__211a7e7af14a.ttrm (5 rounds) ═══
+  R1 P1: 223 locks | none=139 inacc=20 mistake=27 blunder=37 | avg_loss=4.14
+  R1 P2: 281 locks | none=195 inacc=33 mistake=26 blunder=27 | avg_loss=2.83
+  R2 P1: 59 locks | none=31 inacc=9 mistake=12 blunder=7 | avg_loss=3.90
+  R2 P2: 81 locks | none=49 inacc=10 mistake=15 blunder=7 | avg_loss=3.08
+  R3 P1: 119 locks | none=66 inacc=9 mistake=25 blunder=19 | avg_loss=5.00
+  R3 P2: 121 locks | none=82 inacc=16 mistake=15 blunder=8 | avg_loss=2.64
+  R4 P1: 75 locks | none=28 inacc=6 mistake=14 blunder=27 | avg_loss=10.60
+  R4 P2: 84 locks | none=61 inacc=9 mistake=5 blunder=9 | avg_loss=3.05
+  R5 P1: 46 locks | none=16 inacc=6 mistake=4 blunder=20 | avg_loss=8.94
+  R5 P2: 52 locks | none=42 inacc=8 mistake=1 blunder=1 | avg_loss=0.92
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma__henry0423__497c8aaea237.ttrm — all rounds, both players
+[22m[39m
+═══ a__henry0423__497c8aaea237.ttrm (5 rounds) ═══
+  R1 P1: 111 locks | none=76 inacc=17 mistake=10 blunder=8 | avg_loss=2.15
+  R1 P2: 115 locks | none=68 inacc=19 mistake=11 blunder=17 | avg_loss=3.72
+  R2 P1: 60 locks | none=45 inacc=3 mistake=7 blunder=5 | avg_loss=2.86
+  R2 P2: 62 locks | none=29 inacc=8 mistake=14 blunder=11 | avg_loss=6.02
+  R3 P1: 116 locks | none=67 inacc=21 mistake=21 blunder=7 | avg_loss=2.84
+  R3 P2: 97 locks | none=54 inacc=17 mistake=12 blunder=14 | avg_loss=4.16
+  R4 P1: 56 locks | none=31 inacc=11 mistake=6 blunder=8 | avg_loss=4.67
+  R4 P2: 57 locks | none=21 inacc=1 mistake=9 blunder=26 | avg_loss=14.93
+  R5 P1: 40 locks | none=21 inacc=7 mistake=4 blunder=8 | avg_loss=5.36
+  R5 P2: 41 locks | none=18 inacc=5 mistake=8 blunder=10 | avg_loss=6.51
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma__henry0423__d68228e78310.ttrm — all rounds, both players
+[22m[39m
+═══ a__henry0423__d68228e78310.ttrm (5 rounds) ═══
+  R1 P1: 83 locks | none=30 inacc=9 mistake=10 blunder=34 | avg_loss=9.10
+  R1 P2: 59 locks | none=18 inacc=10 mistake=10 blunder=21 | avg_loss=9.84
+  R2 P1: 65 locks | none=36 inacc=4 mistake=10 blunder=15 | avg_loss=5.33
+  R2 P2: 87 locks | none=42 inacc=11 mistake=15 blunder=19 | avg_loss=5.40
+  R3 P1: 60 locks | none=32 inacc=4 mistake=10 blunder=14 | avg_loss=6.65
+  R3 P2: 114 locks | none=64 inacc=24 mistake=19 blunder=7 | avg_loss=3.04
+  R4 P1: 128 locks | none=61 inacc=15 mistake=25 blunder=27 | avg_loss=5.79
+  R4 P2: 191 locks | none=98 inacc=22 mistake=35 blunder=36 | avg_loss=4.99
+  R5 P1: 96 locks | none=54 inacc=9 mistake=7 blunder=26 | avg_loss=6.10
+  R5 P2: 117 locks | none=61 inacc=13 mistake=8 blunder=35 | avg_loss=6.87
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma__henry0423__ee311976dd76.ttrm — all rounds, both players
+[22m[39m
+═══ a__henry0423__ee311976dd76.ttrm (3 rounds) ═══
+  R1 P1: 225 locks | none=163 inacc=31 mistake=19 blunder=12 | avg_loss=2.10
+  R1 P2: 174 locks | none=94 inacc=15 mistake=27 blunder=38 | avg_loss=5.80
+  R2 P1: 86 locks | none=64 inacc=14 mistake=5 blunder=3 | avg_loss=1.98
+  R2 P2: 81 locks | none=47 inacc=8 mistake=11 blunder=15 | avg_loss=6.33
+  R3 P1: 244 locks | none=161 inacc=31 mistake=30 blunder=22 | avg_loss=2.78
+  R3 P2: 214 locks | none=108 inacc=18 mistake=34 blunder=54 | avg_loss=6.13
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma__henry0423__faa2c695f0c7.ttrm — all rounds, both players
+[22m[39m
+═══ a__henry0423__faa2c695f0c7.ttrm (5 rounds) ═══
+  R1 P1: 126 locks | none=82 inacc=17 mistake=18 blunder=9 | avg_loss=2.66
+  R1 P2: 128 locks | none=80 inacc=8 mistake=21 blunder=19 | avg_loss=4.04
+  R2 P1: 39 locks | none=28 inacc=4 mistake=4 blunder=3 | avg_loss=2.34
+  R2 P2: 41 locks | none=9 inacc=3 mistake=9 blunder=20 | avg_loss=12.87
+  R3 P1: 110 locks | none=77 inacc=15 mistake=3 blunder=15 | avg_loss=3.21
+  R3 P2: 97 locks | none=49 inacc=10 mistake=16 blunder=22 | avg_loss=6.43
+  R4 P1: 77 locks | none=42 inacc=8 mistake=10 blunder=17 | avg_loss=4.85
+  R4 P2: 58 locks | none=33 inacc=7 mistake=10 blunder=8 | avg_loss=3.94
+  R5 P1: 74 locks | none=50 inacc=15 mistake=7 blunder=2 | avg_loss=1.84
+  R5 P2: 71 locks | none=24 inacc=10 mistake=17 blunder=20 | avg_loss=7.01
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma__sapphire909__018a0fbbf2d8.ttrm — all rounds, both players
+[22m[39m
+═══ a__sapphire909__018a0fbbf2d8.ttrm (5 rounds) ═══
+  R1 P1: 80 locks | none=42 inacc=6 mistake=9 blunder=23 | avg_loss=6.93
+  R1 P2: 76 locks | none=29 inacc=11 mistake=20 blunder=16 | avg_loss=6.78
+  R2 P1: 69 locks | none=32 inacc=17 mistake=2 blunder=18 | avg_loss=7.37
+  R2 P2: 58 locks | none=33 inacc=5 mistake=8 blunder=12 | avg_loss=4.72
+  R3 P1: 90 locks | none=50 inacc=17 mistake=6 blunder=17 | avg_loss=5.21
+  R3 P2: 77 locks | none=41 inacc=4 mistake=15 blunder=17 | avg_loss=5.51
+  R4 P1: 57 locks | none=32 inacc=10 mistake=10 blunder=5 | avg_loss=3.32
+  R4 P2: 53 locks | none=24 inacc=5 mistake=10 blunder=14 | avg_loss=5.86
+  R5 P1: 67 locks | none=42 inacc=9 mistake=6 blunder=10 | avg_loss=4.60
+  R5 P2: 62 locks | none=37 inacc=5 mistake=13 blunder=7 | avg_loss=4.52
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma__sapphire909__217b81240b74.ttrm — all rounds, both players
+[22m[39m
+═══ a__sapphire909__217b81240b74.ttrm (5 rounds) ═══
+  R1 P1: 72 locks | none=42 inacc=10 mistake=9 blunder=11 | avg_loss=4.31
+  R1 P2: 70 locks | none=28 inacc=9 mistake=13 blunder=20 | avg_loss=8.84
+  R2 P1: 43 locks | none=24 inacc=5 mistake=9 blunder=5 | avg_loss=4.17
+  R2 P2: 34 locks | none=10 inacc=4 mistake=8 blunder=12 | avg_loss=10.66
+  R3 P1: 71 locks | none=39 inacc=10 mistake=11 blunder=11 | avg_loss=4.25
+  R3 P2: 71 locks | none=44 inacc=10 mistake=8 blunder=9 | avg_loss=3.58
+  R4 P1: 66 locks | none=35 inacc=12 mistake=5 blunder=14 | avg_loss=4.71
+  R4 P2: 58 locks | none=33 inacc=6 mistake=13 blunder=6 | avg_loss=3.62
+  R5 P1: 64 locks | none=44 inacc=5 mistake=7 blunder=8 | avg_loss=3.30
+  R5 P2: 49 locks | none=31 inacc=7 mistake=2 blunder=9 | avg_loss=6.04
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma__sapphire909__a1ffc77d81c8.ttrm — all rounds, both players
+[22m[39m
+═══ a__sapphire909__a1ffc77d81c8.ttrm (5 rounds) ═══
+  R1 P1: 135 locks | none=74 inacc=14 mistake=22 blunder=25 | avg_loss=4.73
+  R1 P2: 142 locks | none=69 inacc=18 mistake=21 blunder=34 | avg_loss=6.49
+  R2 P1: 35 locks | none=22 inacc=1 mistake=7 blunder=5 | avg_loss=3.85
+  R2 P2: 42 locks | none=25 inacc=5 mistake=9 blunder=3 | avg_loss=3.43
+  R3 P1: 265 locks | none=147 inacc=25 mistake=43 blunder=50 | avg_loss=4.96
+  R3 P2: 281 locks | none=161 inacc=20 mistake=34 blunder=66 | avg_loss=5.65
+  R4 P1: 47 locks | none=25 inacc=4 mistake=9 blunder=9 | avg_loss=5.88
+  R4 P2: 51 locks | none=7 inacc=2 mistake=7 blunder=35 | avg_loss=19.85
+  R5 P1: 66 locks | none=32 inacc=8 mistake=11 blunder=15 | avg_loss=5.47
+  R5 P2: 64 locks | none=33 inacc=8 mistake=7 blunder=16 | avg_loss=5.51
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma__sapphire909__abd34394889d.ttrm — all rounds, both players
+[22m[39m
+═══ a__sapphire909__abd34394889d.ttrm (5 rounds) ═══
+  R1 P1: 25 locks | none=8 inacc=1 mistake=4 blunder=12 | avg_loss=12.48
+  R1 P2: 22 locks | none=14 inacc=4 mistake=3 blunder=1 | avg_loss=2.07
+  R2 P1: 44 locks | none=16 inacc=11 mistake=4 blunder=13 | avg_loss=6.95
+  R2 P2: 39 locks | none=23 inacc=2 mistake=7 blunder=7 | avg_loss=4.87
+  R3 P1: 55 locks | none=27 inacc=9 mistake=6 blunder=13 | avg_loss=6.32
+  R3 P2: 57 locks | none=37 inacc=5 mistake=12 blunder=3 | avg_loss=2.85
+  R4 P1: 81 locks | none=36 inacc=7 mistake=12 blunder=26 | avg_loss=7.67
+  R4 P2: 84 locks | none=48 inacc=9 mistake=10 blunder=17 | avg_loss=5.17
+  R5 P1: 67 locks | none=40 inacc=7 mistake=6 blunder=14 | avg_loss=5.81
+  R5 P2: 61 locks | none=34 inacc=4 mistake=10 blunder=13 | avg_loss=5.45
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ma__sapphire909__ded2421b1a9b.ttrm — all rounds, both players
+[22m[39m
+═══ a__sapphire909__ded2421b1a9b.ttrm (5 rounds) ═══
+  R1 P1: 131 locks | none=85 inacc=22 mistake=17 blunder=7 | avg_loss=2.36
+  R1 P2: 199 locks | none=115 inacc=18 mistake=24 blunder=42 | avg_loss=5.16
+  R2 P1: 32 locks | none=19 inacc=3 mistake=7 blunder=3 | avg_loss=3.78
+  R2 P2: 66 locks | none=28 inacc=8 mistake=14 blunder=16 | avg_loss=7.05
+  R3 P1: 34 locks | none=15 inacc=4 mistake=6 blunder=9 | avg_loss=5.47
+  R3 P2: 34 locks | none=17 inacc=4 mistake=7 blunder=6 | avg_loss=5.51
+  R4 P1: 31 locks | none=15 inacc=2 mistake=6 blunder=8 | avg_loss=5.79
+  R4 P2: 20 locks | none=10 inacc=4 mistake=3 blunder=3 | avg_loss=4.21
+  R5 P1: 88 locks | none=62 inacc=11 mistake=3 blunder=12 | avg_loss=3.06
+  R5 P2: 127 locks | none=76 inacc=14 mistake=15 blunder=22 | avg_loss=4.58
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb+__ateblain__30b8697afa2c.ttrm — all rounds, both players
+[22m[39m
+═══ b+__ateblain__30b8697afa2c.ttrm (1 rounds) ═══
+  R1 P1: 274 locks | none=174 inacc=39 mistake=30 blunder=31 | avg_loss=3.32
+  R1 P2: 224 locks | none=175 inacc=28 mistake=10 blunder=11 | avg_loss=2.81
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb+__ateblain__3dfca1c1112a.ttrm — all rounds, both players
+[22m[39m
+═══ b+__ateblain__3dfca1c1112a.ttrm (3 rounds) ═══
+  R1 P1: 47 locks | none=28 inacc=9 mistake=7 blunder=3 | avg_loss=2.28
+  R1 P2: 50 locks | none=32 inacc=5 mistake=5 blunder=8 | avg_loss=4.44
+  R2 P1: 45 locks | none=24 inacc=16 mistake=5 blunder=0 | avg_loss=2.13
+  R2 P2: 37 locks | none=16 inacc=6 mistake=6 blunder=9 | avg_loss=5.49
+  R3 P1: 65 locks | none=36 inacc=20 mistake=9 blunder=0 | avg_loss=2.00
+  R3 P2: 59 locks | none=34 inacc=13 mistake=7 blunder=5 | avg_loss=3.02
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb+__ateblain__6615e1036e35.ttrm — all rounds, both players
+[22m[39m
+═══ b+__ateblain__6615e1036e35.ttrm (4 rounds) ═══
+  R1 P1: 327 locks | none=232 inacc=52 mistake=31 blunder=12 | avg_loss=1.80
+  R1 P2: 204 locks | none=145 inacc=22 mistake=20 blunder=17 | avg_loss=2.63
+  R2 P1: 118 locks | none=72 inacc=19 mistake=16 blunder=11 | avg_loss=3.33
+  R2 P2: 71 locks | none=46 inacc=6 mistake=5 blunder=14 | avg_loss=4.55
+  R3 P1: 52 locks | none=27 inacc=4 mistake=9 blunder=12 | avg_loss=5.38
+  R3 P2: 33 locks | none=16 inacc=4 mistake=5 blunder=8 | avg_loss=6.85
+  R4 P1: 114 locks | none=58 inacc=27 mistake=17 blunder=12 | avg_loss=3.53
+  R4 P2: 67 locks | none=40 inacc=8 mistake=11 blunder=8 | avg_loss=3.40
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb+__ateblain__d5022f35a540.ttrm — all rounds, both players
+[22m[39m
+═══ b+__ateblain__d5022f35a540.ttrm (4 rounds) ═══
+  R1 P1: 37 locks | none=19 inacc=9 mistake=7 blunder=2 | avg_loss=3.23
+  R1 P2: 33 locks | none=15 inacc=7 mistake=7 blunder=4 | avg_loss=5.78
+  R2 P1: 30 locks | none=13 inacc=3 mistake=3 blunder=11 | avg_loss=10.17
+  R2 P2: 38 locks | none=13 inacc=6 mistake=14 blunder=5 | avg_loss=5.36
+  R3 P1: 36 locks | none=25 inacc=3 mistake=5 blunder=3 | avg_loss=2.89
+  R3 P2: 40 locks | none=8 inacc=3 mistake=8 blunder=21 | avg_loss=12.58
+  R4 P1: 87 locks | none=55 inacc=13 mistake=10 blunder=9 | avg_loss=3.34
+  R4 P2: 114 locks | none=37 inacc=22 mistake=23 blunder=32 | avg_loss=7.74
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb+__ateblain__f1d6d13e8762.ttrm — all rounds, both players
+[22m[39m
+═══ b+__ateblain__f1d6d13e8762.ttrm (3 rounds) ═══
+  R1 P1: 159 locks | none=105 inacc=9 mistake=18 blunder=27 | avg_loss=3.92
+  R1 P2: 114 locks | none=79 inacc=19 mistake=10 blunder=6 | avg_loss=2.16
+  R2 P1: 73 locks | none=53 inacc=10 mistake=8 blunder=2 | avg_loss=1.58
+  R2 P2: 39 locks | none=31 inacc=2 mistake=4 blunder=2 | avg_loss=2.61
+  R3 P1: 167 locks | none=124 inacc=24 mistake=11 blunder=8 | avg_loss=2.02
+  R3 P2: 106 locks | none=67 inacc=16 mistake=12 blunder=11 | avg_loss=2.98
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb+__kerokero1689__0fa0097f37f8.ttrm — all rounds, both players
+[22m[39m
+═══ b+__kerokero1689__0fa0097f37f8.ttrm (4 rounds) ═══
+  R1 P1: 244 locks | none=172 inacc=39 mistake=16 blunder=17 | avg_loss=2.16
+  R1 P2: 260 locks | none=185 inacc=40 mistake=26 blunder=9 | avg_loss=1.92
+  R2 P1: 47 locks | none=31 inacc=7 mistake=8 blunder=1 | avg_loss=2.33
+  R2 P2: 51 locks | none=31 inacc=7 mistake=6 blunder=7 | avg_loss=4.41
+  R3 P1: 141 locks | none=100 inacc=12 mistake=21 blunder=8 | avg_loss=2.52
+  R3 P2: 153 locks | none=106 inacc=10 mistake=25 blunder=12 | avg_loss=2.83
+  R4 P1: 265 locks | none=180 inacc=30 mistake=37 blunder=18 | avg_loss=2.46
+  R4 P2: 328 locks | none=243 inacc=39 mistake=27 blunder=19 | avg_loss=2.32
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb+__kerokero1689__24239d336104.ttrm — all rounds, both players
+[22m[39m
+═══ b+__kerokero1689__24239d336104.ttrm (4 rounds) ═══
+  R1 P1: 34 locks | none=23 inacc=6 mistake=5 blunder=0 | avg_loss=1.88
+  R1 P2: 41 locks | none=24 inacc=5 mistake=6 blunder=6 | avg_loss=4.09
+  R2 P1: 189 locks | none=131 inacc=20 mistake=21 blunder=17 | avg_loss=2.61
+  R2 P2: 233 locks | none=137 inacc=30 mistake=33 blunder=33 | avg_loss=3.62
+  R3 P1: 107 locks | none=72 inacc=19 mistake=3 blunder=13 | avg_loss=2.89
+  R3 P2: 128 locks | none=72 inacc=20 mistake=22 blunder=14 | avg_loss=3.93
+  R4 P1: 71 locks | none=49 inacc=14 mistake=6 blunder=2 | avg_loss=1.56
+  R4 P2: 79 locks | none=56 inacc=6 mistake=13 blunder=4 | avg_loss=2.23
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb+__kerokero1689__28c8dd1d47db.ttrm — all rounds, both players
+[22m[39m
+═══ b+__kerokero1689__28c8dd1d47db.ttrm (4 rounds) ═══
+  R1 P1: 103 locks | none=76 inacc=12 mistake=11 blunder=4 | avg_loss=1.88
+  R1 P2: 92 locks | none=68 inacc=10 mistake=7 blunder=7 | avg_loss=2.48
+  R2 P1: 44 locks | none=31 inacc=5 mistake=8 blunder=0 | avg_loss=1.82
+  R2 P2: 40 locks | none=24 inacc=8 mistake=7 blunder=1 | avg_loss=2.31
+  R3 P1: 414 locks | none=295 inacc=58 mistake=37 blunder=24 | avg_loss=2.03
+  R3 P2: 294 locks | none=221 inacc=37 mistake=21 blunder=15 | avg_loss=1.75
+  R4 P1: 243 locks | none=167 inacc=41 mistake=33 blunder=2 | avg_loss=1.76
+  R4 P2: 212 locks | none=149 inacc=26 mistake=24 blunder=13 | avg_loss=2.33
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb+__kerokero1689__b16d50b32c08.ttrm — all rounds, both players
+[22m[39m
+═══ b+__kerokero1689__b16d50b32c08.ttrm (5 rounds) ═══
+  R1 P1: 78 locks | none=42 inacc=19 mistake=12 blunder=5 | avg_loss=3.33
+  R1 P2: 65 locks | none=47 inacc=5 mistake=8 blunder=5 | avg_loss=2.54
+  R2 P1: 144 locks | none=111 inacc=19 mistake=9 blunder=5 | avg_loss=1.83
+  R2 P2: 102 locks | none=70 inacc=9 mistake=7 blunder=16 | avg_loss=3.64
+  R3 P1: 176 locks | none=122 inacc=35 mistake=16 blunder=3 | avg_loss=1.59
+  R3 P2: 126 locks | none=91 inacc=13 mistake=11 blunder=11 | avg_loss=2.64
+  R4 P1: 69 locks | none=35 inacc=7 mistake=15 blunder=12 | avg_loss=5.31
+  R4 P2: 60 locks | none=44 inacc=13 mistake=3 blunder=0 | avg_loss=1.23
+  R5 P1: 34 locks | none=19 inacc=11 mistake=4 blunder=0 | avg_loss=2.08
+  R5 P2: 23 locks | none=17 inacc=3 mistake=2 blunder=1 | avg_loss=1.80
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb+__kerokero1689__fe89360f927b.ttrm — all rounds, both players
+[22m[39m
+═══ b+__kerokero1689__fe89360f927b.ttrm (4 rounds) ═══
+  R1 P1: 113 locks | none=78 inacc=16 mistake=15 blunder=4 | avg_loss=2.14
+  R1 P2: 158 locks | none=103 inacc=19 mistake=17 blunder=19 | avg_loss=3.59
+  R2 P1: 94 locks | none=60 inacc=16 mistake=13 blunder=5 | avg_loss=2.48
+  R2 P2: 145 locks | none=80 inacc=18 mistake=19 blunder=28 | avg_loss=4.83
+  R3 P1: 48 locks | none=28 inacc=9 mistake=8 blunder=3 | avg_loss=2.84
+  R3 P2: 61 locks | none=40 inacc=6 mistake=7 blunder=8 | avg_loss=3.96
+  R4 P1: 42 locks | none=26 inacc=10 mistake=4 blunder=2 | avg_loss=2.08
+  R4 P2: 62 locks | none=33 inacc=9 mistake=12 blunder=8 | avg_loss=3.88
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb+__raeian__23657d43bfbf.ttrm — all rounds, both players
+[22m[39m
+═══ b+__raeian__23657d43bfbf.ttrm (5 rounds) ═══
+  R1 P1: 55 locks | none=36 inacc=6 mistake=8 blunder=5 | avg_loss=2.85
+  R1 P2: 53 locks | none=15 inacc=1 mistake=15 blunder=22 | avg_loss=10.37
+  R2 P1: 80 locks | none=45 inacc=6 mistake=17 blunder=12 | avg_loss=5.21
+  R2 P2: 92 locks | none=66 inacc=5 mistake=10 blunder=11 | avg_loss=3.49
+  R3 P1: 30 locks | none=18 inacc=10 mistake=2 blunder=0 | avg_loss=1.71
+  R3 P2: 24 locks | none=12 inacc=4 mistake=2 blunder=6 | avg_loss=5.40
+  R4 P1: 110 locks | none=78 inacc=13 mistake=15 blunder=4 | avg_loss=2.04
+  R4 P2: 148 locks | none=102 inacc=17 mistake=17 blunder=12 | avg_loss=2.81
+  R5 P1: 78 locks | none=53 inacc=8 mistake=13 blunder=4 | avg_loss=2.54
+  R5 P2: 82 locks | none=54 inacc=5 mistake=12 blunder=11 | avg_loss=3.16
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb+__raeian__7171b9ce4e6d.ttrm — all rounds, both players
+[22m[39m
+═══ b+__raeian__7171b9ce4e6d.ttrm (2 rounds) ═══
+  R1 P1: 41 locks | none=17 inacc=4 mistake=9 blunder=11 | avg_loss=5.60
+  R1 P2: 39 locks | none=24 inacc=6 mistake=5 blunder=4 | avg_loss=3.38
+  R2 P1: 95 locks | none=42 inacc=17 mistake=12 blunder=24 | avg_loss=6.70
+  R2 P2: 102 locks | none=63 inacc=13 mistake=11 blunder=15 | avg_loss=3.47
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb+__raeian__a1e17708dc34.ttrm — all rounds, both players
+[22m[39m
+═══ b+__raeian__a1e17708dc34.ttrm (4 rounds) ═══
+  R1 P1: 132 locks | none=68 inacc=13 mistake=27 blunder=24 | avg_loss=4.98
+  R1 P2: 144 locks | none=94 inacc=14 mistake=19 blunder=17 | avg_loss=3.29
+  R2 P1: 41 locks | none=18 inacc=4 mistake=11 blunder=8 | avg_loss=5.49
+  R2 P2: 49 locks | none=26 inacc=3 mistake=3 blunder=17 | avg_loss=8.12
+  R3 P1: 134 locks | none=58 inacc=10 mistake=27 blunder=39 | avg_loss=7.41
+  R3 P2: 147 locks | none=89 inacc=11 mistake=16 blunder=31 | avg_loss=5.44
+  R4 P1: 37 locks | none=19 inacc=8 mistake=1 blunder=9 | avg_loss=5.93
+  R4 P2: 36 locks | none=19 inacc=5 mistake=7 blunder=5 | avg_loss=4.50
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb+__raeian__b2d1c242d5f9.ttrm — all rounds, both players
+[22m[39m
+═══ b+__raeian__b2d1c242d5f9.ttrm (4 rounds) ═══
+  R1 P1: 38 locks | none=14 inacc=6 mistake=6 blunder=12 | avg_loss=7.59
+  R1 P2: 31 locks | none=21 inacc=3 mistake=4 blunder=3 | avg_loss=3.04
+  R2 P1: 115 locks | none=63 inacc=16 mistake=17 blunder=19 | avg_loss=4.48
+  R2 P2: 116 locks | none=75 inacc=16 mistake=10 blunder=15 | avg_loss=3.64
+  R3 P1: 103 locks | none=57 inacc=9 mistake=17 blunder=20 | avg_loss=4.79
+  R3 P2: 101 locks | none=71 inacc=13 mistake=8 blunder=9 | avg_loss=2.55
+  R4 P1: 23 locks | none=10 inacc=2 mistake=3 blunder=8 | avg_loss=7.85
+  R4 P2: 20 locks | none=13 inacc=4 mistake=1 blunder=2 | avg_loss=3.53
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb+__raeian__bc87f296c23f.ttrm — all rounds, both players
+[22m[39m
+═══ b+__raeian__bc87f296c23f.ttrm (4 rounds) ═══
+  R1 P1: 56 locks | none=19 inacc=7 mistake=5 blunder=25 | avg_loss=11.49
+  R1 P2: 65 locks | none=31 inacc=29 mistake=5 blunder=0 | avg_loss=2.13
+  R2 P1: 128 locks | none=77 inacc=15 mistake=12 blunder=24 | avg_loss=5.19
+  R2 P2: 111 locks | none=66 inacc=11 mistake=25 blunder=9 | avg_loss=3.29
+  R3 P1: 18 locks | none=7 inacc=3 mistake=3 blunder=5 | avg_loss=7.83
+  R3 P2: 18 locks | none=5 inacc=2 mistake=1 blunder=10 | avg_loss=23.89
+  R4 P1: 212 locks | none=152 inacc=20 mistake=21 blunder=19 | avg_loss=2.67
+  R4 P2: 189 locks | none=141 inacc=22 mistake=20 blunder=6 | avg_loss=1.63
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb__cubomancer__6ceb07d48bc2.ttrm — all rounds, both players
+[22m[39m
+═══ b__cubomancer__6ceb07d48bc2.ttrm (5 rounds) ═══
+  R1 P1: 125 locks | none=68 inacc=22 mistake=27 blunder=8 | avg_loss=3.38
+  R1 P2: 106 locks | none=64 inacc=13 mistake=16 blunder=13 | avg_loss=3.52
+  R2 P1: 70 locks | none=37 inacc=13 mistake=13 blunder=7 | avg_loss=3.44
+  R2 P2: 59 locks | none=35 inacc=8 mistake=9 blunder=7 | avg_loss=3.09
+  R3 P1: 154 locks | none=98 inacc=27 mistake=18 blunder=11 | avg_loss=2.59
+  R3 P2: 108 locks | none=67 inacc=7 mistake=14 blunder=20 | avg_loss=4.44
+  R4 P1: 43 locks | none=22 inacc=5 mistake=7 blunder=9 | avg_loss=5.13
+  R4 P2: 36 locks | none=27 inacc=3 mistake=4 blunder=2 | avg_loss=2.87
+  R5 P1: 95 locks | none=46 inacc=10 mistake=19 blunder=20 | avg_loss=7.01
+  R5 P2: 87 locks | none=59 inacc=11 mistake=11 blunder=6 | avg_loss=2.76
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb__cubomancer__9af868e563e2.ttrm — all rounds, both players
+[22m[39m
+═══ b__cubomancer__9af868e563e2.ttrm (5 rounds) ═══
+  R1 P1: 174 locks | none=115 inacc=39 mistake=16 blunder=4 | avg_loss=1.79
+  R1 P2: 122 locks | none=79 inacc=11 mistake=10 blunder=22 | avg_loss=4.03
+  R2 P1: 352 locks | none=222 inacc=57 mistake=40 blunder=33 | avg_loss=2.95
+  R2 P2: 276 locks | none=173 inacc=44 mistake=42 blunder=17 | avg_loss=2.57
+  R3 P1: 262 locks | none=152 inacc=30 mistake=43 blunder=37 | avg_loss=4.09
+  R3 P2: 179 locks | none=106 inacc=27 mistake=27 blunder=19 | avg_loss=3.13
+  R4 P1: 144 locks | none=95 inacc=25 mistake=16 blunder=8 | avg_loss=2.40
+  R4 P2: 91 locks | none=53 inacc=9 mistake=13 blunder=16 | avg_loss=4.09
+  R5 P1: 84 locks | none=53 inacc=8 mistake=13 blunder=10 | avg_loss=3.46
+  R5 P2: 58 locks | none=43 inacc=7 mistake=6 blunder=2 | avg_loss=1.73
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb__cubomancer__bde7dc4f4d09.ttrm — all rounds, both players
+[22m[39m
+═══ b__cubomancer__bde7dc4f4d09.ttrm (4 rounds) ═══
+  R1 P1: 91 locks | none=50 inacc=20 mistake=18 blunder=3 | avg_loss=2.65
+  R1 P2: 87 locks | none=52 inacc=15 mistake=16 blunder=4 | avg_loss=2.58
+  R2 P1: 92 locks | none=55 inacc=10 mistake=16 blunder=11 | avg_loss=3.45
+  R2 P2: 120 locks | none=81 inacc=27 mistake=8 blunder=4 | avg_loss=2.11
+  R3 P1: 255 locks | none=170 inacc=41 mistake=26 blunder=18 | avg_loss=2.48
+  R3 P2: 269 locks | none=183 inacc=36 mistake=29 blunder=21 | avg_loss=2.70
+  R4 P1: 50 locks | none=33 inacc=10 mistake=6 blunder=1 | avg_loss=2.00
+  R4 P2: 54 locks | none=42 inacc=5 mistake=3 blunder=4 | avg_loss=1.82
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb__cubomancer__dbd0ecdfdb5a.ttrm — all rounds, both players
+[22m[39m
+═══ b__cubomancer__dbd0ecdfdb5a.ttrm (5 rounds) ═══
+  R1 P1: 211 locks | none=129 inacc=38 mistake=25 blunder=19 | avg_loss=3.30
+  R1 P2: 126 locks | none=79 inacc=20 mistake=17 blunder=10 | avg_loss=2.78
+  R2 P1: 223 locks | none=147 inacc=40 mistake=24 blunder=12 | avg_loss=2.24
+  R2 P2: 145 locks | none=84 inacc=25 mistake=17 blunder=19 | avg_loss=3.91
+  R3 P1: 141 locks | none=84 inacc=12 mistake=15 blunder=30 | avg_loss=4.84
+  R3 P2: 81 locks | none=54 inacc=8 mistake=15 blunder=4 | avg_loss=2.35
+  R4 P1: 184 locks | none=102 inacc=29 mistake=26 blunder=27 | avg_loss=3.93
+  R4 P2: 120 locks | none=77 inacc=18 mistake=23 blunder=2 | avg_loss=2.19
+  R5 P1: 205 locks | none=140 inacc=30 mistake=27 blunder=8 | avg_loss=2.07
+  R5 P2: 128 locks | none=82 inacc=14 mistake=21 blunder=11 | avg_loss=3.03
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb__cubomancer__f37e64851afb.ttrm — all rounds, both players
+[22m[39m
+═══ b__cubomancer__f37e64851afb.ttrm (4 rounds) ═══
+  R1 P1: 42 locks | none=31 inacc=8 mistake=2 blunder=1 | avg_loss=1.54
+  R1 P2: 46 locks | none=29 inacc=13 mistake=4 blunder=0 | avg_loss=1.82
+  R2 P1: 61 locks | none=39 inacc=15 mistake=4 blunder=3 | avg_loss=2.54
+  R2 P2: 76 locks | none=59 inacc=6 mistake=6 blunder=5 | avg_loss=2.02
+  R3 P1: 164 locks | none=91 inacc=20 mistake=26 blunder=27 | avg_loss=4.18
+  R3 P2: 205 locks | none=144 inacc=29 mistake=23 blunder=9 | avg_loss=2.14
+  R4 P1: 59 locks | none=35 inacc=10 mistake=11 blunder=3 | avg_loss=2.65
+  R4 P2: 59 locks | none=39 inacc=9 mistake=4 blunder=7 | avg_loss=3.29
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb__praxand__2c60f55900da.ttrm — all rounds, both players
+[22m[39m
+═══ b__praxand__2c60f55900da.ttrm (3 rounds) ═══
+  R1 P1: 42 locks | none=12 inacc=0 mistake=5 blunder=25 | avg_loss=13.36
+  R1 P2: 51 locks | none=28 inacc=15 mistake=3 blunder=5 | avg_loss=3.15
+  R2 P1: 61 locks | none=38 inacc=6 mistake=8 blunder=9 | avg_loss=3.36
+  R2 P2: 87 locks | none=66 inacc=8 mistake=10 blunder=3 | avg_loss=1.64
+  R3 P1: 44 locks | none=9 inacc=4 mistake=7 blunder=24 | avg_loss=15.52
+  R3 P2: 68 locks | none=49 inacc=9 mistake=8 blunder=2 | avg_loss=1.64
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb__praxand__3a2c6b128a69.ttrm — all rounds, both players
+[22m[39m
+═══ b__praxand__3a2c6b128a69.ttrm (3 rounds) ═══
+  R1 P1: 156 locks | none=102 inacc=22 mistake=18 blunder=14 | avg_loss=3.03
+  R1 P2: 116 locks | none=94 inacc=13 mistake=6 blunder=3 | avg_loss=1.11
+  R2 P1: 38 locks | none=17 inacc=7 mistake=5 blunder=9 | avg_loss=6.74
+  R2 P2: 41 locks | none=14 inacc=2 mistake=4 blunder=21 | avg_loss=12.25
+  R3 P1: 42 locks | none=16 inacc=5 mistake=5 blunder=16 | avg_loss=8.79
+  R3 P2: 31 locks | none=13 inacc=2 mistake=1 blunder=15 | avg_loss=10.15
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb__praxand__504eeac4e865.ttrm — all rounds, both players
+[22m[39m
+═══ b__praxand__504eeac4e865.ttrm (4 rounds) ═══
+  R1 P1: 43 locks | none=20 inacc=7 mistake=15 blunder=1 | avg_loss=3.35
+  R1 P2: 20 locks | none=10 inacc=4 mistake=4 blunder=2 | avg_loss=3.90
+  R2 P1: 127 locks | none=56 inacc=34 mistake=29 blunder=8 | avg_loss=3.55
+  R2 P2: 83 locks | none=58 inacc=11 mistake=10 blunder=4 | avg_loss=2.00
+  R3 P1: 173 locks | none=103 inacc=25 mistake=24 blunder=21 | avg_loss=3.70
+  R3 P2: 120 locks | none=80 inacc=18 mistake=10 blunder=12 | avg_loss=2.80
+  R4 P1: 100 locks | none=63 inacc=21 mistake=14 blunder=2 | avg_loss=2.08
+  R4 P2: 60 locks | none=41 inacc=5 mistake=7 blunder=7 | avg_loss=3.22
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb__praxand__70e93f4485c9.ttrm — all rounds, both players
+[22m[39m
+═══ b__praxand__70e93f4485c9.ttrm (4 rounds) ═══
+  R1 P1: 164 locks | none=84 inacc=30 mistake=33 blunder=17 | avg_loss=3.77
+  R1 P2: 116 locks | none=77 inacc=10 mistake=16 blunder=13 | avg_loss=3.50
+  R2 P1: 149 locks | none=101 inacc=18 mistake=17 blunder=13 | avg_loss=2.87
+  R2 P2: 92 locks | none=52 inacc=7 mistake=9 blunder=24 | avg_loss=6.15
+  R3 P1: 92 locks | none=42 inacc=21 mistake=15 blunder=14 | avg_loss=4.20
+  R3 P2: 58 locks | none=41 inacc=6 mistake=9 blunder=2 | avg_loss=2.32
+  R4 P1: 82 locks | none=52 inacc=8 mistake=17 blunder=5 | avg_loss=2.88
+  R4 P2: 61 locks | none=27 inacc=4 mistake=9 blunder=21 | avg_loss=9.50
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb__praxand__f06966df2a26.ttrm — all rounds, both players
+[22m[39m
+═══ b__praxand__f06966df2a26.ttrm (5 rounds) ═══
+  R1 P1: 144 locks | none=92 inacc=22 mistake=19 blunder=11 | avg_loss=2.79
+  R1 P2: 99 locks | none=68 inacc=11 mistake=11 blunder=9 | avg_loss=2.80
+  R2 P1: 77 locks | none=45 inacc=10 mistake=8 blunder=14 | avg_loss=4.80
+  R2 P2: 55 locks | none=12 inacc=4 mistake=5 blunder=34 | avg_loss=13.83
+  R3 P1: 58 locks | none=41 inacc=13 mistake=4 blunder=0 | avg_loss=1.33
+  R3 P2: 33 locks | none=19 inacc=3 mistake=3 blunder=8 | avg_loss=5.23
+  R4 P1: 161 locks | none=83 inacc=30 mistake=31 blunder=17 | avg_loss=3.75
+  R4 P2: 117 locks | none=73 inacc=7 mistake=20 blunder=17 | avg_loss=4.37
+  R5 P1: 118 locks | none=72 inacc=17 mistake=17 blunder=12 | avg_loss=3.46
+  R5 P2: 80 locks | none=48 inacc=11 mistake=14 blunder=7 | avg_loss=2.97
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb__sighrin__62394b9cd2d7.ttrm — all rounds, both players
+[22m[39m
+═══ b__sighrin__62394b9cd2d7.ttrm (4 rounds) ═══
+  R1 P1: 45 locks | none=36 inacc=2 mistake=4 blunder=3 | avg_loss=2.09
+  R1 P2: 39 locks | none=21 inacc=7 mistake=6 blunder=5 | avg_loss=5.69
+  R2 P1: 130 locks | none=81 inacc=20 mistake=17 blunder=12 | avg_loss=3.54
+  R2 P2: 112 locks | none=63 inacc=15 mistake=21 blunder=13 | avg_loss=4.35
+  R3 P1: 64 locks | none=39 inacc=10 mistake=11 blunder=4 | avg_loss=3.03
+  R3 P2: 59 locks | none=42 inacc=6 mistake=5 blunder=6 | avg_loss=2.53
+  R4 P1: 192 locks | none=136 inacc=21 mistake=23 blunder=12 | avg_loss=2.22
+  R4 P2: 169 locks | none=110 inacc=20 mistake=24 blunder=15 | avg_loss=2.85
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb__sighrin__87c94e2417a5.ttrm — all rounds, both players
+[22m[39m
+═══ b__sighrin__87c94e2417a5.ttrm (3 rounds) ═══
+  R1 P1: 79 locks | none=50 inacc=10 mistake=13 blunder=6 | avg_loss=3.23
+  R1 P2: 46 locks | none=28 inacc=6 mistake=7 blunder=5 | avg_loss=3.57
+  R2 P1: 114 locks | none=83 inacc=10 mistake=15 blunder=6 | avg_loss=2.35
+  R2 P2: 69 locks | none=55 inacc=8 mistake=3 blunder=3 | avg_loss=1.76
+  R3 P1: 96 locks | none=63 inacc=19 mistake=7 blunder=7 | avg_loss=2.42
+  R3 P2: 59 locks | none=40 inacc=8 mistake=10 blunder=1 | avg_loss=2.19
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb__sighrin__a8bf4be260a1.ttrm — all rounds, both players
+[22m[39m
+═══ b__sighrin__a8bf4be260a1.ttrm (5 rounds) ═══
+  R1 P1: 56 locks | none=29 inacc=9 mistake=12 blunder=6 | avg_loss=4.38
+  R1 P2: 55 locks | none=39 inacc=9 mistake=5 blunder=2 | avg_loss=1.81
+  R2 P1: 59 locks | none=25 inacc=2 mistake=7 blunder=25 | avg_loss=8.86
+  R2 P2: 72 locks | none=42 inacc=18 mistake=11 blunder=1 | avg_loss=2.06
+  R3 P1: 51 locks | none=26 inacc=15 mistake=6 blunder=4 | avg_loss=3.71
+  R3 P2: 43 locks | none=19 inacc=8 mistake=8 blunder=8 | avg_loss=5.19
+  R4 P1: 62 locks | none=45 inacc=6 mistake=7 blunder=4 | avg_loss=2.45
+  R4 P2: 68 locks | none=50 inacc=10 mistake=4 blunder=4 | avg_loss=2.23
+  R5 P1: 128 locks | none=78 inacc=20 mistake=24 blunder=6 | avg_loss=2.46
+  R5 P2: 132 locks | none=83 inacc=16 mistake=18 blunder=15 | avg_loss=3.31
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb__sighrin__b4a78d67cebf.ttrm — all rounds, both players
+[22m[39m
+═══ b__sighrin__b4a78d67cebf.ttrm (5 rounds) ═══
+  R1 P1: 39 locks | none=27 inacc=6 mistake=5 blunder=1 | avg_loss=1.67
+  R1 P2: 36 locks | none=13 inacc=8 mistake=3 blunder=12 | avg_loss=9.40
+  R2 P1: 57 locks | none=31 inacc=6 mistake=13 blunder=7 | avg_loss=4.47
+  R2 P2: 70 locks | none=55 inacc=11 mistake=3 blunder=1 | avg_loss=1.13
+  R3 P1: 43 locks | none=24 inacc=7 mistake=10 blunder=2 | avg_loss=2.89
+  R3 P2: 50 locks | none=34 inacc=5 mistake=9 blunder=2 | avg_loss=2.36
+  R4 P1: 50 locks | none=30 inacc=7 mistake=6 blunder=7 | avg_loss=3.79
+  R4 P2: 58 locks | none=44 inacc=10 mistake=2 blunder=2 | avg_loss=1.84
+  R5 P1: 84 locks | none=45 inacc=14 mistake=14 blunder=11 | avg_loss=3.69
+  R5 P2: 82 locks | none=54 inacc=5 mistake=12 blunder=11 | avg_loss=3.50
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mb__sighrin__fe6465cedb2f.ttrm — all rounds, both players
+[22m[39m
+═══ b__sighrin__fe6465cedb2f.ttrm (5 rounds) ═══
+  R1 P1: 63 locks | none=47 inacc=4 mistake=8 blunder=4 | avg_loss=2.25
+  R1 P2: 57 locks | none=40 inacc=10 mistake=5 blunder=2 | avg_loss=1.98
+  R2 P1: 52 locks | none=36 inacc=8 mistake=5 blunder=3 | avg_loss=2.21
+  R2 P2: 35 locks | none=27 inacc=4 mistake=4 blunder=0 | avg_loss=1.22
+  R3 P1: 48 locks | none=28 inacc=9 mistake=6 blunder=5 | avg_loss=3.15
+  R3 P2: 49 locks | none=33 inacc=15 mistake=0 blunder=1 | avg_loss=1.30
+  R4 P1: 149 locks | none=116 inacc=17 mistake=12 blunder=4 | avg_loss=1.42
+  R4 P2: 131 locks | none=92 inacc=17 mistake=16 blunder=6 | avg_loss=2.16
+  R5 P1: 107 locks | none=80 inacc=12 mistake=12 blunder=3 | avg_loss=1.91
+  R5 P2: 98 locks | none=60 inacc=12 mistake=12 blunder=14 | avg_loss=3.98
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms+__blinkyamy123__21050e061940.ttrm — all rounds, both players
+[22m[39m
+═══ s+__blinkyamy123__21050e061940.ttrm (6 rounds) ═══
+  R1 P1: 30 locks | none=14 inacc=4 mistake=8 blunder=4 | avg_loss=5.06
+  R1 P2: 35 locks | none=10 inacc=8 mistake=4 blunder=13 | avg_loss=10.41
+  R2 P1: 194 locks | none=102 inacc=26 mistake=30 blunder=36 | avg_loss=4.67
+  R2 P2: 171 locks | none=108 inacc=14 mistake=9 blunder=40 | avg_loss=5.02
+  R3 P1: 103 locks | none=56 inacc=16 mistake=19 blunder=12 | avg_loss=3.67
+  R3 P2: 76 locks | none=44 inacc=10 mistake=11 blunder=11 | avg_loss=3.95
+  R4 P1: 26 locks | none=19 inacc=3 mistake=4 blunder=0 | avg_loss=1.62
+  R4 P2: 21 locks | none=13 inacc=1 mistake=3 blunder=4 | avg_loss=3.80
+  R5 P1: 34 locks | none=18 inacc=5 mistake=9 blunder=2 | avg_loss=3.49
+  R5 P2: 31 locks | none=13 inacc=3 mistake=3 blunder=12 | avg_loss=9.12
+  R6 P1: 40 locks | none=24 inacc=5 mistake=7 blunder=4 | avg_loss=2.86
+  R6 P2: 32 locks | none=13 inacc=3 mistake=5 blunder=11 | avg_loss=7.94
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms+__blinkyamy123__9bf644ec437b.ttrm — all rounds, both players
+[22m[39m
+═══ s+__blinkyamy123__9bf644ec437b.ttrm (6 rounds) ═══
+  R1 P1: 121 locks | none=92 inacc=11 mistake=11 blunder=7 | avg_loss=2.29
+  R1 P2: 153 locks | none=85 inacc=16 mistake=30 blunder=22 | avg_loss=4.15
+  R2 P1: 138 locks | none=88 inacc=33 mistake=12 blunder=5 | avg_loss=2.06
+  R2 P2: 113 locks | none=69 inacc=8 mistake=8 blunder=28 | avg_loss=5.39
+  R3 P1: 100 locks | none=82 inacc=5 mistake=3 blunder=10 | avg_loss=2.19
+  R3 P2: 104 locks | none=55 inacc=13 mistake=18 blunder=18 | avg_loss=4.81
+  R4 P1: 66 locks | none=43 inacc=9 mistake=8 blunder=6 | avg_loss=3.54
+  R4 P2: 73 locks | none=31 inacc=3 mistake=16 blunder=23 | avg_loss=7.03
+  R5 P1: 148 locks | none=106 inacc=20 mistake=15 blunder=7 | avg_loss=2.03
+  R5 P2: 145 locks | none=76 inacc=24 mistake=24 blunder=21 | avg_loss=4.19
+  R6 P1: 188 locks | none=129 inacc=26 mistake=19 blunder=14 | avg_loss=2.92
+  R6 P2: 177 locks | none=98 inacc=26 mistake=29 blunder=24 | avg_loss=3.73
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms+__blinkyamy123__e64fb0c1a154.ttrm — all rounds, both players
+[22m[39m
+═══ s+__blinkyamy123__e64fb0c1a154.ttrm (7 rounds) ═══
+  R1 P1: 157 locks | none=83 inacc=31 mistake=18 blunder=25 | avg_loss=4.22
+  R1 P2: 125 locks | none=83 inacc=8 mistake=19 blunder=15 | avg_loss=3.98
+  R2 P1: 71 locks | none=44 inacc=16 mistake=6 blunder=5 | avg_loss=2.54
+  R2 P2: 65 locks | none=27 inacc=15 mistake=9 blunder=14 | avg_loss=6.59
+  R3 P1: 45 locks | none=31 inacc=7 mistake=4 blunder=3 | avg_loss=2.23
+  R3 P2: 46 locks | none=21 inacc=10 mistake=6 blunder=9 | avg_loss=6.56
+  R4 P1: 41 locks | none=24 inacc=8 mistake=7 blunder=2 | avg_loss=2.73
+  R4 P2: 30 locks | none=17 inacc=3 mistake=5 blunder=5 | avg_loss=4.56
+  R5 P1: 64 locks | none=31 inacc=18 mistake=3 blunder=12 | avg_loss=5.03
+  R5 P2: 54 locks | none=31 inacc=8 mistake=12 blunder=3 | avg_loss=2.86
+  R6 P1: 324 locks | none=199 inacc=43 mistake=56 blunder=26 | avg_loss=3.00
+  R6 P2: 275 locks | none=176 inacc=24 mistake=29 blunder=46 | avg_loss=4.37
+  R7 P1: 56 locks | none=36 inacc=14 mistake=3 blunder=3 | avg_loss=2.26
+  R7 P2: 26 locks | none=14 inacc=3 mistake=6 blunder=3 | avg_loss=4.72
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms+__blinkyamy123__fc58bd621cf8.ttrm — all rounds, both players
+[22m[39m
+═══ s+__blinkyamy123__fc58bd621cf8.ttrm (8 rounds) ═══
+  R1 P1: 51 locks | none=27 inacc=8 mistake=6 blunder=10 | avg_loss=5.44
+  R1 P2: 39 locks | none=15 inacc=7 mistake=14 blunder=3 | avg_loss=3.89
+  R2 P1: 48 locks | none=29 inacc=4 mistake=9 blunder=6 | avg_loss=4.07
+  R2 P2: 49 locks | none=32 inacc=6 mistake=7 blunder=4 | avg_loss=3.34
+  R3 P1: 60 locks | none=30 inacc=5 mistake=18 blunder=7 | avg_loss=3.94
+  R3 P2: 48 locks | none=33 inacc=8 mistake=6 blunder=1 | avg_loss=1.93
+  R4 P1: 65 locks | none=25 inacc=9 mistake=11 blunder=20 | avg_loss=8.49
+  R4 P2: 57 locks | none=28 inacc=10 mistake=6 blunder=13 | avg_loss=5.58
+  R5 P1: 77 locks | none=43 inacc=10 mistake=17 blunder=7 | avg_loss=3.50
+  R5 P2: 63 locks | none=28 inacc=6 mistake=6 blunder=23 | avg_loss=8.08
+  R6 P1: 48 locks | none=12 inacc=3 mistake=12 blunder=21 | avg_loss=11.05
+  R6 P2: 32 locks | none=12 inacc=2 mistake=6 blunder=12 | avg_loss=8.87
+  R7 P1: 68 locks | none=36 inacc=7 mistake=10 blunder=15 | avg_loss=5.48
+  R7 P2: 64 locks | none=43 inacc=9 mistake=11 blunder=1 | avg_loss=2.13
+  R8 P1: 57 locks | none=26 inacc=10 mistake=13 blunder=8 | avg_loss=4.79
+  R8 P2: 44 locks | none=21 inacc=4 mistake=15 blunder=4 | avg_loss=3.92
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms+__lookypadooky__2e7a709c30ba.ttrm — all rounds, both players
+[22m[39m
+═══ s+__lookypadooky__2e7a709c30ba.ttrm (5 rounds) ═══
+  R1 P1: 54 locks | none=21 inacc=10 mistake=8 blunder=15 | avg_loss=8.39
+  R1 P2: 39 locks | none=22 inacc=4 mistake=5 blunder=8 | avg_loss=6.98
+  R2 P1: 133 locks | none=48 inacc=19 mistake=26 blunder=40 | avg_loss=9.23
+  R2 P2: 115 locks | none=79 inacc=16 mistake=11 blunder=9 | avg_loss=2.50
+  R3 P1: 50 locks | none=17 inacc=5 mistake=6 blunder=22 | avg_loss=13.11
+  R3 P2: 51 locks | none=35 inacc=9 mistake=6 blunder=1 | avg_loss=1.72
+  R4 P1: 60 locks | none=27 inacc=8 mistake=6 blunder=19 | avg_loss=11.01
+  R4 P2: 62 locks | none=32 inacc=17 mistake=10 blunder=3 | avg_loss=2.78
+  R5 P1: 53 locks | none=15 inacc=5 mistake=4 blunder=29 | avg_loss=16.35
+  R5 P2: 52 locks | none=36 inacc=10 mistake=5 blunder=1 | avg_loss=1.75
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms+__lookypadooky__58cbc5ba184f.ttrm — all rounds, both players
+[22m[39m
+═══ s+__lookypadooky__58cbc5ba184f.ttrm (7 rounds) ═══
+  R1 P1: 85 locks | none=31 inacc=14 mistake=11 blunder=29 | avg_loss=8.89
+  R1 P2: 108 locks | none=66 inacc=14 mistake=14 blunder=14 | avg_loss=4.32
+  R2 P1: 103 locks | none=41 inacc=11 mistake=15 blunder=36 | avg_loss=8.41
+  R2 P2: 133 locks | none=64 inacc=20 mistake=23 blunder=26 | avg_loss=5.74
+  R3 P1: 70 locks | none=26 inacc=14 mistake=10 blunder=20 | avg_loss=7.82
+  R3 P2: 114 locks | none=43 inacc=21 mistake=20 blunder=30 | avg_loss=6.72
+  R4 P1: 44 locks | none=14 inacc=5 mistake=10 blunder=15 | avg_loss=10.63
+  R4 P2: 54 locks | none=29 inacc=4 mistake=10 blunder=11 | avg_loss=6.95
+  R5 P1: 119 locks | none=45 inacc=6 mistake=23 blunder=45 | avg_loss=11.13
+  R5 P2: 182 locks | none=77 inacc=28 mistake=19 blunder=58 | avg_loss=8.43
+  R6 P1: 76 locks | none=32 inacc=7 mistake=12 blunder=25 | avg_loss=8.11
+  R6 P2: 92 locks | none=40 inacc=7 mistake=10 blunder=35 | avg_loss=10.17
+  R7 P1: 111 locks | none=45 inacc=21 mistake=13 blunder=32 | avg_loss=8.94
+  R7 P2: 141 locks | none=76 inacc=15 mistake=15 blunder=35 | avg_loss=7.04
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms+__lookypadooky__b648073e8a9d.ttrm — all rounds, both players
+[22m[39m
+═══ s+__lookypadooky__b648073e8a9d.ttrm (6 rounds) ═══
+  R1 P1: 48 locks | none=11 inacc=8 mistake=6 blunder=23 | avg_loss=15.09
+  R1 P2: 47 locks | none=25 inacc=10 mistake=12 blunder=0 | avg_loss=2.71
+  R2 P1: 107 locks | none=61 inacc=10 mistake=17 blunder=19 | avg_loss=4.78
+  R2 P2: 109 locks | none=68 inacc=14 mistake=15 blunder=12 | avg_loss=3.12
+  R3 P1: 117 locks | none=46 inacc=16 mistake=23 blunder=32 | avg_loss=8.92
+  R3 P2: 128 locks | none=83 inacc=16 mistake=16 blunder=13 | avg_loss=3.25
+  R4 P1: 73 locks | none=26 inacc=6 mistake=7 blunder=34 | avg_loss=14.28
+  R4 P2: 82 locks | none=58 inacc=8 mistake=10 blunder=6 | avg_loss=2.51
+  R5 P1: 86 locks | none=45 inacc=9 mistake=11 blunder=21 | avg_loss=6.75
+  R5 P2: 74 locks | none=44 inacc=14 mistake=10 blunder=6 | avg_loss=2.80
+  R6 P1: 62 locks | none=19 inacc=9 mistake=12 blunder=22 | avg_loss=9.10
+  R6 P2: 59 locks | none=35 inacc=11 mistake=10 blunder=3 | avg_loss=2.68
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms+__lookypadooky__c5513d9852e7.ttrm — all rounds, both players
+[22m[39m
+═══ s+__lookypadooky__c5513d9852e7.ttrm (5 rounds) ═══
+  R1 P1: 120 locks | none=64 inacc=15 mistake=17 blunder=24 | avg_loss=5.25
+  R1 P2: 117 locks | none=60 inacc=9 mistake=18 blunder=30 | avg_loss=6.34
+  R2 P1: 129 locks | none=84 inacc=27 mistake=13 blunder=5 | avg_loss=2.26
+  R2 P2: 99 locks | none=52 inacc=10 mistake=13 blunder=24 | avg_loss=6.85
+  R3 P1: 173 locks | none=104 inacc=18 mistake=28 blunder=23 | avg_loss=3.64
+  R3 P2: 152 locks | none=71 inacc=8 mistake=18 blunder=55 | avg_loss=9.28
+  R4 P1: 130 locks | none=76 inacc=24 mistake=18 blunder=12 | avg_loss=3.36
+  R4 P2: 124 locks | none=49 inacc=14 mistake=18 blunder=43 | avg_loss=9.81
+  R5 P1: 111 locks | none=71 inacc=18 mistake=16 blunder=6 | avg_loss=2.85
+  R5 P2: 99 locks | none=49 inacc=12 mistake=14 blunder=24 | avg_loss=6.52
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms+__lookypadooky__c733a381bcdd.ttrm — all rounds, both players
+[22m[39m
+═══ s+__lookypadooky__c733a381bcdd.ttrm (8 rounds) ═══
+  R1 P1: 48 locks | none=12 inacc=7 mistake=7 blunder=22 | avg_loss=14.84
+  R1 P2: 48 locks | none=19 inacc=7 mistake=2 blunder=20 | avg_loss=11.64
+  R2 P1: 64 locks | none=30 inacc=6 mistake=10 blunder=18 | avg_loss=8.69
+  R2 P2: 48 locks | none=26 inacc=4 mistake=9 blunder=9 | avg_loss=5.41
+  R3 P1: 99 locks | none=25 inacc=15 mistake=12 blunder=47 | avg_loss=12.81
+  R3 P2: 105 locks | none=65 inacc=21 mistake=8 blunder=11 | avg_loss=3.19
+  R4 P1: 45 locks | none=19 inacc=5 mistake=6 blunder=15 | avg_loss=8.85
+  R4 P2: 50 locks | none=27 inacc=7 mistake=12 blunder=4 | avg_loss=3.71
+  R5 P1: 145 locks | none=88 inacc=8 mistake=20 blunder=29 | avg_loss=5.93
+  R5 P2: 152 locks | none=74 inacc=20 mistake=22 blunder=36 | avg_loss=6.48
+  R6 P1: 64 locks | none=35 inacc=10 mistake=14 blunder=5 | avg_loss=4.08
+  R6 P2: 56 locks | none=25 inacc=1 mistake=12 blunder=18 | avg_loss=7.16
+  R7 P1: 71 locks | none=30 inacc=9 mistake=6 blunder=26 | avg_loss=9.85
+  R7 P2: 61 locks | none=33 inacc=8 mistake=14 blunder=6 | avg_loss=4.09
+  R8 P1: 34 locks | none=11 inacc=5 mistake=7 blunder=11 | avg_loss=8.34
+  R8 P2: 35 locks | none=19 inacc=9 mistake=6 blunder=1 | avg_loss=2.73
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms+__peingoin__0c39932eee7c.ttrm — all rounds, both players
+[22m[39m
+═══ s+__peingoin__0c39932eee7c.ttrm (6 rounds) ═══
+  R1 P1: 27 locks | none=10 inacc=5 mistake=8 blunder=4 | avg_loss=5.02
+  R1 P2: 13 locks | none=5 inacc=0 mistake=5 blunder=3 | avg_loss=7.18
+  R2 P1: 43 locks | none=25 inacc=8 mistake=10 blunder=0 | avg_loss=2.33
+  R2 P2: 31 locks | none=8 inacc=7 mistake=9 blunder=7 | avg_loss=6.81
+  R3 P1: 38 locks | none=21 inacc=4 mistake=12 blunder=1 | avg_loss=2.97
+  R3 P2: 20 locks | none=8 inacc=5 mistake=7 blunder=0 | avg_loss=3.72
+  R4 P1: 54 locks | none=32 inacc=6 mistake=5 blunder=11 | avg_loss=5.04
+  R4 P2: 66 locks | none=34 inacc=15 mistake=8 blunder=9 | avg_loss=3.82
+  R5 P1: 67 locks | none=37 inacc=9 mistake=10 blunder=11 | avg_loss=4.60
+  R5 P2: 63 locks | none=31 inacc=12 mistake=12 blunder=8 | avg_loss=4.30
+  R6 P1: 23 locks | none=9 inacc=8 mistake=3 blunder=3 | avg_loss=3.49
+  R6 P2: 33 locks | none=9 inacc=5 mistake=7 blunder=12 | avg_loss=7.67
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms+__peingoin__3303df6590a5.ttrm — all rounds, both players
+[22m[39m
+═══ s+__peingoin__3303df6590a5.ttrm (8 rounds) ═══
+  R1 P1: 72 locks | none=37 inacc=5 mistake=9 blunder=21 | avg_loss=7.38
+  R1 P2: 95 locks | none=44 inacc=9 mistake=17 blunder=25 | avg_loss=5.80
+  R2 P1: 67 locks | none=43 inacc=7 mistake=11 blunder=6 | avg_loss=3.41
+  R2 P2: 86 locks | none=52 inacc=9 mistake=9 blunder=16 | avg_loss=3.85
+  R3 P1: 56 locks | none=29 inacc=7 mistake=10 blunder=10 | avg_loss=4.25
+  R3 P2: 60 locks | none=34 inacc=7 mistake=8 blunder=11 | avg_loss=4.89
+  R4 P1: 55 locks | none=30 inacc=4 mistake=8 blunder=13 | avg_loss=5.46
+  R4 P2: 110 locks | none=58 inacc=9 mistake=25 blunder=18 | avg_loss=4.52
+  R5 P1: 70 locks | none=31 inacc=2 mistake=12 blunder=25 | avg_loss=9.67
+  R5 P2: 84 locks | none=57 inacc=13 mistake=11 blunder=3 | avg_loss=2.08
+  R6 P1: 59 locks | none=27 inacc=1 mistake=12 blunder=19 | avg_loss=8.07
+  R6 P2: 76 locks | none=47 inacc=10 mistake=10 blunder=9 | avg_loss=3.49
+  R7 P1: 54 locks | none=29 inacc=4 mistake=14 blunder=7 | avg_loss=4.14
+  R7 P2: 56 locks | none=29 inacc=9 mistake=6 blunder=12 | avg_loss=5.19
+  R8 P1: 85 locks | none=47 inacc=10 mistake=10 blunder=18 | avg_loss=6.55
+  R8 P2: 112 locks | none=67 inacc=11 mistake=14 blunder=20 | avg_loss=4.87
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms+__peingoin__5357a2d5d559.ttrm — all rounds, both players
+[22m[39m
+═══ s+__peingoin__5357a2d5d559.ttrm (8 rounds) ═══
+  R1 P1: 45 locks | none=20 inacc=9 mistake=12 blunder=4 | avg_loss=3.88
+  R1 P2: 50 locks | none=23 inacc=6 mistake=11 blunder=10 | avg_loss=4.66
+  R2 P1: 196 locks | none=135 inacc=17 mistake=17 blunder=27 | avg_loss=4.32
+  R2 P2: 198 locks | none=130 inacc=20 mistake=24 blunder=24 | avg_loss=3.46
+  R3 P1: 36 locks | none=17 inacc=6 mistake=7 blunder=6 | avg_loss=4.58
+  R3 P2: 26 locks | none=19 inacc=2 mistake=3 blunder=2 | avg_loss=2.92
+  R4 P1: 44 locks | none=24 inacc=10 mistake=6 blunder=4 | avg_loss=3.16
+  R4 P2: 52 locks | none=31 inacc=9 mistake=6 blunder=6 | avg_loss=3.81
+  R5 P1: 29 locks | none=14 inacc=8 mistake=6 blunder=1 | avg_loss=3.02
+  R5 P2: 13 locks | none=6 inacc=1 mistake=5 blunder=1 | avg_loss=4.31
+  R6 P1: 45 locks | none=21 inacc=8 mistake=9 blunder=7 | avg_loss=5.37
+  R6 P2: 50 locks | none=34 inacc=5 mistake=3 blunder=8 | avg_loss=3.89
+  R7 P1: 36 locks | none=16 inacc=6 mistake=5 blunder=9 | avg_loss=6.05
+  R7 P2: 36 locks | none=23 inacc=8 mistake=3 blunder=2 | avg_loss=2.59
+  R8 P1: 107 locks | none=51 inacc=18 mistake=22 blunder=16 | avg_loss=4.52
+  R8 P2: 115 locks | none=81 inacc=15 mistake=8 blunder=11 | avg_loss=2.46
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms+__peingoin__bf09a8351e31.ttrm — all rounds, both players
+[22m[39m
+═══ s+__peingoin__bf09a8351e31.ttrm (8 rounds) ═══
+  R1 P1: 29 locks | none=18 inacc=4 mistake=6 blunder=1 | avg_loss=2.26
+  R1 P2: 31 locks | none=16 inacc=4 mistake=8 blunder=3 | avg_loss=4.36
+  R2 P1: 41 locks | none=27 inacc=3 mistake=5 blunder=6 | avg_loss=3.60
+  R2 P2: 44 locks | none=20 inacc=6 mistake=5 blunder=13 | avg_loss=8.62
+  R3 P1: 61 locks | none=31 inacc=10 mistake=6 blunder=14 | avg_loss=5.28
+  R3 P2: 51 locks | none=35 inacc=7 mistake=5 blunder=4 | avg_loss=2.22
+  R4 P1: 34 locks | none=14 inacc=4 mistake=5 blunder=11 | avg_loss=6.81
+  R4 P2: 41 locks | none=27 inacc=3 mistake=6 blunder=5 | avg_loss=2.94
+  R5 P1: 123 locks | none=81 inacc=13 mistake=20 blunder=9 | avg_loss=2.91
+  R5 P2: 141 locks | none=88 inacc=12 mistake=25 blunder=16 | avg_loss=3.77
+  R6 P1: 25 locks | none=13 inacc=3 mistake=3 blunder=6 | avg_loss=5.79
+  R6 P2: 54 locks | none=28 inacc=3 mistake=13 blunder=10 | avg_loss=5.59
+  R7 P1: 253 locks | none=155 inacc=31 mistake=23 blunder=44 | avg_loss=4.42
+  R7 P2: 277 locks | none=153 inacc=43 mistake=45 blunder=36 | avg_loss=3.98
+  R8 P1: 46 locks | none=26 inacc=4 mistake=7 blunder=9 | avg_loss=5.32
+  R8 P2: 34 locks | none=23 inacc=2 mistake=4 blunder=5 | avg_loss=2.76
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms+__peingoin__f158822476d3.ttrm — all rounds, both players
+[22m[39m
+═══ s+__peingoin__f158822476d3.ttrm (8 rounds) ═══
+  R1 P1: 47 locks | none=26 inacc=5 mistake=12 blunder=4 | avg_loss=3.52
+  R1 P2: 3 locks | none=1 inacc=0 mistake=0 blunder=2 | avg_loss=27.60
+  R2 P1: 85 locks | none=45 inacc=18 mistake=11 blunder=11 | avg_loss=3.92
+  R2 P2: 78 locks | none=48 inacc=6 mistake=12 blunder=12 | avg_loss=3.83
+  R3 P1: 67 locks | none=36 inacc=12 mistake=12 blunder=7 | avg_loss=3.60
+  R3 P2: 50 locks | none=22 inacc=7 mistake=11 blunder=10 | avg_loss=5.96
+  R4 P1: 130 locks | none=56 inacc=16 mistake=22 blunder=36 | avg_loss=6.78
+  R4 P2: 145 locks | none=91 inacc=12 mistake=22 blunder=20 | avg_loss=3.48
+  R5 P1: 72 locks | none=40 inacc=15 mistake=10 blunder=7 | avg_loss=3.43
+  R5 P2: 78 locks | none=28 inacc=12 mistake=16 blunder=22 | avg_loss=8.35
+  R6 P1: 42 locks | none=24 inacc=4 mistake=6 blunder=8 | avg_loss=5.10
+  R6 P2: 3 locks | none=0 inacc=1 mistake=1 blunder=1 | avg_loss=13.00
+  R7 P1: 84 locks | none=42 inacc=10 mistake=18 blunder=14 | avg_loss=4.40
+  R7 P2: 76 locks | none=27 inacc=7 mistake=15 blunder=27 | avg_loss=8.93
+  R8 P1: 31 locks | none=23 inacc=1 mistake=3 blunder=4 | avg_loss=3.06
+  R8 P2: 28 locks | none=16 inacc=5 mistake=5 blunder=2 | avg_loss=3.28
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms-__e_munny20__0375e1ec817a.ttrm — all rounds, both players
+[22m[39m
+═══ s-__e_munny20__0375e1ec817a.ttrm (7 rounds) ═══
+  R1 P1: 124 locks | none=74 inacc=10 mistake=13 blunder=27 | avg_loss=5.46
+  R1 P2: 87 locks | none=59 inacc=6 mistake=11 blunder=11 | avg_loss=3.86
+  R2 P1: 23 locks | none=10 inacc=4 mistake=7 blunder=2 | avg_loss=3.98
+  R2 P2: 17 locks | none=13 inacc=1 mistake=2 blunder=1 | avg_loss=2.10
+  R3 P1: 108 locks | none=60 inacc=13 mistake=18 blunder=17 | avg_loss=4.60
+  R3 P2: 121 locks | none=74 inacc=17 mistake=26 blunder=4 | avg_loss=2.81
+  R4 P1: 72 locks | none=35 inacc=6 mistake=19 blunder=12 | avg_loss=4.94
+  R4 P2: 73 locks | none=44 inacc=9 mistake=12 blunder=8 | avg_loss=3.77
+  R5 P1: 104 locks | none=64 inacc=8 mistake=16 blunder=16 | avg_loss=4.46
+  R5 P2: 93 locks | none=61 inacc=10 mistake=13 blunder=9 | avg_loss=2.97
+  R6 P1: 89 locks | none=56 inacc=12 mistake=14 blunder=7 | avg_loss=2.60
+  R6 P2: 76 locks | none=41 inacc=11 mistake=17 blunder=7 | avg_loss=3.47
+  R7 P1: 133 locks | none=80 inacc=14 mistake=25 blunder=14 | avg_loss=3.33
+  R7 P2: 119 locks | none=78 inacc=15 mistake=13 blunder=13 | avg_loss=2.99
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms-__e_munny20__5cd39e4458f8.ttrm — all rounds, both players
+[22m[39m
+═══ s-__e_munny20__5cd39e4458f8.ttrm (8 rounds) ═══
+  R1 P1: 43 locks | none=27 inacc=10 mistake=1 blunder=5 | avg_loss=3.35
+  R1 P2: 44 locks | none=33 inacc=6 mistake=2 blunder=3 | avg_loss=1.83
+  R2 P1: 167 locks | none=81 inacc=34 mistake=41 blunder=11 | avg_loss=3.95
+  R2 P2: 150 locks | none=67 inacc=19 mistake=25 blunder=39 | avg_loss=6.97
+  R3 P1: 36 locks | none=20 inacc=8 mistake=6 blunder=2 | avg_loss=2.54
+  R3 P2: 42 locks | none=14 inacc=11 mistake=4 blunder=13 | avg_loss=8.13
+  R4 P1: 225 locks | none=139 inacc=36 mistake=31 blunder=19 | avg_loss=2.88
+  R4 P2: 229 locks | none=93 inacc=20 mistake=33 blunder=83 | avg_loss=8.50
+  R5 P1: 17 locks | none=10 inacc=3 mistake=3 blunder=1 | avg_loss=2.33
+  R5 P2: 51 locks | none=29 inacc=7 mistake=5 blunder=10 | avg_loss=4.69
+  R6 P1: 39 locks | none=25 inacc=7 mistake=7 blunder=0 | avg_loss=1.87
+  R6 P2: 52 locks | none=19 inacc=7 mistake=9 blunder=17 | avg_loss=8.61
+  R7 P1: 85 locks | none=53 inacc=13 mistake=14 blunder=5 | avg_loss=2.51
+  R7 P2: 78 locks | none=35 inacc=14 mistake=14 blunder=15 | avg_loss=4.99
+  R8 P1: 89 locks | none=59 inacc=15 mistake=12 blunder=3 | avg_loss=2.02
+  R8 P2: 93 locks | none=29 inacc=14 mistake=18 blunder=32 | avg_loss=8.45
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms-__e_munny20__9a0b252dc921.ttrm — all rounds, both players
+[22m[39m
+═══ s-__e_munny20__9a0b252dc921.ttrm (9 rounds) ═══
+  R1 P1: 200 locks | none=120 inacc=23 mistake=23 blunder=34 | avg_loss=4.53
+  R1 P2: 216 locks | none=127 inacc=37 mistake=29 blunder=23 | avg_loss=3.48
+  R2 P1: 83 locks | none=57 inacc=17 mistake=7 blunder=2 | avg_loss=1.91
+  R2 P2: 85 locks | none=49 inacc=22 mistake=11 blunder=3 | avg_loss=2.35
+  R3 P1: 39 locks | none=18 inacc=11 mistake=5 blunder=5 | avg_loss=4.52
+  R3 P2: 48 locks | none=23 inacc=13 mistake=7 blunder=5 | avg_loss=3.40
+  R4 P1: 29 locks | none=5 inacc=2 mistake=14 blunder=8 | avg_loss=8.42
+  R4 P2: 33 locks | none=18 inacc=9 mistake=6 blunder=0 | avg_loss=2.14
+  R5 P1: 176 locks | none=107 inacc=20 mistake=30 blunder=19 | avg_loss=4.39
+  R5 P2: 202 locks | none=118 inacc=40 mistake=27 blunder=17 | avg_loss=3.44
+  R6 P1: 15 locks | none=9 inacc=0 mistake=3 blunder=3 | avg_loss=4.03
+  R6 P2: 36 locks | none=21 inacc=11 mistake=4 blunder=0 | avg_loss=2.04
+  R7 P1: 79 locks | none=35 inacc=11 mistake=21 blunder=12 | avg_loss=4.75
+  R7 P2: 124 locks | none=78 inacc=23 mistake=17 blunder=6 | avg_loss=2.07
+  R8 P1: 40 locks | none=14 inacc=5 mistake=12 blunder=9 | avg_loss=6.62
+  R8 P2: 44 locks | none=23 inacc=13 mistake=4 blunder=4 | avg_loss=3.10
+  R9 P1: 184 locks | none=123 inacc=16 mistake=27 blunder=18 | avg_loss=3.00
+  R9 P2: 198 locks | none=123 inacc=30 mistake=31 blunder=14 | avg_loss=2.98
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms-__e_munny20__c6a377d2debd.ttrm — all rounds, both players
+[22m[39m
+═══ s-__e_munny20__c6a377d2debd.ttrm (6 rounds) ═══
+  R1 P1: 132 locks | none=89 inacc=19 mistake=19 blunder=5 | avg_loss=2.34
+  R1 P2: 126 locks | none=85 inacc=15 mistake=11 blunder=15 | avg_loss=3.78
+  R2 P1: 209 locks | none=119 inacc=26 mistake=27 blunder=37 | avg_loss=4.91
+  R2 P2: 173 locks | none=112 inacc=24 mistake=25 blunder=12 | avg_loss=2.70
+  R3 P1: 163 locks | none=88 inacc=27 mistake=33 blunder=15 | avg_loss=3.38
+  R3 P2: 132 locks | none=102 inacc=13 mistake=9 blunder=8 | avg_loss=2.20
+  R4 P1: 102 locks | none=64 inacc=18 mistake=12 blunder=8 | avg_loss=2.47
+  R4 P2: 79 locks | none=53 inacc=11 mistake=2 blunder=13 | avg_loss=5.24
+  R5 P1: 55 locks | none=34 inacc=7 mistake=11 blunder=3 | avg_loss=2.93
+  R5 P2: 43 locks | none=35 inacc=3 mistake=4 blunder=1 | avg_loss=1.49
+  R6 P1: 96 locks | none=54 inacc=22 mistake=16 blunder=4 | avg_loss=2.81
+  R6 P2: 73 locks | none=37 inacc=6 mistake=17 blunder=13 | avg_loss=4.65
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms-__e_munny20__ecb43cc2d2db.ttrm — all rounds, both players
+[22m[39m
+═══ s-__e_munny20__ecb43cc2d2db.ttrm (5 rounds) ═══
+  R1 P1: 325 locks | none=188 inacc=56 mistake=51 blunder=30 | avg_loss=3.32
+  R1 P2: 258 locks | none=200 inacc=26 mistake=25 blunder=7 | avg_loss=1.47
+  R2 P1: 98 locks | none=58 inacc=16 mistake=12 blunder=12 | avg_loss=4.27
+  R2 P2: 76 locks | none=47 inacc=10 mistake=10 blunder=9 | avg_loss=4.25
+  R3 P1: 195 locks | none=114 inacc=36 mistake=37 blunder=8 | avg_loss=2.61
+  R3 P2: 145 locks | none=103 inacc=18 mistake=18 blunder=6 | avg_loss=2.15
+  R4 P1: 119 locks | none=69 inacc=26 mistake=19 blunder=5 | avg_loss=2.66
+  R4 P2: 79 locks | none=51 inacc=7 mistake=11 blunder=10 | avg_loss=3.14
+  R5 P1: 244 locks | none=159 inacc=41 mistake=31 blunder=13 | avg_loss=2.67
+  R5 P2: 190 locks | none=123 inacc=35 mistake=22 blunder=10 | avg_loss=2.32
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms-__haluhyun__2a8799ff797f.ttrm — all rounds, both players
+[22m[39m
+═══ s-__haluhyun__2a8799ff797f.ttrm (7 rounds) ═══
+  R1 P1: 36 locks | none=21 inacc=7 mistake=4 blunder=4 | avg_loss=3.32
+  R1 P2: 65 locks | none=23 inacc=12 mistake=11 blunder=19 | avg_loss=7.83
+  R2 P1: 50 locks | none=38 inacc=5 mistake=6 blunder=1 | avg_loss=1.57
+  R2 P2: 56 locks | none=25 inacc=9 mistake=15 blunder=7 | avg_loss=4.83
+  R3 P1: 66 locks | none=37 inacc=12 mistake=4 blunder=13 | avg_loss=4.94
+  R3 P2: 86 locks | none=54 inacc=8 mistake=11 blunder=13 | avg_loss=4.59
+  R4 P1: 24 locks | none=8 inacc=4 mistake=1 blunder=11 | avg_loss=11.49
+  R4 P2: 21 locks | none=8 inacc=1 mistake=2 blunder=10 | avg_loss=10.62
+  R5 P1: 158 locks | none=94 inacc=26 mistake=23 blunder=15 | avg_loss=3.25
+  R5 P2: 177 locks | none=106 inacc=30 mistake=29 blunder=12 | avg_loss=3.02
+  R6 P1: 22 locks | none=11 inacc=0 mistake=3 blunder=8 | avg_loss=8.14
+  R6 P2: 30 locks | none=9 inacc=2 mistake=6 blunder=13 | avg_loss=9.76
+  R7 P1: 30 locks | none=20 inacc=5 mistake=2 blunder=3 | avg_loss=2.71
+  R7 P2: 38 locks | none=20 inacc=6 mistake=6 blunder=6 | avg_loss=5.06
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms-__haluhyun__b633ff970ae9.ttrm — all rounds, both players
+[22m[39m
+═══ s-__haluhyun__b633ff970ae9.ttrm (6 rounds) ═══
+  R1 P1: 133 locks | none=100 inacc=4 mistake=6 blunder=23 | avg_loss=4.30
+  R1 P2: 138 locks | none=83 inacc=12 mistake=11 blunder=32 | avg_loss=5.07
+  R2 P1: 25 locks | none=10 inacc=4 mistake=5 blunder=6 | avg_loss=5.48
+  R2 P2: 24 locks | none=8 inacc=2 mistake=2 blunder=12 | avg_loss=10.52
+  R3 P1: 35 locks | none=17 inacc=6 mistake=4 blunder=8 | avg_loss=5.62
+  R3 P2: 46 locks | none=22 inacc=6 mistake=7 blunder=11 | avg_loss=6.55
+  R4 P1: 45 locks | none=21 inacc=8 mistake=12 blunder=4 | avg_loss=3.50
+  R4 P2: 49 locks | none=32 inacc=5 mistake=4 blunder=8 | avg_loss=3.36
+  R5 P1: 128 locks | none=86 inacc=14 mistake=17 blunder=11 | avg_loss=2.66
+  R5 P2: 152 locks | none=94 inacc=14 mistake=18 blunder=26 | avg_loss=5.03
+  R6 P1: 39 locks | none=16 inacc=5 mistake=10 blunder=8 | avg_loss=5.90
+  R6 P2: 36 locks | none=16 inacc=7 mistake=4 blunder=9 | avg_loss=5.88
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms-__haluhyun__bd5715b1db6d.ttrm — all rounds, both players
+[22m[39m
+═══ s-__haluhyun__bd5715b1db6d.ttrm (3 rounds) ═══
+  R1 P1: 112 locks | none=75 inacc=13 mistake=20 blunder=4 | avg_loss=2.47
+  R1 P2: 98 locks | none=56 inacc=6 mistake=16 blunder=20 | avg_loss=5.06
+  R2 P1: 140 locks | none=96 inacc=23 mistake=12 blunder=9 | avg_loss=2.86
+  R2 P2: 115 locks | none=67 inacc=13 mistake=19 blunder=16 | avg_loss=4.28
+  R3 P1: 44 locks | none=22 inacc=20 mistake=2 blunder=0 | avg_loss=2.08
+  R3 P2: 1 locks | none=1 inacc=0 mistake=0 blunder=0 | avg_loss=0.00
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms-__haluhyun__f87cbe0273c0.ttrm — all rounds, both players
+[22m[39m
+═══ s-__haluhyun__f87cbe0273c0.ttrm (9 rounds) ═══
+  R1 P1: 65 locks | none=47 inacc=11 mistake=5 blunder=2 | avg_loss=1.67
+  R1 P2: 33 locks | none=16 inacc=8 mistake=6 blunder=3 | avg_loss=3.96
+  R2 P1: 53 locks | none=16 inacc=5 mistake=16 blunder=16 | avg_loss=8.73
+  R2 P2: 35 locks | none=23 inacc=4 mistake=4 blunder=4 | avg_loss=4.29
+  R3 P1: 42 locks | none=20 inacc=5 mistake=4 blunder=13 | avg_loss=7.25
+  R3 P2: 37 locks | none=28 inacc=3 mistake=3 blunder=3 | avg_loss=2.41
+  R4 P1: 68 locks | none=34 inacc=4 mistake=6 blunder=24 | avg_loss=6.91
+  R4 P2: 47 locks | none=34 inacc=6 mistake=3 blunder=4 | avg_loss=3.69
+  R5 P1: 39 locks | none=19 inacc=8 mistake=4 blunder=8 | avg_loss=6.44
+  R5 P2: 37 locks | none=22 inacc=9 mistake=3 blunder=3 | avg_loss=2.47
+  R6 P1: 86 locks | none=44 inacc=6 mistake=17 blunder=19 | avg_loss=5.85
+  R6 P2: 82 locks | none=60 inacc=8 mistake=10 blunder=4 | avg_loss=1.85
+  R7 P1: 57 locks | none=38 inacc=7 mistake=6 blunder=6 | avg_loss=3.86
+  R7 P2: 59 locks | none=37 inacc=7 mistake=13 blunder=2 | avg_loss=2.49
+  R8 P1: 121 locks | none=75 inacc=12 mistake=16 blunder=18 | avg_loss=4.16
+  R8 P2: 105 locks | none=72 inacc=11 mistake=11 blunder=11 | avg_loss=3.02
+  R9 P1: 43 locks | none=22 inacc=4 mistake=6 blunder=11 | avg_loss=5.37
+  R9 P2: 49 locks | none=29 inacc=10 mistake=9 blunder=1 | avg_loss=2.30
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms-__haluhyun__f8e50f0c6f38.ttrm — all rounds, both players
+[22m[39m
+═══ s-__haluhyun__f8e50f0c6f38.ttrm (8 rounds) ═══
+  R1 P1: 54 locks | none=27 inacc=6 mistake=12 blunder=9 | avg_loss=4.91
+  R1 P2: 43 locks | none=26 inacc=5 mistake=7 blunder=5 | avg_loss=3.19
+  R2 P1: 47 locks | none=20 inacc=6 mistake=3 blunder=18 | avg_loss=7.46
+  R2 P2: 33 locks | none=14 inacc=5 mistake=7 blunder=7 | avg_loss=5.53
+  R3 P1: 118 locks | none=69 inacc=8 mistake=25 blunder=16 | avg_loss=4.10
+  R3 P2: 103 locks | none=59 inacc=19 mistake=19 blunder=6 | avg_loss=3.01
+  R4 P1: 98 locks | none=67 inacc=8 mistake=13 blunder=10 | avg_loss=2.97
+  R4 P2: 90 locks | none=50 inacc=11 mistake=13 blunder=16 | avg_loss=4.44
+  R5 P1: 124 locks | none=68 inacc=11 mistake=24 blunder=21 | avg_loss=4.92
+  R5 P2: 107 locks | none=67 inacc=17 mistake=18 blunder=5 | avg_loss=2.55
+  R6 P1: 91 locks | none=58 inacc=13 mistake=14 blunder=6 | avg_loss=2.76
+  R6 P2: 85 locks | none=37 inacc=17 mistake=25 blunder=6 | avg_loss=3.67
+  R7 P1: 54 locks | none=32 inacc=4 mistake=6 blunder=12 | avg_loss=5.09
+  R7 P2: 54 locks | none=29 inacc=7 mistake=10 blunder=8 | avg_loss=3.93
+  R8 P1: 81 locks | none=37 inacc=14 mistake=22 blunder=8 | avg_loss=4.24
+  R8 P2: 78 locks | none=48 inacc=13 mistake=13 blunder=4 | avg_loss=2.64
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms-__wryan0918__3ff972f37f28.ttrm — all rounds, both players
+[22m[39m
+═══ s-__wryan0918__3ff972f37f28.ttrm (7 rounds) ═══
+  R1 P1: 52 locks | none=32 inacc=3 mistake=9 blunder=8 | avg_loss=4.29
+  R1 P2: 70 locks | none=33 inacc=10 mistake=18 blunder=9 | avg_loss=4.40
+  R2 P1: 97 locks | none=50 inacc=10 mistake=10 blunder=27 | avg_loss=6.71
+  R2 P2: 132 locks | none=81 inacc=20 mistake=17 blunder=14 | avg_loss=3.29
+  R3 P1: 62 locks | none=36 inacc=8 mistake=11 blunder=7 | avg_loss=4.04
+  R3 P2: 59 locks | none=31 inacc=6 mistake=15 blunder=7 | avg_loss=4.06
+  R4 P1: 34 locks | none=23 inacc=4 mistake=3 blunder=4 | avg_loss=3.12
+  R4 P2: 32 locks | none=17 inacc=6 mistake=6 blunder=3 | avg_loss=3.40
+  R5 P1: 111 locks | none=59 inacc=14 mistake=23 blunder=15 | avg_loss=4.27
+  R5 P2: 126 locks | none=78 inacc=17 mistake=16 blunder=15 | avg_loss=3.64
+  R6 P1: 57 locks | none=30 inacc=10 mistake=9 blunder=8 | avg_loss=4.20
+  R6 P2: 55 locks | none=26 inacc=6 mistake=10 blunder=13 | avg_loss=6.44
+  R7 P1: 32 locks | none=18 inacc=5 mistake=3 blunder=6 | avg_loss=4.31
+  R7 P2: 26 locks | none=17 inacc=3 mistake=3 blunder=3 | avg_loss=2.50
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms-__wryan0918__87c041851092.ttrm — all rounds, both players
+[22m[39m
+═══ s-__wryan0918__87c041851092.ttrm (8 rounds) ═══
+  R1 P1: 63 locks | none=34 inacc=14 mistake=9 blunder=6 | avg_loss=3.68
+  R1 P2: 55 locks | none=24 inacc=6 mistake=8 blunder=17 | avg_loss=9.50
+  R2 P1: 32 locks | none=18 inacc=4 mistake=9 blunder=1 | avg_loss=3.09
+  R2 P2: 24 locks | none=16 inacc=5 mistake=3 blunder=0 | avg_loss=1.87
+  R3 P1: 63 locks | none=41 inacc=9 mistake=9 blunder=4 | avg_loss=2.52
+  R3 P2: 54 locks | none=23 inacc=4 mistake=8 blunder=19 | avg_loss=9.50
+  R4 P1: 35 locks | none=21 inacc=6 mistake=7 blunder=1 | avg_loss=2.63
+  R4 P2: 26 locks | none=13 inacc=4 mistake=4 blunder=5 | avg_loss=4.99
+  R5 P1: 55 locks | none=30 inacc=12 mistake=13 blunder=0 | avg_loss=2.63
+  R5 P2: 51 locks | none=30 inacc=3 mistake=10 blunder=8 | avg_loss=3.83
+  R6 P1: 171 locks | none=113 inacc=22 mistake=24 blunder=12 | avg_loss=2.72
+  R6 P2: 124 locks | none=78 inacc=12 mistake=16 blunder=18 | avg_loss=4.07
+  R7 P1: 64 locks | none=37 inacc=14 mistake=12 blunder=1 | avg_loss=2.38
+  R7 P2: 33 locks | none=17 inacc=4 mistake=7 blunder=5 | avg_loss=4.05
+  R8 P1: 63 locks | none=37 inacc=14 mistake=10 blunder=2 | avg_loss=2.14
+  R8 P2: 54 locks | none=30 inacc=5 mistake=14 blunder=5 | avg_loss=3.48
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms-__wryan0918__89cc8951aaad.ttrm — all rounds, both players
+[22m[39m
+═══ s-__wryan0918__89cc8951aaad.ttrm (9 rounds) ═══
+  R1 P1: 37 locks | none=16 inacc=9 mistake=6 blunder=6 | avg_loss=4.23
+  R1 P2: 40 locks | none=20 inacc=4 mistake=10 blunder=6 | avg_loss=4.83
+  R2 P1: 120 locks | none=74 inacc=15 mistake=20 blunder=11 | avg_loss=3.01
+  R2 P2: 127 locks | none=78 inacc=25 mistake=13 blunder=11 | avg_loss=3.06
+  R3 P1: 69 locks | none=37 inacc=17 mistake=12 blunder=3 | avg_loss=2.74
+  R3 P2: 68 locks | none=41 inacc=9 mistake=8 blunder=10 | avg_loss=4.38
+  R4 P1: 39 locks | none=25 inacc=6 mistake=6 blunder=2 | avg_loss=2.47
+  R4 P2: 49 locks | none=28 inacc=10 mistake=9 blunder=2 | avg_loss=2.64
+  R5 P1: 124 locks | none=72 inacc=19 mistake=16 blunder=17 | avg_loss=4.20
+  R5 P2: 123 locks | none=75 inacc=19 mistake=18 blunder=11 | avg_loss=3.19
+  R6 P1: 44 locks | none=23 inacc=8 mistake=9 blunder=4 | avg_loss=3.29
+  R6 P2: 48 locks | none=30 inacc=9 mistake=4 blunder=5 | avg_loss=2.80
+  R7 P1: 89 locks | none=55 inacc=14 mistake=10 blunder=10 | avg_loss=3.92
+  R7 P2: 99 locks | none=59 inacc=10 mistake=17 blunder=13 | avg_loss=4.24
+  R8 P1: 52 locks | none=33 inacc=5 mistake=10 blunder=4 | avg_loss=2.93
+  R8 P2: 43 locks | none=26 inacc=5 mistake=8 blunder=4 | avg_loss=3.19
+  R9 P1: 32 locks | none=14 inacc=9 mistake=9 blunder=0 | avg_loss=3.38
+  R9 P2: 29 locks | none=12 inacc=2 mistake=7 blunder=8 | avg_loss=7.98
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms-__wryan0918__e9d86d0707db.ttrm — all rounds, both players
+[22m[39m
+═══ s-__wryan0918__e9d86d0707db.ttrm (9 rounds) ═══
+  R1 P1: 68 locks | none=36 inacc=6 mistake=18 blunder=8 | avg_loss=4.22
+  R1 P2: 81 locks | none=53 inacc=11 mistake=12 blunder=5 | avg_loss=2.61
+  R2 P1: 41 locks | none=17 inacc=4 mistake=3 blunder=17 | avg_loss=10.62
+  R2 P2: 66 locks | none=41 inacc=13 mistake=8 blunder=4 | avg_loss=2.63
+  R3 P1: 31 locks | none=22 inacc=5 mistake=3 blunder=1 | avg_loss=1.82
+  R3 P2: 39 locks | none=22 inacc=4 mistake=2 blunder=11 | avg_loss=7.83
+  R4 P1: 53 locks | none=27 inacc=8 mistake=11 blunder=7 | avg_loss=3.87
+  R4 P2: 53 locks | none=42 inacc=8 mistake=2 blunder=1 | avg_loss=1.23
+  R5 P1: 60 locks | none=37 inacc=10 mistake=8 blunder=5 | avg_loss=3.19
+  R5 P2: 69 locks | none=47 inacc=9 mistake=8 blunder=5 | avg_loss=2.39
+  R6 P1: 105 locks | none=57 inacc=23 mistake=13 blunder=12 | avg_loss=3.54
+  R6 P2: 118 locks | none=75 inacc=22 mistake=16 blunder=5 | avg_loss=2.28
+  R7 P1: 126 locks | none=73 inacc=13 mistake=21 blunder=19 | avg_loss=4.48
+  R7 P2: 155 locks | none=110 inacc=24 mistake=11 blunder=10 | avg_loss=2.14
+  R8 P1: 70 locks | none=48 inacc=12 mistake=3 blunder=7 | avg_loss=2.39
+  R8 P2: 107 locks | none=69 inacc=12 mistake=18 blunder=8 | avg_loss=2.87
+  R9 P1: 70 locks | none=37 inacc=13 mistake=13 blunder=7 | avg_loss=4.53
+  R9 P2: 41 locks | none=30 inacc=4 mistake=0 blunder=7 | avg_loss=4.70
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms__chamberthd__41ad04a0273d.ttrm — all rounds, both players
+[22m[39m
+═══ s__chamberthd__41ad04a0273d.ttrm (8 rounds) ═══
+  R1 P1: 53 locks | none=21 inacc=6 mistake=11 blunder=15 | avg_loss=7.88
+  R1 P2: 68 locks | none=39 inacc=13 mistake=11 blunder=5 | avg_loss=3.33
+  R2 P1: 93 locks | none=37 inacc=8 mistake=14 blunder=34 | avg_loss=8.88
+  R2 P2: 122 locks | none=90 inacc=12 mistake=8 blunder=12 | avg_loss=2.38
+  R3 P1: 63 locks | none=33 inacc=7 mistake=11 blunder=12 | avg_loss=8.11
+  R3 P2: 108 locks | none=64 inacc=17 mistake=19 blunder=8 | avg_loss=3.64
+  R4 P1: 54 locks | none=30 inacc=6 mistake=8 blunder=10 | avg_loss=6.82
+  R4 P2: 67 locks | none=33 inacc=10 mistake=18 blunder=6 | avg_loss=4.13
+  R5 P1: 28 locks | none=12 inacc=10 mistake=3 blunder=3 | avg_loss=4.64
+  R5 P2: 50 locks | none=29 inacc=11 mistake=6 blunder=4 | avg_loss=4.10
+  R6 P1: 146 locks | none=100 inacc=10 mistake=23 blunder=13 | avg_loss=3.15
+  R6 P2: 198 locks | none=142 inacc=19 mistake=25 blunder=12 | avg_loss=2.47
+  R7 P1: 64 locks | none=38 inacc=6 mistake=9 blunder=11 | avg_loss=5.98
+  R7 P2: 114 locks | none=67 inacc=14 mistake=27 blunder=6 | avg_loss=2.82
+  R8 P1: 73 locks | none=50 inacc=2 mistake=13 blunder=8 | avg_loss=3.19
+  R8 P2: 100 locks | none=59 inacc=17 mistake=20 blunder=4 | avg_loss=2.52
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms__chamberthd__60fa1bc806a5.ttrm — all rounds, both players
+[22m[39m
+═══ s__chamberthd__60fa1bc806a5.ttrm (7 rounds) ═══
+  R1 P1: 31 locks | none=17 inacc=1 mistake=11 blunder=2 | avg_loss=3.39
+  R1 P2: 74 locks | none=41 inacc=15 mistake=13 blunder=5 | avg_loss=2.93
+  R2 P1: 77 locks | none=39 inacc=11 mistake=13 blunder=14 | avg_loss=4.36
+  R2 P2: 139 locks | none=102 inacc=15 mistake=6 blunder=16 | avg_loss=3.20
+  R3 P1: 62 locks | none=31 inacc=8 mistake=18 blunder=5 | avg_loss=4.12
+  R3 P2: 115 locks | none=81 inacc=19 mistake=11 blunder=4 | avg_loss=1.99
+  R4 P1: 28 locks | none=13 inacc=2 mistake=7 blunder=6 | avg_loss=5.90
+  R4 P2: 52 locks | none=29 inacc=13 mistake=7 blunder=3 | avg_loss=2.81
+  R5 P1: 52 locks | none=29 inacc=5 mistake=10 blunder=8 | avg_loss=5.02
+  R5 P2: 103 locks | none=66 inacc=18 mistake=14 blunder=5 | avg_loss=2.29
+  R6 P1: 126 locks | none=71 inacc=21 mistake=12 blunder=22 | avg_loss=4.20
+  R6 P2: 221 locks | none=159 inacc=34 mistake=16 blunder=12 | avg_loss=2.04
+  R7 P1: 35 locks | none=15 inacc=5 mistake=9 blunder=6 | avg_loss=4.49
+  R7 P2: 60 locks | none=34 inacc=4 mistake=10 blunder=12 | avg_loss=4.86
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms__chamberthd__85a51d3a9df8.ttrm — all rounds, both players
+[22m[39m
+═══ s__chamberthd__85a51d3a9df8.ttrm (8 rounds) ═══
+  R1 P1: 75 locks | none=42 inacc=10 mistake=13 blunder=10 | avg_loss=4.31
+  R1 P2: 53 locks | none=28 inacc=8 mistake=6 blunder=11 | avg_loss=6.02
+  R2 P1: 80 locks | none=31 inacc=10 mistake=10 blunder=29 | avg_loss=9.85
+  R2 P2: 60 locks | none=32 inacc=7 mistake=9 blunder=12 | avg_loss=5.44
+  R3 P1: 211 locks | none=130 inacc=29 mistake=30 blunder=22 | avg_loss=3.39
+  R3 P2: 155 locks | none=84 inacc=13 mistake=30 blunder=28 | avg_loss=6.37
+  R4 P1: 63 locks | none=34 inacc=11 mistake=7 blunder=11 | avg_loss=5.72
+  R4 P2: 37 locks | none=17 inacc=3 mistake=9 blunder=8 | avg_loss=7.65
+  R5 P1: 65 locks | none=31 inacc=4 mistake=11 blunder=19 | avg_loss=7.24
+  R5 P2: 47 locks | none=30 inacc=8 mistake=8 blunder=1 | avg_loss=2.16
+  R6 P1: 47 locks | none=27 inacc=5 mistake=13 blunder=2 | avg_loss=2.70
+  R6 P2: 19 locks | none=6 inacc=2 mistake=1 blunder=10 | avg_loss=15.62
+  R7 P1: 137 locks | none=75 inacc=22 mistake=26 blunder=14 | avg_loss=4.22
+  R7 P2: 90 locks | none=49 inacc=6 mistake=16 blunder=19 | avg_loss=6.58
+  R8 P1: 89 locks | none=38 inacc=12 mistake=13 blunder=26 | avg_loss=6.72
+  R8 P2: 61 locks | none=34 inacc=6 mistake=14 blunder=7 | avg_loss=4.10
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms__chamberthd__93e82f24e635.ttrm — all rounds, both players
+[22m[39m
+═══ s__chamberthd__93e82f24e635.ttrm (7 rounds) ═══
+  R1 P1: 40 locks | none=20 inacc=7 mistake=7 blunder=6 | avg_loss=4.20
+  R1 P2: 69 locks | none=47 inacc=11 mistake=10 blunder=1 | avg_loss=1.91
+  R2 P1: 35 locks | none=21 inacc=3 mistake=8 blunder=3 | avg_loss=3.26
+  R2 P2: 54 locks | none=33 inacc=11 mistake=6 blunder=4 | avg_loss=2.52
+  R3 P1: 63 locks | none=41 inacc=9 mistake=9 blunder=4 | avg_loss=2.71
+  R3 P2: 97 locks | none=52 inacc=12 mistake=16 blunder=17 | avg_loss=4.52
+  R4 P1: 22 locks | none=14 inacc=3 mistake=3 blunder=2 | avg_loss=3.58
+  R4 P2: 39 locks | none=21 inacc=7 mistake=9 blunder=2 | avg_loss=3.44
+  R5 P1: 44 locks | none=24 inacc=5 mistake=7 blunder=8 | avg_loss=5.47
+  R5 P2: 49 locks | none=24 inacc=5 mistake=9 blunder=11 | avg_loss=5.50
+  R6 P1: 25 locks | none=10 inacc=1 mistake=7 blunder=7 | avg_loss=9.36
+  R6 P2: 44 locks | none=20 inacc=4 mistake=12 blunder=8 | avg_loss=6.51
+  R7 P1: 36 locks | none=22 inacc=5 mistake=3 blunder=6 | avg_loss=6.32
+  R7 P2: 70 locks | none=32 inacc=12 mistake=16 blunder=10 | avg_loss=5.46
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms__chamberthd__f34db8f1e6aa.ttrm — all rounds, both players
+[22m[39m
+═══ s__chamberthd__f34db8f1e6aa.ttrm (8 rounds) ═══
+  R1 P1: 45 locks | none=30 inacc=6 mistake=7 blunder=2 | avg_loss=2.30
+  R1 P2: 61 locks | none=26 inacc=11 mistake=12 blunder=12 | avg_loss=5.76
+  R2 P1: 31 locks | none=20 inacc=4 mistake=3 blunder=4 | avg_loss=3.78
+  R2 P2: 57 locks | none=21 inacc=7 mistake=11 blunder=18 | avg_loss=7.05
+  R3 P1: 90 locks | none=65 inacc=6 mistake=10 blunder=9 | avg_loss=3.05
+  R3 P2: 108 locks | none=67 inacc=15 mistake=8 blunder=18 | avg_loss=3.85
+  R4 P1: 24 locks | none=14 inacc=3 mistake=5 blunder=2 | avg_loss=3.97
+  R4 P2: 46 locks | none=12 inacc=6 mistake=8 blunder=20 | avg_loss=14.51
+  R5 P1: 94 locks | none=70 inacc=4 mistake=12 blunder=8 | avg_loss=2.75
+  R5 P2: 135 locks | none=81 inacc=23 mistake=16 blunder=15 | avg_loss=4.60
+  R6 P1: 39 locks | none=19 inacc=3 mistake=8 blunder=9 | avg_loss=7.37
+  R6 P2: 53 locks | none=18 inacc=12 mistake=4 blunder=19 | avg_loss=8.62
+  R7 P1: 52 locks | none=21 inacc=5 mistake=13 blunder=13 | avg_loss=5.53
+  R7 P2: 75 locks | none=26 inacc=2 mistake=11 blunder=36 | avg_loss=12.77
+  R8 P1: 42 locks | none=17 inacc=5 mistake=10 blunder=10 | avg_loss=7.16
+  R8 P2: 59 locks | none=33 inacc=6 mistake=9 blunder=11 | avg_loss=3.97
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms__mcchary__342b95dd9a82.ttrm — all rounds, both players
+[22m[39m
+═══ s__mcchary__342b95dd9a82.ttrm (6 rounds) ═══
+  R1 P1: 48 locks | none=28 inacc=5 mistake=9 blunder=6 | avg_loss=4.28
+  R1 P2: 57 locks | none=36 inacc=7 mistake=5 blunder=9 | avg_loss=4.87
+  R2 P1: 25 locks | none=17 inacc=2 mistake=6 blunder=0 | avg_loss=2.28
+  R2 P2: 24 locks | none=10 inacc=3 mistake=5 blunder=6 | avg_loss=7.35
+  R3 P1: 37 locks | none=23 inacc=4 mistake=9 blunder=1 | avg_loss=2.48
+  R3 P2: 32 locks | none=19 inacc=4 mistake=2 blunder=7 | avg_loss=5.78
+  R4 P1: 121 locks | none=83 inacc=19 mistake=13 blunder=6 | avg_loss=2.07
+  R4 P2: 123 locks | none=79 inacc=13 mistake=15 blunder=16 | avg_loss=4.50
+  R5 P1: 70 locks | none=43 inacc=5 mistake=10 blunder=12 | avg_loss=5.41
+  R5 P2: 86 locks | none=54 inacc=14 mistake=13 blunder=5 | avg_loss=2.67
+  R6 P1: 47 locks | none=33 inacc=4 mistake=6 blunder=4 | avg_loss=2.26
+  R6 P2: 47 locks | none=25 inacc=4 mistake=8 blunder=10 | avg_loss=5.19
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms__mcchary__b36eb4ac7426.ttrm — all rounds, both players
+[22m[39m
+═══ s__mcchary__b36eb4ac7426.ttrm (9 rounds) ═══
+  R1 P1: 72 locks | none=50 inacc=2 mistake=12 blunder=8 | avg_loss=3.26
+  R1 P2: 76 locks | none=44 inacc=9 mistake=12 blunder=11 | avg_loss=3.91
+  R2 P1: 84 locks | none=47 inacc=11 mistake=15 blunder=11 | avg_loss=4.34
+  R2 P2: 80 locks | none=55 inacc=11 mistake=9 blunder=5 | avg_loss=2.54
+  R3 P1: 39 locks | none=17 inacc=8 mistake=12 blunder=2 | avg_loss=3.64
+  R3 P2: 39 locks | none=27 inacc=5 mistake=3 blunder=4 | avg_loss=2.74
+  R4 P1: 112 locks | none=65 inacc=13 mistake=18 blunder=16 | avg_loss=4.82
+  R4 P2: 120 locks | none=80 inacc=14 mistake=19 blunder=7 | avg_loss=2.86
+  R5 P1: 43 locks | none=17 inacc=11 mistake=4 blunder=11 | avg_loss=7.45
+  R5 P2: 40 locks | none=25 inacc=3 mistake=4 blunder=8 | avg_loss=4.57
+  R6 P1: 45 locks | none=22 inacc=3 mistake=8 blunder=12 | avg_loss=7.27
+  R6 P2: 35 locks | none=25 inacc=4 mistake=1 blunder=5 | avg_loss=3.10
+  R7 P1: 56 locks | none=37 inacc=9 mistake=5 blunder=5 | avg_loss=2.47
+  R7 P2: 51 locks | none=34 inacc=7 mistake=7 blunder=3 | avg_loss=2.51
+  R8 P1: 161 locks | none=88 inacc=19 mistake=22 blunder=32 | avg_loss=5.73
+  R8 P2: 184 locks | none=139 inacc=20 mistake=14 blunder=11 | avg_loss=2.39
+  R9 P1: 103 locks | none=56 inacc=16 mistake=19 blunder=12 | avg_loss=3.70
+  R9 P2: 108 locks | none=87 inacc=9 mistake=9 blunder=3 | avg_loss=1.32
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms__mcchary__caa77157b533.ttrm — all rounds, both players
+[22m[39m
+═══ s__mcchary__caa77157b533.ttrm (6 rounds) ═══
+  R1 P1: 206 locks | none=141 inacc=26 mistake=22 blunder=17 | avg_loss=2.70
+  R1 P2: 226 locks | none=152 inacc=20 mistake=33 blunder=21 | avg_loss=2.68
+  R2 P1: 33 locks | none=17 inacc=10 mistake=4 blunder=2 | avg_loss=2.86
+  R2 P2: 32 locks | none=15 inacc=4 mistake=7 blunder=6 | avg_loss=6.23
+  R3 P1: 87 locks | none=56 inacc=10 mistake=10 blunder=11 | avg_loss=3.75
+  R3 P2: 83 locks | none=46 inacc=11 mistake=15 blunder=11 | avg_loss=3.73
+  R4 P1: 40 locks | none=22 inacc=6 mistake=11 blunder=1 | avg_loss=3.02
+  R4 P2: 44 locks | none=21 inacc=8 mistake=5 blunder=10 | avg_loss=5.23
+  R5 P1: 410 locks | none=276 inacc=50 mistake=51 blunder=33 | avg_loss=2.82
+  R5 P2: 399 locks | none=270 inacc=40 mistake=56 blunder=33 | avg_loss=2.63
+  R6 P1: 145 locks | none=102 inacc=20 mistake=14 blunder=9 | avg_loss=2.31
+  R6 P2: 155 locks | none=100 inacc=19 mistake=26 blunder=10 | avg_loss=3.06
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms__mcchary__cfff4273ff58.ttrm — all rounds, both players
+[22m[39m
+═══ s__mcchary__cfff4273ff58.ttrm (7 rounds) ═══
+  R1 P1: 76 locks | none=45 inacc=16 mistake=10 blunder=5 | avg_loss=2.93
+  R1 P2: 77 locks | none=52 inacc=15 mistake=9 blunder=1 | avg_loss=1.66
+  R2 P1: 49 locks | none=37 inacc=4 mistake=6 blunder=2 | avg_loss=1.69
+  R2 P2: 6 locks | none=0 inacc=1 mistake=0 blunder=5 | avg_loss=31.15
+  R3 P1: 200 locks | none=125 inacc=31 mistake=35 blunder=9 | avg_loss=2.54
+  R3 P2: 130 locks | none=103 inacc=9 mistake=11 blunder=7 | avg_loss=1.72
+  R4 P1: 70 locks | none=38 inacc=9 mistake=12 blunder=11 | avg_loss=4.11
+  R4 P2: 62 locks | none=33 inacc=9 mistake=13 blunder=7 | avg_loss=3.56
+  R5 P1: 134 locks | none=84 inacc=12 mistake=22 blunder=16 | avg_loss=3.23
+  R5 P2: 140 locks | none=92 inacc=23 mistake=13 blunder=12 | avg_loss=2.59
+  R6 P1: 33 locks | none=21 inacc=1 mistake=8 blunder=3 | avg_loss=3.16
+  R6 P2: 37 locks | none=23 inacc=6 mistake=8 blunder=0 | avg_loss=2.11
+  R7 P1: 311 locks | none=217 inacc=34 mistake=38 blunder=22 | avg_loss=2.38
+  R7 P2: 342 locks | none=227 inacc=57 mistake=39 blunder=19 | avg_loss=2.46
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms__meowmeoww_00__055d19096ebb.ttrm — all rounds, both players
+[22m[39m
+═══ s__meowmeoww_00__055d19096ebb.ttrm (6 rounds) ═══
+  R1 P1: 38 locks | none=12 inacc=5 mistake=10 blunder=11 | avg_loss=7.32
+  R1 P2: 25 locks | none=19 inacc=4 mistake=2 blunder=0 | avg_loss=1.19
+  R2 P1: 96 locks | none=54 inacc=9 mistake=8 blunder=25 | avg_loss=5.97
+  R2 P2: 91 locks | none=63 inacc=4 mistake=11 blunder=13 | avg_loss=3.47
+  R3 P1: 40 locks | none=13 inacc=3 mistake=6 blunder=18 | avg_loss=8.83
+  R3 P2: 30 locks | none=18 inacc=6 mistake=3 blunder=3 | avg_loss=3.30
+  R4 P1: 35 locks | none=14 inacc=3 mistake=8 blunder=10 | avg_loss=7.35
+  R4 P2: 32 locks | none=14 inacc=4 mistake=3 blunder=11 | avg_loss=6.73
+  R5 P1: 37 locks | none=13 inacc=4 mistake=7 blunder=13 | avg_loss=8.01
+  R5 P2: 38 locks | none=28 inacc=3 mistake=2 blunder=5 | avg_loss=4.32
+  R6 P1: 44 locks | none=17 inacc=4 mistake=9 blunder=14 | avg_loss=7.27
+  R6 P2: 47 locks | none=34 inacc=7 mistake=1 blunder=5 | avg_loss=2.77
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms__meowmeoww_00__325bdb21124a.ttrm — all rounds, both players
+[22m[39m
+═══ s__meowmeoww_00__325bdb21124a.ttrm (6 rounds) ═══
+  R1 P1: 39 locks | none=13 inacc=8 mistake=5 blunder=13 | avg_loss=7.16
+  R1 P2: 33 locks | none=15 inacc=5 mistake=3 blunder=10 | avg_loss=5.70
+  R2 P1: 103 locks | none=59 inacc=18 mistake=13 blunder=13 | avg_loss=3.52
+  R2 P2: 74 locks | none=40 inacc=3 mistake=6 blunder=25 | avg_loss=6.98
+  R3 P1: 92 locks | none=48 inacc=9 mistake=15 blunder=20 | avg_loss=5.67
+  R3 P2: 78 locks | none=29 inacc=10 mistake=14 blunder=25 | avg_loss=7.84
+  R4 P1: 58 locks | none=36 inacc=9 mistake=1 blunder=12 | avg_loss=4.64
+  R4 P2: 53 locks | none=15 inacc=2 mistake=13 blunder=23 | avg_loss=11.32
+  R5 P1: 75 locks | none=50 inacc=11 mistake=11 blunder=3 | avg_loss=2.23
+  R5 P2: 72 locks | none=19 inacc=9 mistake=6 blunder=38 | avg_loss=12.07
+  R6 P1: 82 locks | none=43 inacc=17 mistake=9 blunder=13 | avg_loss=4.54
+  R6 P2: 67 locks | none=25 inacc=13 mistake=6 blunder=23 | avg_loss=9.04
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms__meowmeoww_00__4f8b1a86f936.ttrm — all rounds, both players
+[22m[39m
+═══ s__meowmeoww_00__4f8b1a86f936.ttrm (7 rounds) ═══
+  R1 P1: 50 locks | none=12 inacc=5 mistake=8 blunder=25 | avg_loss=12.52
+  R1 P2: 43 locks | none=21 inacc=5 mistake=6 blunder=11 | avg_loss=5.50
+  R2 P1: 28 locks | none=8 inacc=2 mistake=5 blunder=13 | avg_loss=10.32
+  R2 P2: 26 locks | none=6 inacc=6 mistake=8 blunder=6 | avg_loss=6.65
+  R3 P1: 39 locks | none=12 inacc=5 mistake=10 blunder=12 | avg_loss=7.09
+  R3 P2: 29 locks | none=13 inacc=1 mistake=3 blunder=12 | avg_loss=7.44
+  R4 P1: 132 locks | none=65 inacc=14 mistake=29 blunder=24 | avg_loss=5.11
+  R4 P2: 175 locks | none=120 inacc=21 mistake=15 blunder=19 | avg_loss=2.86
+  R5 P1: 162 locks | none=95 inacc=17 mistake=15 blunder=35 | avg_loss=4.84
+  R5 P2: 185 locks | none=109 inacc=21 mistake=28 blunder=27 | avg_loss=4.36
+  R6 P1: 38 locks | none=12 inacc=5 mistake=6 blunder=15 | avg_loss=10.06
+  R6 P2: 31 locks | none=14 inacc=7 mistake=3 blunder=7 | avg_loss=4.96
+  R7 P1: 53 locks | none=30 inacc=3 mistake=7 blunder=13 | avg_loss=6.50
+  R7 P2: 61 locks | none=20 inacc=14 mistake=8 blunder=19 | avg_loss=7.04
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms__meowmeoww_00__6597e6354b69.ttrm — all rounds, both players
+[22m[39m
+═══ s__meowmeoww_00__6597e6354b69.ttrm (8 rounds) ═══
+  R1 P1: 32 locks | none=10 inacc=6 mistake=12 blunder=4 | avg_loss=4.68
+  R1 P2: 34 locks | none=10 inacc=4 mistake=5 blunder=15 | avg_loss=10.29
+  R2 P1: 31 locks | none=10 inacc=8 mistake=9 blunder=4 | avg_loss=5.51
+  R2 P2: 40 locks | none=25 inacc=4 mistake=7 blunder=4 | avg_loss=3.19
+  R3 P1: 32 locks | none=11 inacc=3 mistake=7 blunder=11 | avg_loss=8.34
+  R3 P2: 46 locks | none=16 inacc=3 mistake=18 blunder=9 | avg_loss=6.29
+  R4 P1: 148 locks | none=82 inacc=12 mistake=20 blunder=34 | avg_loss=6.00
+  R4 P2: 169 locks | none=97 inacc=23 mistake=22 blunder=27 | avg_loss=4.06
+  R5 P1: 114 locks | none=79 inacc=12 mistake=13 blunder=10 | avg_loss=2.71
+  R5 P2: 154 locks | none=73 inacc=26 mistake=29 blunder=26 | avg_loss=4.72
+  R6 P1: 43 locks | none=26 inacc=3 mistake=6 blunder=8 | avg_loss=5.07
+  R6 P2: 53 locks | none=21 inacc=6 mistake=12 blunder=14 | avg_loss=7.05
+  R7 P1: 35 locks | none=16 inacc=1 mistake=11 blunder=7 | avg_loss=5.05
+  R7 P2: 41 locks | none=18 inacc=3 mistake=10 blunder=10 | avg_loss=6.11
+  R8 P1: 38 locks | none=16 inacc=2 mistake=15 blunder=5 | avg_loss=4.68
+  R8 P2: 36 locks | none=15 inacc=7 mistake=7 blunder=7 | avg_loss=6.55
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2ms__meowmeoww_00__90a11d278d1f.ttrm — all rounds, both players
+[22m[39m
+═══ s__meowmeoww_00__90a11d278d1f.ttrm (9 rounds) ═══
+  R1 P1: 30 locks | none=12 inacc=5 mistake=7 blunder=6 | avg_loss=5.70
+  R1 P2: 37 locks | none=8 inacc=6 mistake=8 blunder=15 | avg_loss=11.64
+  R2 P1: 216 locks | none=127 inacc=29 mistake=38 blunder=22 | avg_loss=3.37
+  R2 P2: 184 locks | none=112 inacc=21 mistake=23 blunder=28 | avg_loss=3.81
+  R3 P1: 28 locks | none=16 inacc=2 mistake=10 blunder=0 | avg_loss=2.61
+  R3 P2: 31 locks | none=12 inacc=7 mistake=5 blunder=7 | avg_loss=5.90
+  R4 P1: 393 locks | none=241 inacc=54 mistake=56 blunder=42 | avg_loss=3.37
+  R4 P2: 333 locks | none=206 inacc=35 mistake=50 blunder=42 | avg_loss=3.67
+  R5 P1: 17 locks | none=6 inacc=2 mistake=5 blunder=4 | avg_loss=7.00
+  R5 P2: 32 locks | none=11 inacc=3 mistake=6 blunder=12 | avg_loss=9.18
+  R6 P1: 378 locks | none=252 inacc=55 mistake=47 blunder=24 | avg_loss=2.80
+  R6 P2: 304 locks | none=182 inacc=36 mistake=44 blunder=42 | avg_loss=3.86
+  R7 P1: 96 locks | none=60 inacc=17 mistake=9 blunder=10 | avg_loss=2.77
+  R7 P2: 57 locks | none=28 inacc=6 mistake=11 blunder=12 | avg_loss=5.20
+  R8 P1: 71 locks | none=46 inacc=9 mistake=9 blunder=7 | avg_loss=3.19
+  R8 P2: 65 locks | none=31 inacc=5 mistake=15 blunder=14 | avg_loss=6.60
+  R9 P1: 127 locks | none=80 inacc=23 mistake=14 blunder=10 | avg_loss=2.90
+  R9 P2: 107 locks | none=58 inacc=6 mistake=18 blunder=25 | avg_loss=5.57
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mss__chura-_-__09047f96d138.ttrm — all rounds, both players
+[22m[39m
+═══ ss__chura-_-__09047f96d138.ttrm (9 rounds) ═══
+  R1 P1: 58 locks | none=21 inacc=14 mistake=9 blunder=14 | avg_loss=6.06
+  R1 P2: 51 locks | none=29 inacc=4 mistake=8 blunder=10 | avg_loss=5.16
+  R2 P1: 92 locks | none=53 inacc=14 mistake=7 blunder=18 | avg_loss=5.12
+  R2 P2: 63 locks | none=32 inacc=10 mistake=9 blunder=12 | avg_loss=4.27
+  R3 P1: 74 locks | none=38 inacc=7 mistake=12 blunder=17 | avg_loss=5.96
+  R3 P2: 54 locks | none=39 inacc=5 mistake=7 blunder=3 | avg_loss=2.64
+  R4 P1: 40 locks | none=19 inacc=9 mistake=4 blunder=8 | avg_loss=4.83
+  R4 P2: 33 locks | none=16 inacc=4 mistake=5 blunder=8 | avg_loss=5.67
+  R5 P1: 42 locks | none=20 inacc=4 mistake=8 blunder=10 | avg_loss=7.07
+  R5 P2: 35 locks | none=21 inacc=6 mistake=4 blunder=4 | avg_loss=3.67
+  R6 P1: 91 locks | none=44 inacc=5 mistake=14 blunder=28 | avg_loss=8.01
+  R6 P2: 98 locks | none=57 inacc=17 mistake=15 blunder=9 | avg_loss=3.03
+  R7 P1: 137 locks | none=77 inacc=26 mistake=17 blunder=17 | avg_loss=3.74
+  R7 P2: 129 locks | none=63 inacc=20 mistake=19 blunder=27 | avg_loss=6.00
+  R8 P1: 123 locks | none=74 inacc=10 mistake=11 blunder=28 | avg_loss=5.86
+  R8 P2: 116 locks | none=70 inacc=14 mistake=15 blunder=17 | avg_loss=4.52
+  R9 P1: 68 locks | none=43 inacc=10 mistake=8 blunder=7 | avg_loss=3.76
+  R9 P2: 64 locks | none=40 inacc=11 mistake=11 blunder=2 | avg_loss=2.61
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mss__chura-_-__5e20a8da170f.ttrm — all rounds, both players
+[22m[39m
+═══ ss__chura-_-__5e20a8da170f.ttrm (5 rounds) ═══
+  R1 P1: 34 locks | none=15 inacc=4 mistake=4 blunder=11 | avg_loss=8.30
+  R1 P2: 25 locks | none=17 inacc=2 mistake=4 blunder=2 | avg_loss=2.67
+  R2 P1: 30 locks | none=12 inacc=3 mistake=3 blunder=12 | avg_loss=12.90
+  R2 P2: 38 locks | none=19 inacc=8 mistake=2 blunder=9 | avg_loss=5.57
+  R3 P1: 72 locks | none=29 inacc=10 mistake=20 blunder=13 | avg_loss=5.80
+  R3 P2: 59 locks | none=29 inacc=12 mistake=8 blunder=10 | avg_loss=4.40
+  R4 P1: 53 locks | none=16 inacc=1 mistake=14 blunder=22 | avg_loss=10.01
+  R4 P2: 52 locks | none=31 inacc=9 mistake=6 blunder=6 | avg_loss=3.03
+  R5 P1: 116 locks | none=72 inacc=13 mistake=14 blunder=17 | avg_loss=3.98
+  R5 P2: 105 locks | none=70 inacc=11 mistake=13 blunder=11 | avg_loss=3.06
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mss__chura-_-__936c280c0c88.ttrm — all rounds, both players
+[22m[39m
+═══ ss__chura-_-__936c280c0c88.ttrm (11 rounds) ═══
+  R1 P1: 48 locks | none=34 inacc=9 mistake=4 blunder=1 | avg_loss=1.52
+  R1 P2: 39 locks | none=20 inacc=6 mistake=9 blunder=4 | avg_loss=3.65
+  R2 P1: 48 locks | none=17 inacc=5 mistake=9 blunder=17 | avg_loss=8.81
+  R2 P2: 34 locks | none=15 inacc=6 mistake=9 blunder=4 | avg_loss=4.58
+  R3 P1: 138 locks | none=79 inacc=12 mistake=24 blunder=23 | avg_loss=4.51
+  R3 P2: 125 locks | none=71 inacc=14 mistake=16 blunder=24 | avg_loss=5.35
+  R4 P1: 343 locks | none=205 inacc=47 mistake=31 blunder=60 | avg_loss=4.57
+  R4 P2: 328 locks | none=205 inacc=40 mistake=48 blunder=35 | avg_loss=3.26
+  R5 P1: 86 locks | none=46 inacc=12 mistake=14 blunder=14 | avg_loss=4.81
+  R5 P2: 74 locks | none=50 inacc=10 mistake=10 blunder=4 | avg_loss=2.65
+  R6 P1: 66 locks | none=35 inacc=7 mistake=12 blunder=12 | avg_loss=5.16
+  R6 P2: 46 locks | none=25 inacc=4 mistake=11 blunder=6 | avg_loss=3.87
+  R7 P1: 88 locks | none=42 inacc=10 mistake=17 blunder=19 | avg_loss=5.76
+  R7 P2: 92 locks | none=58 inacc=15 mistake=11 blunder=8 | avg_loss=2.69
+  R8 P1: 168 locks | none=101 inacc=23 mistake=17 blunder=27 | avg_loss=4.53
+  R8 P2: 147 locks | none=104 inacc=17 mistake=18 blunder=8 | avg_loss=2.14
+  R9 P1: 202 locks | none=112 inacc=29 mistake=25 blunder=36 | avg_loss=4.40
+  R9 P2: 178 locks | none=104 inacc=25 mistake=34 blunder=15 | avg_loss=3.42
+  R10 P1: 47 locks | none=23 inacc=7 mistake=8 blunder=9 | avg_loss=5.10
+  R10 P2: 46 locks | none=29 inacc=7 mistake=4 blunder=6 | avg_loss=3.02
+  R11 P1: 84 locks | none=38 inacc=8 mistake=15 blunder=23 | avg_loss=6.90
+  R11 P2: 86 locks | none=54 inacc=12 mistake=19 blunder=1 | avg_loss=2.55
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mss__chura-_-__a3f4285686b8.ttrm — all rounds, both players
+[22m[39m
+═══ ss__chura-_-__a3f4285686b8.ttrm (11 rounds) ═══
+  R1 P1: 47 locks | none=20 inacc=6 mistake=5 blunder=16 | avg_loss=8.92
+  R1 P2: 35 locks | none=18 inacc=7 mistake=7 blunder=3 | avg_loss=3.32
+  R2 P1: 131 locks | none=73 inacc=25 mistake=20 blunder=13 | avg_loss=3.29
+  R2 P2: 128 locks | none=74 inacc=17 mistake=20 blunder=17 | avg_loss=3.89
+  R3 P1: 72 locks | none=46 inacc=11 mistake=10 blunder=5 | avg_loss=2.68
+  R3 P2: 68 locks | none=36 inacc=12 mistake=7 blunder=13 | avg_loss=5.52
+  R4 P1: 58 locks | none=24 inacc=9 mistake=5 blunder=20 | avg_loss=7.35
+  R4 P2: 58 locks | none=30 inacc=9 mistake=8 blunder=11 | avg_loss=5.57
+  R5 P1: 60 locks | none=23 inacc=7 mistake=8 blunder=22 | avg_loss=8.57
+  R5 P2: 46 locks | none=24 inacc=6 mistake=7 blunder=9 | avg_loss=5.15
+  R6 P1: 73 locks | none=30 inacc=17 mistake=17 blunder=9 | avg_loss=4.48
+  R6 P2: 55 locks | none=30 inacc=8 mistake=8 blunder=9 | avg_loss=4.52
+  R7 P1: 72 locks | none=26 inacc=8 mistake=16 blunder=22 | avg_loss=8.14
+  R7 P2: 74 locks | none=42 inacc=9 mistake=13 blunder=10 | avg_loss=4.73
+  R8 P1: 46 locks | none=24 inacc=5 mistake=6 blunder=11 | avg_loss=5.54
+  R8 P2: 46 locks | none=26 inacc=5 mistake=3 blunder=12 | avg_loss=5.72
+  R9 P1: 124 locks | none=71 inacc=16 mistake=16 blunder=21 | avg_loss=3.97
+  R9 P2: 104 locks | none=62 inacc=10 mistake=8 blunder=24 | avg_loss=5.28
+  R10 P1: 37 locks | none=15 inacc=7 mistake=4 blunder=11 | avg_loss=6.99
+  R10 P2: 34 locks | none=15 inacc=2 mistake=4 blunder=13 | avg_loss=8.02
+  R11 P1: 85 locks | none=43 inacc=15 mistake=15 blunder=12 | avg_loss=4.43
+  R11 P2: 76 locks | none=47 inacc=7 mistake=11 blunder=11 | avg_loss=3.38
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mss__chura-_-__e3c9205e3e72.ttrm — all rounds, both players
+[22m[39m
+═══ ss__chura-_-__e3c9205e3e72.ttrm (10 rounds) ═══
+  R1 P1: 91 locks | none=36 inacc=22 mistake=15 blunder=18 | avg_loss=5.25
+  R1 P2: 80 locks | none=49 inacc=12 mistake=10 blunder=9 | avg_loss=3.40
+  R2 P1: 44 locks | none=19 inacc=13 mistake=8 blunder=4 | avg_loss=3.60
+  R2 P2: 41 locks | none=16 inacc=3 mistake=5 blunder=17 | avg_loss=10.72
+  R3 P1: 81 locks | none=33 inacc=14 mistake=18 blunder=16 | avg_loss=6.03
+  R3 P2: 81 locks | none=40 inacc=12 mistake=17 blunder=12 | avg_loss=4.51
+  R4 P1: 235 locks | none=132 inacc=45 mistake=38 blunder=20 | avg_loss=3.40
+  R4 P2: 180 locks | none=100 inacc=21 mistake=27 blunder=32 | avg_loss=4.41
+  R5 P1: 195 locks | none=121 inacc=22 mistake=25 blunder=27 | avg_loss=4.03
+  R5 P2: 171 locks | none=108 inacc=22 mistake=21 blunder=20 | avg_loss=3.74
+  R6 P1: 421 locks | none=225 inacc=75 mistake=82 blunder=39 | avg_loss=3.82
+  R6 P2: 349 locks | none=214 inacc=35 mistake=56 blunder=44 | avg_loss=3.75
+  R7 P1: 70 locks | none=37 inacc=7 mistake=15 blunder=11 | avg_loss=4.61
+  R7 P2: 67 locks | none=42 inacc=11 mistake=11 blunder=3 | avg_loss=2.43
+  R8 P1: 241 locks | none=129 inacc=29 mistake=41 blunder=42 | avg_loss=4.80
+  R8 P2: 200 locks | none=110 inacc=24 mistake=32 blunder=34 | avg_loss=5.05
+  R9 P1: 114 locks | none=71 inacc=14 mistake=13 blunder=16 | avg_loss=4.54
+  R9 P2: 119 locks | none=82 inacc=11 mistake=15 blunder=11 | avg_loss=3.16
+  R10 P1: 163 locks | none=92 inacc=29 mistake=19 blunder=23 | avg_loss=4.35
+  R10 P2: 124 locks | none=68 inacc=16 mistake=16 blunder=24 | avg_loss=5.35
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mss__gary14242__14ce42450023.ttrm — all rounds, both players
+[22m[39m
+═══ ss__gary14242__14ce42450023.ttrm (9 rounds) ═══
+  R1 P1: 106 locks | none=51 inacc=16 mistake=22 blunder=17 | avg_loss=5.14
+  R1 P2: 102 locks | none=66 inacc=13 mistake=10 blunder=13 | avg_loss=4.01
+  R2 P1: 66 locks | none=34 inacc=11 mistake=13 blunder=8 | avg_loss=4.45
+  R2 P2: 60 locks | none=29 inacc=7 mistake=8 blunder=16 | avg_loss=6.61
+  R3 P1: 47 locks | none=21 inacc=12 mistake=8 blunder=6 | avg_loss=5.31
+  R3 P2: 48 locks | none=20 inacc=6 mistake=16 blunder=6 | avg_loss=5.51
+  R4 P1: 118 locks | none=56 inacc=21 mistake=19 blunder=22 | avg_loss=5.06
+  R4 P2: 89 locks | none=46 inacc=13 mistake=14 blunder=16 | avg_loss=4.63
+  R5 P1: 50 locks | none=28 inacc=7 mistake=14 blunder=1 | avg_loss=2.93
+  R5 P2: 31 locks | none=13 inacc=6 mistake=6 blunder=6 | avg_loss=5.94
+  R6 P1: 57 locks | none=28 inacc=7 mistake=7 blunder=15 | avg_loss=7.21
+  R6 P2: 53 locks | none=31 inacc=7 mistake=6 blunder=9 | avg_loss=5.05
+  R7 P1: 46 locks | none=26 inacc=3 mistake=6 blunder=11 | avg_loss=6.66
+  R7 P2: 47 locks | none=23 inacc=4 mistake=9 blunder=11 | avg_loss=5.73
+  R8 P1: 32 locks | none=11 inacc=7 mistake=9 blunder=5 | avg_loss=5.34
+  R8 P2: 26 locks | none=10 inacc=4 mistake=6 blunder=6 | avg_loss=6.68
+  R9 P1: 54 locks | none=29 inacc=4 mistake=4 blunder=17 | avg_loss=5.88
+  R9 P2: 65 locks | none=44 inacc=6 mistake=4 blunder=11 | avg_loss=4.06
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mss__gary14242__2d2efaa964d7.ttrm — all rounds, both players
+[22m[39m
+═══ ss__gary14242__2d2efaa964d7.ttrm (9 rounds) ═══
+  R1 P1: 73 locks | none=36 inacc=7 mistake=17 blunder=13 | avg_loss=4.73
+  R1 P2: 66 locks | none=43 inacc=8 mistake=7 blunder=8 | avg_loss=2.67
+  R2 P1: 82 locks | none=47 inacc=10 mistake=18 blunder=7 | avg_loss=3.69
+  R2 P2: 68 locks | none=37 inacc=16 mistake=10 blunder=5 | avg_loss=3.62
+  R3 P1: 61 locks | none=30 inacc=5 mistake=11 blunder=15 | avg_loss=7.32
+  R3 P2: 41 locks | none=22 inacc=7 mistake=8 blunder=4 | avg_loss=3.74
+  R4 P1: 194 locks | none=125 inacc=28 mistake=22 blunder=19 | avg_loss=3.34
+  R4 P2: 161 locks | none=96 inacc=22 mistake=25 blunder=18 | avg_loss=3.38
+  R5 P1: 260 locks | none=170 inacc=28 mistake=41 blunder=21 | avg_loss=2.95
+  R5 P2: 203 locks | none=128 inacc=18 mistake=27 blunder=30 | avg_loss=4.29
+  R6 P1: 142 locks | none=76 inacc=20 mistake=27 blunder=19 | avg_loss=3.79
+  R6 P2: 117 locks | none=71 inacc=12 mistake=23 blunder=11 | avg_loss=2.92
+  R7 P1: 52 locks | none=21 inacc=12 mistake=11 blunder=8 | avg_loss=5.98
+  R7 P2: 47 locks | none=24 inacc=6 mistake=8 blunder=9 | avg_loss=6.40
+  R8 P1: 80 locks | none=53 inacc=6 mistake=14 blunder=7 | avg_loss=2.85
+  R8 P2: 66 locks | none=40 inacc=7 mistake=11 blunder=8 | avg_loss=3.98
+  R9 P1: 81 locks | none=57 inacc=7 mistake=10 blunder=7 | avg_loss=3.50
+  R9 P2: 69 locks | none=37 inacc=5 mistake=14 blunder=13 | avg_loss=5.62
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mss__gary14242__2f509a84dac8.ttrm — all rounds, both players
+[22m[39m
+═══ ss__gary14242__2f509a84dac8.ttrm (5 rounds) ═══
+  R1 P1: 102 locks | none=65 inacc=14 mistake=17 blunder=6 | avg_loss=2.81
+  R1 P2: 87 locks | none=54 inacc=11 mistake=14 blunder=8 | avg_loss=3.34
+  R2 P1: 124 locks | none=75 inacc=15 mistake=19 blunder=15 | avg_loss=3.63
+  R2 P2: 99 locks | none=49 inacc=10 mistake=20 blunder=20 | avg_loss=6.00
+  R3 P1: 50 locks | none=16 inacc=9 mistake=6 blunder=19 | avg_loss=8.69
+  R3 P2: 41 locks | none=20 inacc=4 mistake=8 blunder=9 | avg_loss=6.05
+  R4 P1: 77 locks | none=40 inacc=14 mistake=8 blunder=15 | avg_loss=5.31
+  R4 P2: 55 locks | none=27 inacc=2 mistake=10 blunder=16 | avg_loss=7.00
+  R5 P1: 13 locks | none=5 inacc=2 mistake=6 blunder=0 | avg_loss=3.81
+  R5 P2: 1 locks | none=0 inacc=0 mistake=1 blunder=0 | avg_loss=5.50
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mss__gary14242__509194d5a3ff.ttrm — all rounds, both players
+[22m[39m
+═══ ss__gary14242__509194d5a3ff.ttrm (10 rounds) ═══
+  R1 P1: 205 locks | none=124 inacc=31 mistake=35 blunder=15 | avg_loss=3.07
+  R1 P2: 166 locks | none=94 inacc=22 mistake=34 blunder=16 | avg_loss=3.46
+  R2 P1: 57 locks | none=27 inacc=11 mistake=15 blunder=4 | avg_loss=3.62
+  R2 P2: 35 locks | none=18 inacc=9 mistake=5 blunder=3 | avg_loss=3.97
+  R3 P1: 373 locks | none=206 inacc=41 mistake=64 blunder=62 | avg_loss=4.68
+  R3 P2: 235 locks | none=146 inacc=28 mistake=34 blunder=27 | avg_loss=3.59
+  R4 P1: 135 locks | none=83 inacc=20 mistake=23 blunder=9 | avg_loss=3.33
+  R4 P2: 89 locks | none=58 inacc=10 mistake=9 blunder=12 | avg_loss=3.24
+  R5 P1: 77 locks | none=39 inacc=9 mistake=19 blunder=10 | avg_loss=4.66
+  R5 P2: 58 locks | none=31 inacc=6 mistake=6 blunder=15 | avg_loss=6.38
+  R6 P1: 288 locks | none=159 inacc=26 mistake=65 blunder=38 | avg_loss=4.73
+  R6 P2: 215 locks | none=133 inacc=15 mistake=28 blunder=39 | avg_loss=4.50
+  R7 P1: 88 locks | none=54 inacc=15 mistake=12 blunder=7 | avg_loss=3.09
+  R7 P2: 58 locks | none=36 inacc=5 mistake=11 blunder=6 | avg_loss=3.94
+  R8 P1: 239 locks | none=139 inacc=32 mistake=41 blunder=27 | avg_loss=4.06
+  R8 P2: 168 locks | none=98 inacc=29 mistake=27 blunder=14 | avg_loss=3.43
+  R9 P1: 249 locks | none=136 inacc=34 mistake=43 blunder=36 | avg_loss=4.16
+  R9 P2: 185 locks | none=108 inacc=27 mistake=30 blunder=20 | avg_loss=3.49
+  R10 P1: 42 locks | none=30 inacc=6 mistake=6 blunder=0 | avg_loss=1.84
+  R10 P2: 33 locks | none=17 inacc=3 mistake=4 blunder=9 | avg_loss=5.66
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mss__gary14242__fe54642cf91b.ttrm — all rounds, both players
+[22m[39m
+═══ ss__gary14242__fe54642cf91b.ttrm (11 rounds) ═══
+  R1 P1: 89 locks | none=53 inacc=12 mistake=16 blunder=8 | avg_loss=3.74
+  R1 P2: 80 locks | none=46 inacc=10 mistake=14 blunder=10 | avg_loss=4.32
+  R2 P1: 59 locks | none=39 inacc=8 mistake=8 blunder=4 | avg_loss=2.32
+  R2 P2: 40 locks | none=20 inacc=6 mistake=9 blunder=5 | avg_loss=4.42
+  R3 P1: 55 locks | none=35 inacc=5 mistake=9 blunder=6 | avg_loss=3.75
+  R3 P2: 56 locks | none=28 inacc=15 mistake=7 blunder=6 | avg_loss=3.19
+  R4 P1: 64 locks | none=26 inacc=11 mistake=11 blunder=16 | avg_loss=6.84
+  R4 P2: 53 locks | none=27 inacc=8 mistake=5 blunder=13 | avg_loss=6.15
+  R5 P1: 236 locks | none=140 inacc=23 mistake=36 blunder=37 | avg_loss=4.81
+  R5 P2: 250 locks | none=160 inacc=31 mistake=31 blunder=28 | avg_loss=3.21
+  R6 P1: 39 locks | none=22 inacc=6 mistake=9 blunder=2 | avg_loss=3.08
+  R6 P2: 34 locks | none=17 inacc=2 mistake=8 blunder=7 | avg_loss=5.34
+  R7 P1: 49 locks | none=30 inacc=8 mistake=9 blunder=2 | avg_loss=2.37
+  R7 P2: 46 locks | none=25 inacc=3 mistake=12 blunder=6 | avg_loss=4.02
+  R8 P1: 41 locks | none=22 inacc=6 mistake=5 blunder=8 | avg_loss=4.32
+  R8 P2: 74 locks | none=44 inacc=8 mistake=14 blunder=8 | avg_loss=3.22
+  R9 P1: 101 locks | none=53 inacc=13 mistake=13 blunder=22 | avg_loss=4.64
+  R9 P2: 99 locks | none=58 inacc=15 mistake=12 blunder=14 | avg_loss=3.69
+  R10 P1: 168 locks | none=105 inacc=17 mistake=33 blunder=13 | avg_loss=2.86
+  R10 P2: 192 locks | none=125 inacc=23 mistake=30 blunder=14 | avg_loss=2.80
+  R11 P1: 190 locks | none=118 inacc=20 mistake=24 blunder=28 | avg_loss=3.78
+  R11 P2: 196 locks | none=124 inacc=22 mistake=26 blunder=24 | avg_loss=3.42
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mss__hilloeid__401915b373fe.ttrm — all rounds, both players
+[22m[39m
+═══ ss__hilloeid__401915b373fe.ttrm (12 rounds) ═══
+  R1 P1: 68 locks | none=43 inacc=7 mistake=7 blunder=11 | avg_loss=4.04
+  R1 P2: 78 locks | none=49 inacc=10 mistake=14 blunder=5 | avg_loss=3.96
+  R2 P1: 76 locks | none=52 inacc=4 mistake=12 blunder=8 | avg_loss=2.94
+  R2 P2: 90 locks | none=50 inacc=13 mistake=15 blunder=12 | avg_loss=5.12
+  R3 P1: 78 locks | none=45 inacc=7 mistake=17 blunder=9 | avg_loss=5.25
+  R3 P2: 72 locks | none=40 inacc=8 mistake=15 blunder=9 | avg_loss=4.95
+  R4 P1: 143 locks | none=102 inacc=15 mistake=18 blunder=8 | avg_loss=2.40
+  R4 P2: 149 locks | none=74 inacc=16 mistake=28 blunder=31 | avg_loss=5.37
+  R5 P1: 132 locks | none=78 inacc=12 mistake=13 blunder=29 | avg_loss=5.49
+  R5 P2: 152 locks | none=84 inacc=29 mistake=31 blunder=8 | avg_loss=2.84
+  R6 P1: 49 locks | none=31 inacc=7 mistake=9 blunder=2 | avg_loss=2.72
+  R6 P2: 49 locks | none=28 inacc=7 mistake=12 blunder=2 | avg_loss=3.06
+  R7 P1: 59 locks | none=40 inacc=7 mistake=6 blunder=6 | avg_loss=3.42
+  R7 P2: 59 locks | none=26 inacc=10 mistake=12 blunder=11 | avg_loss=4.99
+  R8 P1: 112 locks | none=56 inacc=19 mistake=13 blunder=24 | avg_loss=6.10
+  R8 P2: 113 locks | none=65 inacc=13 mistake=15 blunder=20 | avg_loss=5.57
+  R9 P1: 35 locks | none=15 inacc=4 mistake=7 blunder=9 | avg_loss=7.11
+  R9 P2: 37 locks | none=19 inacc=4 mistake=9 blunder=5 | avg_loss=4.05
+  R10 P1: 73 locks | none=46 inacc=7 mistake=11 blunder=9 | avg_loss=3.70
+  R10 P2: 72 locks | none=44 inacc=7 mistake=13 blunder=8 | avg_loss=3.61
+  R11 P1: 115 locks | none=83 inacc=7 mistake=12 blunder=13 | avg_loss=3.04
+  R11 P2: 114 locks | none=65 inacc=18 mistake=19 blunder=12 | avg_loss=3.38
+  R12 P1: 94 locks | none=70 inacc=8 mistake=12 blunder=4 | avg_loss=2.01
+  R12 P2: 71 locks | none=43 inacc=8 mistake=13 blunder=7 | avg_loss=3.35
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mss__hilloeid__5d2703d60d03.ttrm — all rounds, both players
+[22m[39m
+═══ ss__hilloeid__5d2703d60d03.ttrm (5 rounds) ═══
+  R1 P1: 52 locks | none=38 inacc=10 mistake=4 blunder=0 | avg_loss=1.35
+  R1 P2: 37 locks | none=17 inacc=3 mistake=4 blunder=13 | avg_loss=11.20
+  R2 P1: 126 locks | none=82 inacc=16 mistake=17 blunder=11 | avg_loss=2.70
+  R2 P2: 122 locks | none=77 inacc=14 mistake=17 blunder=14 | avg_loss=3.81
+  R3 P1: 77 locks | none=32 inacc=10 mistake=14 blunder=21 | avg_loss=7.27
+  R3 P2: 77 locks | none=33 inacc=10 mistake=21 blunder=13 | avg_loss=4.82
+  R4 P1: 30 locks | none=13 inacc=5 mistake=6 blunder=6 | avg_loss=5.02
+  R4 P2: 26 locks | none=16 inacc=7 mistake=2 blunder=1 | avg_loss=1.89
+  R5 P1: 131 locks | none=79 inacc=20 mistake=15 blunder=17 | avg_loss=3.79
+  R5 P2: 128 locks | none=67 inacc=20 mistake=17 blunder=24 | avg_loss=4.68
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mss__hilloeid__62390c6ea1eb.ttrm — all rounds, both players
+[22m[39m
+═══ ss__hilloeid__62390c6ea1eb.ttrm (7 rounds) ═══
+  R1 P1: 137 locks | none=83 inacc=22 mistake=14 blunder=18 | avg_loss=3.65
+  R1 P2: 120 locks | none=72 inacc=14 mistake=14 blunder=20 | avg_loss=4.97
+  R2 P1: 27 locks | none=17 inacc=2 mistake=4 blunder=4 | avg_loss=3.98
+  R2 P2: 29 locks | none=15 inacc=4 mistake=4 blunder=6 | avg_loss=5.18
+  R3 P1: 120 locks | none=77 inacc=16 mistake=12 blunder=15 | avg_loss=3.28
+  R3 P2: 114 locks | none=63 inacc=9 mistake=17 blunder=25 | avg_loss=5.44
+  R4 P1: 29 locks | none=16 inacc=3 mistake=5 blunder=5 | avg_loss=4.90
+  R4 P2: 38 locks | none=15 inacc=4 mistake=10 blunder=9 | avg_loss=5.51
+  R5 P1: 63 locks | none=34 inacc=7 mistake=9 blunder=13 | avg_loss=5.35
+  R5 P2: 66 locks | none=42 inacc=9 mistake=7 blunder=8 | avg_loss=3.46
+  R6 P1: 39 locks | none=14 inacc=3 mistake=6 blunder=16 | avg_loss=8.77
+  R6 P2: 39 locks | none=22 inacc=3 mistake=6 blunder=8 | avg_loss=5.70
+  R7 P1: 78 locks | none=48 inacc=6 mistake=16 blunder=8 | avg_loss=3.79
+  R7 P2: 66 locks | none=42 inacc=10 mistake=8 blunder=6 | avg_loss=2.82
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mss__hilloeid__6b1b0414a7d9.ttrm — all rounds, both players
+[22m[39m
+═══ ss__hilloeid__6b1b0414a7d9.ttrm (5 rounds) ═══
+  R1 P1: 88 locks | none=32 inacc=11 mistake=15 blunder=30 | avg_loss=9.72
+  R1 P2: 82 locks | none=45 inacc=9 mistake=6 blunder=22 | avg_loss=5.79
+  R2 P1: 35 locks | none=14 inacc=4 mistake=9 blunder=8 | avg_loss=7.31
+  R2 P2: 30 locks | none=17 inacc=7 mistake=5 blunder=1 | avg_loss=2.72
+  R3 P1: 152 locks | none=95 inacc=25 mistake=18 blunder=14 | avg_loss=3.53
+  R3 P2: 174 locks | none=110 inacc=14 mistake=24 blunder=26 | avg_loss=3.67
+  R4 P1: 104 locks | none=47 inacc=13 mistake=16 blunder=28 | avg_loss=7.39
+  R4 P2: 94 locks | none=61 inacc=11 mistake=8 blunder=14 | avg_loss=3.43
+  R5 P1: 24 locks | none=10 inacc=3 mistake=5 blunder=6 | avg_loss=6.60
+  R5 P2: 30 locks | none=14 inacc=6 mistake=1 blunder=9 | avg_loss=5.68
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mss__hilloeid__fbd93e0007d4.ttrm — all rounds, both players
+[22m[39m
+═══ ss__hilloeid__fbd93e0007d4.ttrm (7 rounds) ═══
+  R1 P1: 155 locks | none=79 inacc=18 mistake=26 blunder=32 | avg_loss=6.53
+  R1 P2: 135 locks | none=95 inacc=18 mistake=11 blunder=11 | avg_loss=2.61
+  R2 P1: 59 locks | none=34 inacc=5 mistake=10 blunder=10 | avg_loss=5.15
+  R2 P2: 45 locks | none=28 inacc=6 mistake=8 blunder=3 | avg_loss=3.37
+  R3 P1: 117 locks | none=78 inacc=13 mistake=15 blunder=11 | avg_loss=2.88
+  R3 P2: 97 locks | none=52 inacc=13 mistake=17 blunder=15 | avg_loss=4.21
+  R4 P1: 81 locks | none=34 inacc=5 mistake=12 blunder=30 | avg_loss=10.03
+  R4 P2: 58 locks | none=40 inacc=6 mistake=10 blunder=2 | avg_loss=2.14
+  R5 P1: 98 locks | none=51 inacc=10 mistake=12 blunder=25 | avg_loss=6.39
+  R5 P2: 73 locks | none=42 inacc=11 mistake=10 blunder=10 | avg_loss=4.41
+  R6 P1: 43 locks | none=14 inacc=4 mistake=10 blunder=15 | avg_loss=9.31
+  R6 P2: 20 locks | none=14 inacc=1 mistake=3 blunder=2 | avg_loss=2.51
+  R7 P1: 250 locks | none=149 inacc=37 mistake=30 blunder=34 | avg_loss=4.39
+  R7 P2: 206 locks | none=131 inacc=28 mistake=26 blunder=21 | avg_loss=2.95
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mu__gameplayer299__13b89dc72138.ttrm — all rounds, both players
+[22m[39m
+═══ u__gameplayer299__13b89dc72138.ttrm (11 rounds) ═══
+  R1 P1: 285 locks | none=186 inacc=32 mistake=35 blunder=32 | avg_loss=3.54
+  R1 P2: 285 locks | none=162 inacc=37 mistake=43 blunder=43 | avg_loss=4.14
+  R2 P1: 45 locks | none=19 inacc=6 mistake=14 blunder=6 | avg_loss=4.82
+  R2 P2: 25 locks | none=11 inacc=6 mistake=1 blunder=7 | avg_loss=5.61
+  R3 P1: 54 locks | none=22 inacc=8 mistake=10 blunder=14 | avg_loss=5.69
+  R3 P2: 35 locks | none=27 inacc=2 mistake=3 blunder=3 | avg_loss=2.38
+  R4 P1: 107 locks | none=64 inacc=15 mistake=20 blunder=8 | avg_loss=3.65
+  R4 P2: 74 locks | none=41 inacc=10 mistake=13 blunder=10 | avg_loss=4.61
+  R5 P1: 130 locks | none=77 inacc=24 mistake=23 blunder=6 | avg_loss=2.63
+  R5 P2: 111 locks | none=67 inacc=13 mistake=17 blunder=14 | avg_loss=3.60
+  R6 P1: 37 locks | none=13 inacc=5 mistake=7 blunder=12 | avg_loss=7.34
+  R6 P2: 39 locks | none=25 inacc=6 mistake=4 blunder=4 | avg_loss=3.01
+  R7 P1: 213 locks | none=131 inacc=31 mistake=39 blunder=12 | avg_loss=2.83
+  R7 P2: 198 locks | none=129 inacc=23 mistake=19 blunder=27 | avg_loss=3.87
+  R8 P1: 221 locks | none=128 inacc=35 mistake=29 blunder=29 | avg_loss=3.87
+  R8 P2: 187 locks | none=113 inacc=25 mistake=33 blunder=16 | avg_loss=3.58
+  R9 P1: 98 locks | none=64 inacc=13 mistake=13 blunder=8 | avg_loss=2.79
+  R9 P2: 96 locks | none=54 inacc=20 mistake=15 blunder=7 | avg_loss=3.22
+  R10 P1: 93 locks | none=53 inacc=16 mistake=11 blunder=13 | avg_loss=3.64
+  R10 P2: 94 locks | none=65 inacc=10 mistake=12 blunder=7 | avg_loss=2.62
+  R11 P1: 33 locks | none=15 inacc=3 mistake=12 blunder=3 | avg_loss=4.48
+  R11 P2: 44 locks | none=25 inacc=5 mistake=9 blunder=5 | avg_loss=3.87
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mu__gameplayer299__4adc77922124.ttrm — all rounds, both players
+[22m[39m
+═══ u__gameplayer299__4adc77922124.ttrm (12 rounds) ═══
+  R1 P1: 69 locks | none=40 inacc=12 mistake=15 blunder=2 | avg_loss=2.83
+  R1 P2: 3 locks | none=1 inacc=0 mistake=0 blunder=2 | avg_loss=18.83
+  R2 P1: 161 locks | none=112 inacc=22 mistake=17 blunder=10 | avg_loss=2.54
+  R2 P2: 78 locks | none=48 inacc=8 mistake=8 blunder=14 | avg_loss=4.65
+  R3 P1: 70 locks | none=50 inacc=11 mistake=8 blunder=1 | avg_loss=1.85
+  R3 P2: 55 locks | none=29 inacc=3 mistake=12 blunder=11 | avg_loss=5.92
+  R4 P1: 55 locks | none=31 inacc=11 mistake=10 blunder=3 | avg_loss=2.83
+  R4 P2: 43 locks | none=23 inacc=6 mistake=9 blunder=5 | avg_loss=4.35
+  R5 P1: 71 locks | none=35 inacc=15 mistake=13 blunder=8 | avg_loss=3.90
+  R5 P2: 44 locks | none=20 inacc=2 mistake=6 blunder=16 | avg_loss=11.73
+  R6 P1: 69 locks | none=33 inacc=10 mistake=7 blunder=19 | avg_loss=5.97
+  R6 P2: 72 locks | none=32 inacc=9 mistake=14 blunder=17 | avg_loss=6.64
+  R7 P1: 56 locks | none=26 inacc=9 mistake=9 blunder=12 | avg_loss=5.63
+  R7 P2: 43 locks | none=24 inacc=4 mistake=7 blunder=8 | avg_loss=5.34
+  R8 P1: 67 locks | none=42 inacc=5 mistake=11 blunder=9 | avg_loss=4.01
+  R8 P2: 63 locks | none=35 inacc=11 mistake=9 blunder=8 | avg_loss=4.31
+  R9 P1: 173 locks | none=106 inacc=16 mistake=27 blunder=24 | avg_loss=4.65
+  R9 P2: 139 locks | none=79 inacc=13 mistake=14 blunder=33 | avg_loss=6.42
+  R10 P1: 184 locks | none=117 inacc=14 mistake=23 blunder=30 | avg_loss=4.49
+  R10 P2: 169 locks | none=79 inacc=24 mistake=23 blunder=43 | avg_loss=6.20
+  R11 P1: 82 locks | none=45 inacc=18 mistake=8 blunder=11 | avg_loss=4.66
+  R11 P2: 81 locks | none=46 inacc=13 mistake=9 blunder=13 | avg_loss=4.02
+  R12 P1: 80 locks | none=44 inacc=16 mistake=11 blunder=9 | avg_loss=3.32
+  R12 P2: 55 locks | none=33 inacc=8 mistake=6 blunder=8 | avg_loss=3.92
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mu__gameplayer299__882fd5c73f69.ttrm — all rounds, both players
+[22m[39m
+═══ u__gameplayer299__882fd5c73f69.ttrm (13 rounds) ═══
+  R1 P1: 66 locks | none=34 inacc=13 mistake=8 blunder=11 | avg_loss=4.12
+  R1 P2: 36 locks | none=17 inacc=6 mistake=6 blunder=7 | avg_loss=5.94
+  R2 P1: 58 locks | none=39 inacc=12 mistake=3 blunder=4 | avg_loss=2.34
+  R2 P2: 59 locks | none=35 inacc=8 mistake=8 blunder=8 | avg_loss=4.47
+  R3 P1: 77 locks | none=48 inacc=13 mistake=3 blunder=13 | avg_loss=4.13
+  R3 P2: 42 locks | none=25 inacc=2 mistake=5 blunder=10 | avg_loss=7.72
+  R4 P1: 202 locks | none=123 inacc=35 mistake=26 blunder=18 | avg_loss=3.01
+  R4 P2: 153 locks | none=105 inacc=20 mistake=16 blunder=12 | avg_loss=2.43
+  R5 P1: 56 locks | none=33 inacc=11 mistake=8 blunder=4 | avg_loss=2.82
+  R5 P2: 50 locks | none=28 inacc=6 mistake=6 blunder=10 | avg_loss=7.51
+  R6 P1: 50 locks | none=24 inacc=8 mistake=9 blunder=9 | avg_loss=4.94
+  R6 P2: 37 locks | none=23 inacc=3 mistake=7 blunder=4 | avg_loss=6.94
+  R7 P1: 91 locks | none=47 inacc=13 mistake=13 blunder=18 | avg_loss=5.31
+  R7 P2: 100 locks | none=57 inacc=17 mistake=15 blunder=11 | avg_loss=4.29
+  R8 P1: 69 locks | none=42 inacc=11 mistake=11 blunder=5 | avg_loss=3.33
+  R8 P2: 47 locks | none=26 inacc=10 mistake=9 blunder=2 | avg_loss=2.68
+  R9 P1: 88 locks | none=43 inacc=12 mistake=14 blunder=19 | avg_loss=5.56
+  R9 P2: 87 locks | none=59 inacc=11 mistake=13 blunder=4 | avg_loss=2.24
+  R10 P1: 93 locks | none=59 inacc=18 mistake=11 blunder=5 | avg_loss=2.90
+  R10 P2: 69 locks | none=44 inacc=13 mistake=6 blunder=6 | avg_loss=2.84
+  R11 P1: 59 locks | none=28 inacc=6 mistake=8 blunder=17 | avg_loss=6.37
+  R11 P2: 45 locks | none=27 inacc=4 mistake=4 blunder=10 | avg_loss=5.83
+  R12 P1: 151 locks | none=87 inacc=19 mistake=18 blunder=27 | avg_loss=4.54
+  R12 P2: 133 locks | none=84 inacc=10 mistake=17 blunder=22 | avg_loss=4.56
+  R13 P1: 88 locks | none=39 inacc=6 mistake=19 blunder=24 | avg_loss=6.07
+  R13 P2: 79 locks | none=51 inacc=14 mistake=6 blunder=8 | avg_loss=3.32
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mu__gameplayer299__9f3172c9db90.ttrm — all rounds, both players
+[22m[39m
+═══ u__gameplayer299__9f3172c9db90.ttrm (7 rounds) ═══
+  R1 P1: 220 locks | none=117 inacc=34 mistake=39 blunder=30 | avg_loss=4.34
+  R1 P2: 143 locks | none=85 inacc=9 mistake=25 blunder=24 | avg_loss=4.46
+  R2 P1: 74 locks | none=42 inacc=10 mistake=9 blunder=13 | avg_loss=4.99
+  R2 P2: 51 locks | none=26 inacc=2 mistake=10 blunder=13 | avg_loss=6.64
+  R3 P1: 127 locks | none=76 inacc=19 mistake=18 blunder=14 | avg_loss=4.03
+  R3 P2: 90 locks | none=43 inacc=8 mistake=20 blunder=19 | avg_loss=7.18
+  R4 P1: 57 locks | none=37 inacc=8 mistake=7 blunder=5 | avg_loss=2.68
+  R4 P2: 25 locks | none=12 inacc=4 mistake=5 blunder=4 | avg_loss=5.36
+  R5 P1: 129 locks | none=72 inacc=17 mistake=11 blunder=29 | avg_loss=5.41
+  R5 P2: 124 locks | none=75 inacc=15 mistake=12 blunder=22 | avg_loss=5.05
+  R6 P1: 144 locks | none=66 inacc=20 mistake=24 blunder=34 | avg_loss=6.39
+  R6 P2: 119 locks | none=68 inacc=13 mistake=24 blunder=14 | avg_loss=4.22
+  R7 P1: 114 locks | none=55 inacc=16 mistake=23 blunder=20 | avg_loss=5.38
+  R7 P2: 82 locks | none=49 inacc=13 mistake=16 blunder=4 | avg_loss=2.76
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mu__gameplayer299__ad05e1994bb4.ttrm — all rounds, both players
+[22m[39m
+═══ u__gameplayer299__ad05e1994bb4.ttrm (13 rounds) ═══
+  R1 P1: 97 locks | none=48 inacc=21 mistake=14 blunder=14 | avg_loss=4.86
+  R1 P2: 83 locks | none=69 inacc=9 mistake=2 blunder=3 | avg_loss=1.23
+  R2 P1: 55 locks | none=29 inacc=7 mistake=8 blunder=11 | avg_loss=4.89
+  R2 P2: 50 locks | none=23 inacc=9 mistake=8 blunder=10 | avg_loss=5.65
+  R3 P1: 71 locks | none=36 inacc=10 mistake=10 blunder=15 | avg_loss=5.60
+  R3 P2: 80 locks | none=36 inacc=21 mistake=14 blunder=9 | avg_loss=3.63
+  R4 P1: 117 locks | none=55 inacc=21 mistake=30 blunder=11 | avg_loss=4.02
+  R4 P2: 119 locks | none=75 inacc=8 mistake=17 blunder=19 | avg_loss=3.63
+  R5 P1: 69 locks | none=41 inacc=0 mistake=14 blunder=14 | avg_loss=4.69
+  R5 P2: 55 locks | none=37 inacc=8 mistake=5 blunder=5 | avg_loss=2.43
+  R6 P1: 113 locks | none=63 inacc=11 mistake=24 blunder=15 | avg_loss=3.77
+  R6 P2: 108 locks | none=55 inacc=20 mistake=18 blunder=15 | avg_loss=4.35
+  R7 P1: 65 locks | none=35 inacc=8 mistake=7 blunder=15 | avg_loss=4.86
+  R7 P2: 83 locks | none=41 inacc=13 mistake=15 blunder=14 | avg_loss=4.59
+  R8 P1: 58 locks | none=21 inacc=7 mistake=11 blunder=19 | avg_loss=6.47
+  R8 P2: 58 locks | none=31 inacc=8 mistake=2 blunder=17 | avg_loss=5.64
+  R9 P1: 53 locks | none=35 inacc=7 mistake=6 blunder=5 | avg_loss=2.72
+  R9 P2: 45 locks | none=21 inacc=5 mistake=11 blunder=8 | avg_loss=5.78
+  R10 P1: 77 locks | none=37 inacc=10 mistake=21 blunder=9 | avg_loss=4.08
+  R10 P2: 60 locks | none=34 inacc=6 mistake=14 blunder=6 | avg_loss=3.86
+  R11 P1: 52 locks | none=26 inacc=11 mistake=6 blunder=9 | avg_loss=4.58
+  R11 P2: 52 locks | none=29 inacc=13 mistake=8 blunder=2 | avg_loss=2.41
+  R12 P1: 85 locks | none=39 inacc=7 mistake=24 blunder=15 | avg_loss=5.24
+  R12 P2: 64 locks | none=39 inacc=5 mistake=11 blunder=9 | avg_loss=3.63
+  R13 P1: 116 locks | none=70 inacc=16 mistake=14 blunder=16 | avg_loss=3.95
+  R13 P2: 113 locks | none=80 inacc=12 mistake=11 blunder=10 | avg_loss=2.62
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mu__hillma__46c955806a6b.ttrm — all rounds, both players
+[22m[39m
+═══ u__hillma__46c955806a6b.ttrm (8 rounds) ═══
+  R1 P1: 58 locks | none=22 inacc=9 mistake=13 blunder=14 | avg_loss=6.34
+  R1 P2: 39 locks | none=24 inacc=5 mistake=7 blunder=3 | avg_loss=3.13
+  R2 P1: 43 locks | none=20 inacc=5 mistake=8 blunder=10 | avg_loss=6.64
+  R2 P2: 31 locks | none=14 inacc=5 mistake=6 blunder=6 | avg_loss=6.57
+  R3 P1: 185 locks | none=93 inacc=34 mistake=37 blunder=21 | avg_loss=3.96
+  R3 P2: 156 locks | none=104 inacc=14 mistake=23 blunder=15 | avg_loss=3.18
+  R4 P1: 102 locks | none=55 inacc=17 mistake=8 blunder=22 | avg_loss=5.32
+  R4 P2: 97 locks | none=55 inacc=13 mistake=17 blunder=12 | avg_loss=4.20
+  R5 P1: 93 locks | none=54 inacc=10 mistake=10 blunder=19 | avg_loss=4.94
+  R5 P2: 83 locks | none=48 inacc=7 mistake=20 blunder=8 | avg_loss=3.64
+  R6 P1: 176 locks | none=93 inacc=26 mistake=32 blunder=25 | avg_loss=4.71
+  R6 P2: 170 locks | none=94 inacc=25 mistake=40 blunder=11 | avg_loss=3.32
+  R7 P1: 69 locks | none=31 inacc=11 mistake=9 blunder=18 | avg_loss=6.33
+  R7 P2: 66 locks | none=40 inacc=5 mistake=11 blunder=10 | avg_loss=4.65
+  R8 P1: 51 locks | none=23 inacc=15 mistake=7 blunder=6 | avg_loss=3.81
+  R8 P2: 33 locks | none=18 inacc=4 mistake=7 blunder=4 | avg_loss=4.75
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mu__hillma__780194c946af.ttrm — all rounds, both players
+[22m[39m
+═══ u__hillma__780194c946af.ttrm (12 rounds) ═══
+  R1 P1: 108 locks | none=68 inacc=15 mistake=14 blunder=11 | avg_loss=3.02
+  R1 P2: 100 locks | none=51 inacc=11 mistake=13 blunder=25 | avg_loss=5.87
+  R2 P1: 127 locks | none=69 inacc=18 mistake=19 blunder=21 | avg_loss=6.02
+  R2 P2: 133 locks | none=70 inacc=14 mistake=22 blunder=27 | avg_loss=6.21
+  R3 P1: 39 locks | none=19 inacc=5 mistake=5 blunder=10 | avg_loss=6.36
+  R3 P2: 58 locks | none=24 inacc=6 mistake=12 blunder=16 | avg_loss=7.59
+  R4 P1: 59 locks | none=33 inacc=6 mistake=9 blunder=11 | avg_loss=4.95
+  R4 P2: 66 locks | none=39 inacc=8 mistake=11 blunder=8 | avg_loss=4.37
+  R5 P1: 114 locks | none=60 inacc=15 mistake=22 blunder=17 | avg_loss=4.51
+  R5 P2: 112 locks | none=40 inacc=15 mistake=25 blunder=32 | avg_loss=7.88
+  R6 P1: 78 locks | none=43 inacc=12 mistake=11 blunder=12 | avg_loss=5.00
+  R6 P2: 78 locks | none=37 inacc=10 mistake=8 blunder=23 | avg_loss=7.80
+  R7 P1: 232 locks | none=127 inacc=39 mistake=29 blunder=37 | avg_loss=4.74
+  R7 P2: 238 locks | none=99 inacc=43 mistake=28 blunder=68 | avg_loss=7.98
+  R8 P1: 119 locks | none=58 inacc=18 mistake=25 blunder=18 | avg_loss=5.14
+  R8 P2: 124 locks | none=67 inacc=18 mistake=15 blunder=24 | avg_loss=5.29
+  R9 P1: 186 locks | none=83 inacc=22 mistake=34 blunder=47 | avg_loss=6.58
+  R9 P2: 180 locks | none=89 inacc=23 mistake=30 blunder=38 | avg_loss=5.27
+  R10 P1: 215 locks | none=124 inacc=34 mistake=36 blunder=21 | avg_loss=3.54
+  R10 P2: 197 locks | none=96 inacc=27 mistake=27 blunder=47 | avg_loss=6.32
+  R11 P1: 59 locks | none=27 inacc=8 mistake=9 blunder=15 | avg_loss=6.93
+  R11 P2: 56 locks | none=25 inacc=11 mistake=13 blunder=7 | avg_loss=4.38
+  R12 P1: 232 locks | none=131 inacc=31 mistake=35 blunder=35 | avg_loss=4.22
+  R12 P2: 208 locks | none=121 inacc=16 mistake=30 blunder=41 | avg_loss=5.29
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mu__hillma__ba97189d8fcc.ttrm — all rounds, both players
+[22m[39m
+═══ u__hillma__ba97189d8fcc.ttrm (13 rounds) ═══
+  R1 P1: 80 locks | none=41 inacc=12 mistake=17 blunder=10 | avg_loss=3.93
+  R1 P2: 70 locks | none=41 inacc=7 mistake=6 blunder=16 | avg_loss=5.01
+  R2 P1: 177 locks | none=98 inacc=20 mistake=22 blunder=37 | avg_loss=6.24
+  R2 P2: 148 locks | none=79 inacc=20 mistake=15 blunder=34 | avg_loss=5.94
+  R3 P1: 206 locks | none=117 inacc=32 mistake=35 blunder=22 | avg_loss=3.32
+  R3 P2: 191 locks | none=118 inacc=20 mistake=24 blunder=29 | avg_loss=4.03
+  R4 P1: 77 locks | none=44 inacc=10 mistake=14 blunder=9 | avg_loss=3.25
+  R4 P2: 56 locks | none=25 inacc=9 mistake=5 blunder=17 | avg_loss=8.14
+  R5 P1: 63 locks | none=39 inacc=8 mistake=10 blunder=6 | avg_loss=2.80
+  R5 P2: 58 locks | none=22 inacc=6 mistake=7 blunder=23 | avg_loss=8.53
+  R6 P1: 128 locks | none=81 inacc=12 mistake=24 blunder=11 | avg_loss=3.12
+  R6 P2: 110 locks | none=58 inacc=11 mistake=27 blunder=14 | avg_loss=3.98
+  R7 P1: 99 locks | none=67 inacc=12 mistake=6 blunder=14 | avg_loss=4.48
+  R7 P2: 90 locks | none=39 inacc=10 mistake=18 blunder=23 | avg_loss=7.70
+  R8 P1: 217 locks | none=123 inacc=39 mistake=32 blunder=23 | avg_loss=3.53
+  R8 P2: 188 locks | none=101 inacc=22 mistake=29 blunder=36 | avg_loss=5.92
+  R9 P1: 137 locks | none=84 inacc=16 mistake=27 blunder=10 | avg_loss=3.29
+  R9 P2: 125 locks | none=72 inacc=18 mistake=21 blunder=14 | avg_loss=3.98
+  R10 P1: 146 locks | none=84 inacc=12 mistake=23 blunder=27 | avg_loss=4.90
+  R10 P2: 123 locks | none=61 inacc=13 mistake=18 blunder=31 | avg_loss=6.22
+  R11 P1: 122 locks | none=72 inacc=14 mistake=21 blunder=15 | avg_loss=3.91
+  R11 P2: 118 locks | none=71 inacc=14 mistake=17 blunder=16 | avg_loss=3.84
+  R12 P1: 144 locks | none=81 inacc=23 mistake=27 blunder=13 | avg_loss=3.47
+  R12 P2: 118 locks | none=58 inacc=17 mistake=19 blunder=24 | avg_loss=5.86
+  R13 P1: 85 locks | none=47 inacc=10 mistake=15 blunder=13 | avg_loss=4.10
+  R13 P2: 63 locks | none=32 inacc=8 mistake=16 blunder=7 | avg_loss=4.48
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mu__hillma__d5c3e0d21fe5.ttrm — all rounds, both players
+[22m[39m
+═══ u__hillma__d5c3e0d21fe5.ttrm (8 rounds) ═══
+  R1 P1: 95 locks | none=50 inacc=11 mistake=23 blunder=11 | avg_loss=4.36
+  R1 P2: 93 locks | none=54 inacc=10 mistake=16 blunder=13 | avg_loss=3.74
+  R2 P1: 70 locks | none=41 inacc=10 mistake=12 blunder=7 | avg_loss=3.78
+  R2 P2: 61 locks | none=28 inacc=7 mistake=8 blunder=18 | avg_loss=8.24
+  R3 P1: 202 locks | none=107 inacc=33 mistake=32 blunder=30 | avg_loss=4.66
+  R3 P2: 199 locks | none=119 inacc=19 mistake=32 blunder=29 | avg_loss=4.92
+  R4 P1: 63 locks | none=42 inacc=8 mistake=10 blunder=3 | avg_loss=2.35
+  R4 P2: 52 locks | none=28 inacc=6 mistake=8 blunder=10 | avg_loss=5.14
+  R5 P1: 51 locks | none=33 inacc=5 mistake=6 blunder=7 | avg_loss=2.89
+  R5 P2: 58 locks | none=31 inacc=8 mistake=8 blunder=11 | avg_loss=5.22
+  R6 P1: 58 locks | none=35 inacc=6 mistake=12 blunder=5 | avg_loss=3.25
+  R6 P2: 50 locks | none=19 inacc=9 mistake=7 blunder=15 | avg_loss=8.01
+  R7 P1: 236 locks | none=142 inacc=21 mistake=26 blunder=47 | avg_loss=4.91
+  R7 P2: 246 locks | none=158 inacc=25 mistake=22 blunder=41 | avg_loss=4.14
+  R8 P1: 92 locks | none=49 inacc=12 mistake=20 blunder=11 | avg_loss=4.73
+  R8 P2: 87 locks | none=48 inacc=18 mistake=12 blunder=9 | avg_loss=3.39
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mu__mlpiggy__1dfc49ef340e.ttrm — all rounds, both players
+[22m[39m
+═══ u__mlpiggy__1dfc49ef340e.ttrm (13 rounds) ═══
+  R1 P1: 151 locks | none=89 inacc=24 mistake=22 blunder=16 | avg_loss=3.36
+  R1 P2: 111 locks | none=73 inacc=14 mistake=8 blunder=16 | avg_loss=3.90
+  R2 P1: 62 locks | none=39 inacc=11 mistake=10 blunder=2 | avg_loss=2.27
+  R2 P2: 53 locks | none=20 inacc=13 mistake=9 blunder=11 | avg_loss=6.48
+  R3 P1: 41 locks | none=20 inacc=10 mistake=7 blunder=4 | avg_loss=3.33
+  R3 P2: 54 locks | none=24 inacc=4 mistake=10 blunder=16 | avg_loss=6.78
+  R4 P1: 149 locks | none=78 inacc=16 mistake=28 blunder=27 | avg_loss=5.24
+  R4 P2: 158 locks | none=78 inacc=23 mistake=20 blunder=37 | avg_loss=7.36
+  R5 P1: 43 locks | none=21 inacc=8 mistake=5 blunder=9 | avg_loss=4.36
+  R5 P2: 41 locks | none=14 inacc=6 mistake=6 blunder=15 | avg_loss=9.73
+  R6 P1: 53 locks | none=29 inacc=4 mistake=8 blunder=12 | avg_loss=5.18
+  R6 P2: 66 locks | none=37 inacc=5 mistake=8 blunder=16 | avg_loss=6.09
+  R7 P1: 32 locks | none=19 inacc=3 mistake=5 blunder=5 | avg_loss=4.49
+  R7 P2: 31 locks | none=20 inacc=4 mistake=5 blunder=2 | avg_loss=2.45
+  R8 P1: 211 locks | none=118 inacc=22 mistake=36 blunder=35 | avg_loss=5.34
+  R8 P2: 219 locks | none=144 inacc=14 mistake=30 blunder=31 | avg_loss=4.61
+  R9 P1: 53 locks | none=32 inacc=8 mistake=9 blunder=4 | avg_loss=2.97
+  R9 P2: 61 locks | none=32 inacc=3 mistake=19 blunder=7 | avg_loss=4.84
+  R10 P1: 38 locks | none=13 inacc=6 mistake=6 blunder=13 | avg_loss=10.75
+  R10 P2: 37 locks | none=19 inacc=5 mistake=2 blunder=11 | avg_loss=5.44
+  R11 P1: 304 locks | none=189 inacc=43 mistake=38 blunder=34 | avg_loss=3.84
+  R11 P2: 344 locks | none=183 inacc=39 mistake=60 blunder=62 | avg_loss=5.07
+  R12 P1: 121 locks | none=80 inacc=19 mistake=5 blunder=17 | avg_loss=3.02
+  R12 P2: 117 locks | none=50 inacc=22 mistake=27 blunder=18 | avg_loss=5.01
+  R13 P1: 254 locks | none=178 inacc=23 mistake=30 blunder=23 | avg_loss=3.07
+  R13 P2: 269 locks | none=150 inacc=32 mistake=52 blunder=35 | avg_loss=4.21
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mu__mlpiggy__377bbed176b5.ttrm — all rounds, both players
+[22m[39m
+═══ u__mlpiggy__377bbed176b5.ttrm (12 rounds) ═══
+  R1 P1: 149 locks | none=80 inacc=21 mistake=22 blunder=26 | avg_loss=4.60
+  R1 P2: 160 locks | none=111 inacc=22 mistake=13 blunder=14 | avg_loss=2.72
+  R2 P1: 39 locks | none=22 inacc=6 mistake=9 blunder=2 | avg_loss=3.01
+  R2 P2: 26 locks | none=13 inacc=2 mistake=3 blunder=8 | avg_loss=7.14
+  R3 P1: 75 locks | none=44 inacc=13 mistake=13 blunder=5 | avg_loss=2.81
+  R3 P2: 66 locks | none=40 inacc=5 mistake=15 blunder=6 | avg_loss=3.55
+  R4 P1: 276 locks | none=173 inacc=26 mistake=44 blunder=33 | avg_loss=3.53
+  R4 P2: 303 locks | none=182 inacc=36 mistake=39 blunder=46 | avg_loss=4.09
+  R5 P1: 180 locks | none=101 inacc=22 mistake=37 blunder=20 | avg_loss=3.81
+  R5 P2: 176 locks | none=114 inacc=13 mistake=19 blunder=30 | avg_loss=3.74
+  R6 P1: 64 locks | none=42 inacc=9 mistake=6 blunder=7 | avg_loss=3.34
+  R6 P2: 79 locks | none=52 inacc=13 mistake=9 blunder=5 | avg_loss=2.47
+  R7 P1: 53 locks | none=28 inacc=2 mistake=8 blunder=15 | avg_loss=7.33
+  R7 P2: 61 locks | none=31 inacc=9 mistake=11 blunder=10 | avg_loss=4.99
+  R8 P1: 47 locks | none=28 inacc=6 mistake=10 blunder=3 | avg_loss=3.33
+  R8 P2: 40 locks | none=20 inacc=5 mistake=6 blunder=9 | avg_loss=5.42
+  R9 P1: 119 locks | none=71 inacc=12 mistake=18 blunder=18 | avg_loss=5.10
+  R9 P2: 149 locks | none=84 inacc=21 mistake=26 blunder=18 | avg_loss=4.06
+  R10 P1: 290 locks | none=176 inacc=56 mistake=27 blunder=31 | avg_loss=3.22
+  R10 P2: 306 locks | none=205 inacc=32 mistake=50 blunder=19 | avg_loss=2.75
+  R11 P1: 160 locks | none=86 inacc=31 mistake=25 blunder=18 | avg_loss=4.10
+  R11 P2: 154 locks | none=99 inacc=17 mistake=33 blunder=5 | avg_loss=2.53
+  R12 P1: 72 locks | none=49 inacc=8 mistake=6 blunder=9 | avg_loss=2.86
+  R12 P2: 70 locks | none=47 inacc=3 mistake=11 blunder=9 | avg_loss=4.32
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mu__mlpiggy__a84a57255b65.ttrm — all rounds, both players
+[22m[39m
+═══ u__mlpiggy__a84a57255b65.ttrm (11 rounds) ═══
+  R1 P1: 117 locks | none=77 inacc=16 mistake=11 blunder=13 | avg_loss=3.21
+  R1 P2: 116 locks | none=62 inacc=14 mistake=20 blunder=20 | avg_loss=4.35
+  R2 P1: 119 locks | none=68 inacc=20 mistake=16 blunder=15 | avg_loss=3.38
+  R2 P2: 134 locks | none=77 inacc=14 mistake=20 blunder=23 | avg_loss=4.18
+  R3 P1: 39 locks | none=20 inacc=6 mistake=5 blunder=8 | avg_loss=4.74
+  R3 P2: 35 locks | none=18 inacc=4 mistake=11 blunder=2 | avg_loss=3.31
+  R4 P1: 174 locks | none=123 inacc=17 mistake=17 blunder=17 | avg_loss=2.77
+  R4 P2: 157 locks | none=85 inacc=14 mistake=26 blunder=32 | avg_loss=4.64
+  R5 P1: 171 locks | none=122 inacc=14 mistake=18 blunder=17 | avg_loss=2.81
+  R5 P2: 160 locks | none=105 inacc=18 mistake=23 blunder=14 | avg_loss=2.86
+  R6 P1: 463 locks | none=290 inacc=71 mistake=60 blunder=42 | avg_loss=3.26
+  R6 P2: 430 locks | none=247 inacc=56 mistake=69 blunder=58 | avg_loss=4.00
+  R7 P1: 146 locks | none=103 inacc=12 mistake=17 blunder=14 | avg_loss=2.86
+  R7 P2: 120 locks | none=60 inacc=14 mistake=23 blunder=23 | avg_loss=5.37
+  R8 P1: 174 locks | none=118 inacc=23 mistake=21 blunder=12 | avg_loss=2.39
+  R8 P2: 138 locks | none=88 inacc=13 mistake=18 blunder=19 | avg_loss=4.02
+  R9 P1: 287 locks | none=202 inacc=33 mistake=32 blunder=20 | avg_loss=2.62
+  R9 P2: 259 locks | none=156 inacc=26 mistake=31 blunder=46 | avg_loss=4.88
+  R10 P1: 317 locks | none=206 inacc=48 mistake=34 blunder=29 | avg_loss=2.93
+  R10 P2: 289 locks | none=174 inacc=40 mistake=38 blunder=37 | avg_loss=3.78
+  R11 P1: 69 locks | none=35 inacc=11 mistake=19 blunder=4 | avg_loss=3.53
+  R11 P2: 48 locks | none=28 inacc=8 mistake=5 blunder=7 | avg_loss=3.49
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mu__mlpiggy__dee815a10391.ttrm — all rounds, both players
+[22m[39m
+═══ u__mlpiggy__dee815a10391.ttrm (10 rounds) ═══
+  R1 P1: 179 locks | none=98 inacc=24 mistake=35 blunder=22 | avg_loss=4.70
+  R1 P2: 179 locks | none=104 inacc=22 mistake=23 blunder=30 | avg_loss=4.76
+  R2 P1: 141 locks | none=88 inacc=20 mistake=21 blunder=12 | avg_loss=3.07
+  R2 P2: 92 locks | none=59 inacc=5 mistake=15 blunder=13 | avg_loss=3.84
+  R3 P1: 73 locks | none=44 inacc=13 mistake=12 blunder=4 | avg_loss=2.84
+  R3 P2: 60 locks | none=30 inacc=6 mistake=7 blunder=17 | avg_loss=5.68
+  R4 P1: 111 locks | none=59 inacc=18 mistake=17 blunder=17 | avg_loss=5.16
+  R4 P2: 92 locks | none=59 inacc=12 mistake=10 blunder=11 | avg_loss=3.18
+  R5 P1: 207 locks | none=124 inacc=25 mistake=35 blunder=23 | avg_loss=4.04
+  R5 P2: 180 locks | none=107 inacc=22 mistake=26 blunder=25 | avg_loss=3.93
+  R6 P1: 99 locks | none=47 inacc=13 mistake=17 blunder=22 | avg_loss=6.79
+  R6 P2: 101 locks | none=59 inacc=9 mistake=18 blunder=15 | avg_loss=3.86
+  R7 P1: 50 locks | none=21 inacc=5 mistake=20 blunder=4 | avg_loss=4.90
+  R7 P2: 35 locks | none=19 inacc=4 mistake=6 blunder=6 | avg_loss=5.19
+  R8 P1: 104 locks | none=49 inacc=17 mistake=17 blunder=21 | avg_loss=5.87
+  R8 P2: 95 locks | none=63 inacc=9 mistake=8 blunder=15 | avg_loss=3.38
+  R9 P1: 85 locks | none=48 inacc=16 mistake=11 blunder=10 | avg_loss=4.98
+  R9 P2: 68 locks | none=40 inacc=8 mistake=11 blunder=9 | avg_loss=4.47
+  R10 P1: 148 locks | none=74 inacc=26 mistake=23 blunder=25 | avg_loss=4.79
+  R10 P2: 118 locks | none=81 inacc=12 mistake=19 blunder=6 | avg_loss=2.32
+
+[90mstdout[2m | src/test/bulk-replay.test.ts[2m > [22m[2mBulk Replay Analysis[2m > [22m[2mu__mlpiggy__e9b00dbe9efe.ttrm — all rounds, both players
+[22m[39m
+═══ u__mlpiggy__e9b00dbe9efe.ttrm (10 rounds) ═══
+  R1 P1: 29 locks | none=5 inacc=4 mistake=6 blunder=14 | avg_loss=17.37
+  R1 P2: 25 locks | none=14 inacc=6 mistake=4 blunder=1 | avg_loss=2.57
+  R2 P1: 67 locks | none=33 inacc=10 mistake=7 blunder=17 | avg_loss=7.11
+  R2 P2: 58 locks | none=31 inacc=6 mistake=11 blunder=10 | avg_loss=5.04
+  R3 P1: 41 locks | none=16 inacc=6 mistake=12 blunder=7 | avg_loss=6.32
+  R3 P2: 32 locks | none=11 inacc=9 mistake=5 blunder=7 | avg_loss=5.53
+  R4 P1: 111 locks | none=58 inacc=11 mistake=15 blunder=27 | avg_loss=6.21
+  R4 P2: 108 locks | none=64 inacc=6 mistake=16 blunder=22 | avg_loss=5.00
+  R5 P1: 77 locks | none=41 inacc=6 mistake=10 blunder=20 | avg_loss=7.28
+  R5 P2: 68 locks | none=30 inacc=13 mistake=12 blunder=13 | avg_loss=5.18
+  R6 P1: 52 locks | none=22 inacc=6 mistake=10 blunder=14 | avg_loss=6.54
+  R6 P2: 36 locks | none=14 inacc=6 mistake=2 blunder=14 | avg_loss=9.58
+  R7 P1: 90 locks | none=37 inacc=6 mistake=16 blunder=31 | avg_loss=7.83
+  R7 P2: 73 locks | none=46 inacc=9 mistake=7 blunder=11 | avg_loss=3.58
+  R8 P1: 42 locks | none=16 inacc=6 mistake=11 blunder=9 | avg_loss=6.19
+  R8 P2: 31 locks | none=11 inacc=7 mistake=4 blunder=9 | avg_loss=11.71
+  R9 P1: 270 locks | none=146 inacc=32 mistake=43 blunder=49 | avg_loss=4.59
+  R9 P2: 214 locks | none=130 inacc=20 mistake=34 blunder=30 | avg_loss=4.24
+  R10 P1: 154 locks | none=90 inacc=24 mistake=21 blunder=19 | avg_loss=4.61
+  R10 P2: 131 locks | none=75 inacc=12 mistake=20 blunder=24 | avg_loss=5.52
+
+ [31m❯[39m src/test/bulk-replay.test.ts [2m([22m[2m150 tests[22m[2m | [22m[31m5 failed[39m[2m)[22m[33m 3459836[2mms[22m[39m
+     [33m[2m✓[22m[39m a+__amns__22eb5d71b96a.ttrm — all rounds, both players [33m 5317[2mms[22m[39m
+     [33m[2m✓[22m[39m a+__amns__e7c91e3b99c7.ttrm — all rounds, both players [33m 20896[2mms[22m[39m
+     [33m[2m✓[22m[39m a+__amns__f15fdcfa5d2e.ttrm — all rounds, both players [33m 2299[2mms[22m[39m
+     [33m[2m✓[22m[39m a+__amns__f26857dd9a1c.ttrm — all rounds, both players [33m 26880[2mms[22m[39m
+     [33m[2m✓[22m[39m a+__amns__f71c49f1d1fb.ttrm — all rounds, both players [33m 10431[2mms[22m[39m
+     [33m[2m✓[22m[39m a+__kanghyu__47393409cd94.ttrm — all rounds, both players [33m 37912[2mms[22m[39m
+     [33m[2m✓[22m[39m a+__kanghyu__75fd1afc7131.ttrm — all rounds, both players [33m 25085[2mms[22m[39m
+     [33m[2m✓[22m[39m a+__kanghyu__c59ee611082a.ttrm — all rounds, both players [33m 26930[2mms[22m[39m
+     [33m[2m✓[22m[39m a+__kanghyu__e60de51b70af.ttrm — all rounds, both players [33m 48557[2mms[22m[39m
+     [33m[2m✓[22m[39m a+__kanghyu__f913a2fe32af.ttrm — all rounds, both players [33m 25107[2mms[22m[39m
+     [33m[2m✓[22m[39m a+__rabenous__4e586d96c6b7.ttrm — all rounds, both players [33m 23838[2mms[22m[39m
+     [33m[2m✓[22m[39m a+__rabenous__5b882c53ded2.ttrm — all rounds, both players [33m 28441[2mms[22m[39m
+     [33m[2m✓[22m[39m a+__rabenous__78bb951b4dbf.ttrm — all rounds, both players [33m 26492[2mms[22m[39m
+     [33m[2m✓[22m[39m a+__rabenous__9a252308c019.ttrm — all rounds, both players [33m 32436[2mms[22m[39m
+[31m     [31m×[31m a+__rabenous__e80249087cc2.ttrm — all rounds, both players[39m[32m 10[2mms[22m[39m
+     [33m[2m✓[22m[39m a-__chiara7800__8b0ae4849fb9.ttrm — all rounds, both players [33m 17603[2mms[22m[39m
+     [33m[2m✓[22m[39m a-__chiara7800__99952633da3c.ttrm — all rounds, both players [33m 8402[2mms[22m[39m
+     [33m[2m✓[22m[39m a-__chiara7800__abcf79eac90e.ttrm — all rounds, both players [33m 13403[2mms[22m[39m
+     [33m[2m✓[22m[39m a-__chiara7800__b2fd393c2fb5.ttrm — all rounds, both players [33m 14000[2mms[22m[39m
+     [33m[2m✓[22m[39m a-__chiara7800__f6cf3cfc6a95.ttrm — all rounds, both players [33m 16846[2mms[22m[39m
+     [33m[2m✓[22m[39m a-__gulmezinator__5944e084f1de.ttrm — all rounds, both players [33m 17091[2mms[22m[39m
+     [33m[2m✓[22m[39m a-__gulmezinator__5be500f0ef0b.ttrm — all rounds, both players [33m 6121[2mms[22m[39m
+     [33m[2m✓[22m[39m a-__gulmezinator__808b06450776.ttrm — all rounds, both players [33m 32508[2mms[22m[39m
+     [33m[2m✓[22m[39m a-__gulmezinator__e1adbf7788a3.ttrm — all rounds, both players [33m 17882[2mms[22m[39m
+     [33m[2m✓[22m[39m a-__gulmezinator__f886e38b3f91.ttrm — all rounds, both players [33m 10695[2mms[22m[39m
+     [33m[2m✓[22m[39m a-__madfjun__7371e5817a1b.ttrm — all rounds, both players [33m 8281[2mms[22m[39m
+     [33m[2m✓[22m[39m a-__madfjun__aacba8bb4af2.ttrm — all rounds, both players [33m 9811[2mms[22m[39m
+     [33m[2m✓[22m[39m a-__madfjun__aca9db54d1f9.ttrm — all rounds, both players [33m 14998[2mms[22m[39m
+     [33m[2m✓[22m[39m a-__madfjun__c533b2210753.ttrm — all rounds, both players [33m 9883[2mms[22m[39m
+     [33m[2m✓[22m[39m a-__madfjun__ebb4b2135377.ttrm — all rounds, both players [33m 13594[2mms[22m[39m
+     [33m[2m✓[22m[39m a__asdkjc__0f9335ef5872.ttrm — all rounds, both players [33m 22069[2mms[22m[39m
+     [33m[2m✓[22m[39m a__asdkjc__129a54380cb8.ttrm — all rounds, both players [33m 15300[2mms[22m[39m
+     [33m[2m✓[22m[39m a__asdkjc__21e6bbf34cdd.ttrm — all rounds, both players [33m 17767[2mms[22m[39m
+     [33m[2m✓[22m[39m a__asdkjc__2d9cdbdf1392.ttrm — all rounds, both players [33m 23312[2mms[22m[39m
+     [33m[2m✓[22m[39m a__asdkjc__48fdb6c5d021.ttrm — all rounds, both players [33m 24812[2mms[22m[39m
+     [33m[2m✓[22m[39m a__henry0423__211a7e7af14a.ttrm — all rounds, both players [33m 19288[2mms[22m[39m
+     [33m[2m✓[22m[39m a__henry0423__497c8aaea237.ttrm — all rounds, both players [33m 19448[2mms[22m[39m
+     [33m[2m✓[22m[39m a__henry0423__d68228e78310.ttrm — all rounds, both players [33m 15215[2mms[22m[39m
+     [33m[2m✓[22m[39m a__henry0423__ee311976dd76.ttrm — all rounds, both players [33m 15682[2mms[22m[39m
+     [33m[2m✓[22m[39m a__henry0423__faa2c695f0c7.ttrm — all rounds, both players [33m 15487[2mms[22m[39m
+     [33m[2m✓[22m[39m a__sapphire909__018a0fbbf2d8.ttrm — all rounds, both players [33m 13273[2mms[22m[39m
+     [33m[2m✓[22m[39m a__sapphire909__217b81240b74.ttrm — all rounds, both players [33m 14829[2mms[22m[39m
+     [33m[2m✓[22m[39m a__sapphire909__a1ffc77d81c8.ttrm — all rounds, both players [33m 14626[2mms[22m[39m
+     [33m[2m✓[22m[39m a__sapphire909__abd34394889d.ttrm — all rounds, both players [33m 10437[2mms[22m[39m
+     [33m[2m✓[22m[39m a__sapphire909__ded2421b1a9b.ttrm — all rounds, both players [33m 13277[2mms[22m[39m
+     [33m[2m✓[22m[39m b+__ateblain__30b8697afa2c.ttrm — all rounds, both players [33m 8018[2mms[22m[39m
+     [33m[2m✓[22m[39m b+__ateblain__3dfca1c1112a.ttrm — all rounds, both players [33m 8207[2mms[22m[39m
+     [33m[2m✓[22m[39m b+__ateblain__6615e1036e35.ttrm — all rounds, both players [33m 14511[2mms[22m[39m
+     [33m[2m✓[22m[39m b+__ateblain__d5022f35a540.ttrm — all rounds, both players [33m 9246[2mms[22m[39m
+     [33m[2m✓[22m[39m b+__ateblain__f1d6d13e8762.ttrm — all rounds, both players [33m 11025[2mms[22m[39m
+     [33m[2m✓[22m[39m b+__kerokero1689__0fa0097f37f8.ttrm — all rounds, both players [33m 25971[2mms[22m[39m
+     [33m[2m✓[22m[39m b+__kerokero1689__24239d336104.ttrm — all rounds, both players [33m 13961[2mms[22m[39m
+     [33m[2m✓[22m[39m b+__kerokero1689__28c8dd1d47db.ttrm — all rounds, both players [33m 24045[2mms[22m[39m
+     [33m[2m✓[22m[39m b+__kerokero1689__b16d50b32c08.ttrm — all rounds, both players [33m 17694[2mms[22m[39m
+     [33m[2m✓[22m[39m b+__kerokero1689__fe89360f927b.ttrm — all rounds, both players [33m 12176[2mms[22m[39m
+     [33m[2m✓[22m[39m b+__raeian__23657d43bfbf.ttrm — all rounds, both players [33m 16211[2mms[22m[39m
+     [33m[2m✓[22m[39m b+__raeian__7171b9ce4e6d.ttrm — all rounds, both players [33m 4679[2mms[22m[39m
+     [33m[2m✓[22m[39m b+__raeian__a1e17708dc34.ttrm — all rounds, both players [33m 9004[2mms[22m[39m
+     [33m[2m✓[22m[39m b+__raeian__b2d1c242d5f9.ttrm — all rounds, both players [33m 9018[2mms[22m[39m
+     [33m[2m✓[22m[39m b+__raeian__bc87f296c23f.ttrm — all rounds, both players [33m 13836[2mms[22m[39m
+     [33m[2m✓[22m[39m b__cubomancer__6ceb07d48bc2.ttrm — all rounds, both players [33m 14574[2mms[22m[39m
+     [33m[2m✓[22m[39m b__cubomancer__9af868e563e2.ttrm — all rounds, both players [33m 30899[2mms[22m[39m
+     [33m[2m✓[22m[39m b__cubomancer__bde7dc4f4d09.ttrm — all rounds, both players [33m 19317[2mms[22m[39m
+     [33m[2m✓[22m[39m b__cubomancer__dbd0ecdfdb5a.ttrm — all rounds, both players [33m 29876[2mms[22m[39m
+     [33m[2m✓[22m[39m b__cubomancer__f37e64851afb.ttrm — all rounds, both players [33m 12628[2mms[22m[39m
+     [33m[2m✓[22m[39m b__praxand__2c60f55900da.ttrm — all rounds, both players [33m 6892[2mms[22m[39m
+     [33m[2m✓[22m[39m b__praxand__3a2c6b128a69.ttrm — all rounds, both players [33m 5688[2mms[22m[39m
+     [33m[2m✓[22m[39m b__praxand__504eeac4e865.ttrm — all rounds, both players [33m 11550[2mms[22m[39m
+     [33m[2m✓[22m[39m b__praxand__70e93f4485c9.ttrm — all rounds, both players [33m 10961[2mms[22m[39m
+     [33m[2m✓[22m[39m b__praxand__f06966df2a26.ttrm — all rounds, both players [33m 15518[2mms[22m[39m
+     [33m[2m✓[22m[39m b__sighrin__62394b9cd2d7.ttrm — all rounds, both players [33m 13202[2mms[22m[39m
+     [33m[2m✓[22m[39m b__sighrin__87c94e2417a5.ttrm — all rounds, both players [33m 8673[2mms[22m[39m
+     [33m[2m✓[22m[39m b__sighrin__a8bf4be260a1.ttrm — all rounds, both players [33m 11979[2mms[22m[39m
+     [33m[2m✓[22m[39m b__sighrin__b4a78d67cebf.ttrm — all rounds, both players [33m 12690[2mms[22m[39m
+     [33m[2m✓[22m[39m b__sighrin__fe6465cedb2f.ttrm — all rounds, both players [33m 15542[2mms[22m[39m
+     [33m[2m✓[22m[39m s+__blinkyamy123__21050e061940.ttrm — all rounds, both players [33m 14927[2mms[22m[39m
+[31m     [31m×[31m s+__blinkyamy123__85e50ddcd616.ttrm — all rounds, both players[39m[33m 11223[2mms[22m[39m
+     [33m[2m✓[22m[39m s+__blinkyamy123__9bf644ec437b.ttrm — all rounds, both players [33m 33112[2mms[22m[39m
+     [33m[2m✓[22m[39m s+__blinkyamy123__e64fb0c1a154.ttrm — all rounds, both players [33m 28171[2mms[22m[39m
+     [33m[2m✓[22m[39m s+__blinkyamy123__fc58bd621cf8.ttrm — all rounds, both players [33m 18067[2mms[22m[39m
+     [33m[2m✓[22m[39m s+__lookypadooky__2e7a709c30ba.ttrm — all rounds, both players [33m 15045[2mms[22m[39m
+     [33m[2m✓[22m[39m s+__lookypadooky__58cbc5ba184f.ttrm — all rounds, both players [33m 24173[2mms[22m[39m
+     [33m[2m✓[22m[39m s+__lookypadooky__b648073e8a9d.ttrm — all rounds, both players [33m 19784[2mms[22m[39m
+     [33m[2m✓[22m[39m s+__lookypadooky__c5513d9852e7.ttrm — all rounds, both players [33m 21590[2mms[22m[39m
+     [33m[2m✓[22m[39m s+__lookypadooky__c733a381bcdd.ttrm — all rounds, both players [33m 21144[2mms[22m[39m
+     [33m[2m✓[22m[39m s+__peingoin__0c39932eee7c.ttrm — all rounds, both players [33m 13386[2mms[22m[39m
+     [33m[2m✓[22m[39m s+__peingoin__3303df6590a5.ttrm — all rounds, both players [33m 21055[2mms[22m[39m
+     [33m[2m✓[22m[39m s+__peingoin__5357a2d5d559.ttrm — all rounds, both players [33m 21168[2mms[22m[39m
+     [33m[2m✓[22m[39m s+__peingoin__bf09a8351e31.ttrm — all rounds, both players [33m 26107[2mms[22m[39m
+     [33m[2m✓[22m[39m s+__peingoin__f158822476d3.ttrm — all rounds, both players [33m 21967[2mms[22m[39m
+     [33m[2m✓[22m[39m s-__e_munny20__0375e1ec817a.ttrm — all rounds, both players [33m 24242[2mms[22m[39m
+     [33m[2m✓[22m[39m s-__e_munny20__5cd39e4458f8.ttrm — all rounds, both players [33m 30553[2mms[22m[39m
+     [33m[2m✓[22m[39m s-__e_munny20__9a0b252dc921.ttrm — all rounds, both players [33m 36826[2mms[22m[39m
+     [33m[2m✓[22m[39m s-__e_munny20__c6a377d2debd.ttrm — all rounds, both players [33m 25432[2mms[22m[39m
+     [33m[2m✓[22m[39m s-__e_munny20__ecb43cc2d2db.ttrm — all rounds, both players [33m 36034[2mms[22m[39m
+     [33m[2m✓[22m[39m s-__haluhyun__2a8799ff797f.ttrm — all rounds, both players [33m 17411[2mms[22m[39m
+     [33m[2m✓[22m[39m s-__haluhyun__b633ff970ae9.ttrm — all rounds, both players [33m 15053[2mms[22m[39m
+     [33m[2m✓[22m[39m s-__haluhyun__bd5715b1db6d.ttrm — all rounds, both players [33m 12854[2mms[22m[39m
+     [33m[2m✓[22m[39m s-__haluhyun__f87cbe0273c0.ttrm — all rounds, both players [33m 23094[2mms[22m[39m
+     [33m[2m✓[22m[39m s-__haluhyun__f8e50f0c6f38.ttrm — all rounds, both players [33m 26869[2mms[22m[39m
+     [33m[2m✓[22m[39m s-__wryan0918__3ff972f37f28.ttrm — all rounds, both players [33m 19640[2mms[22m[39m
+[31m     [31m×[31m s-__wryan0918__875c0c2babbc.ttrm — all rounds, both players[39m[33m 13550[2mms[22m[39m
+     [33m[2m✓[22m[39m s-__wryan0918__87c041851092.ttrm — all rounds, both players [33m 24438[2mms[22m[39m
+     [33m[2m✓[22m[39m s-__wryan0918__89cc8951aaad.ttrm — all rounds, both players [33m 28856[2mms[22m[39m
+     [33m[2m✓[22m[39m s-__wryan0918__e9d86d0707db.ttrm — all rounds, both players [33m 30520[2mms[22m[39m
+     [33m[2m✓[22m[39m s__chamberthd__41ad04a0273d.ttrm — all rounds, both players [33m 27958[2mms[22m[39m
+     [33m[2m✓[22m[39m s__chamberthd__60fa1bc806a5.ttrm — all rounds, both players [33m 25488[2mms[22m[39m
+     [33m[2m✓[22m[39m s__chamberthd__85a51d3a9df8.ttrm — all rounds, both players [33m 22607[2mms[22m[39m
+     [33m[2m✓[22m[39m s__chamberthd__93e82f24e635.ttrm — all rounds, both players [33m 14157[2mms[22m[39m
+     [33m[2m✓[22m[39m s__chamberthd__f34db8f1e6aa.ttrm — all rounds, both players [33m 18401[2mms[22m[39m
+[31m     [31m×[31m s__mcchary__31e0d579f4eb.ttrm — all rounds, both players[39m[32m 20[2mms[22m[39m
+     [33m[2m✓[22m[39m s__mcchary__342b95dd9a82.ttrm — all rounds, both players [33m 15492[2mms[22m[39m
+     [33m[2m✓[22m[39m s__mcchary__b36eb4ac7426.ttrm — all rounds, both players [33m 28416[2mms[22m[39m
+     [33m[2m✓[22m[39m s__mcchary__caa77157b533.ttrm — all rounds, both players [33m 33545[2mms[22m[39m
+     [33m[2m✓[22m[39m s__mcchary__cfff4273ff58.ttrm — all rounds, both players [33m 34275[2mms[22m[39m
+     [33m[2m✓[22m[39m s__meowmeoww_00__055d19096ebb.ttrm — all rounds, both players [33m 11774[2mms[22m[39m
+     [33m[2m✓[22m[39m s__meowmeoww_00__325bdb21124a.ttrm — all rounds, both players [33m 16217[2mms[22m[39m
+     [33m[2m✓[22m[39m s__meowmeoww_00__4f8b1a86f936.ttrm — all rounds, both players [33m 18054[2mms[22m[39m
+     [33m[2m✓[22m[39m s__meowmeoww_00__6597e6354b69.ttrm — all rounds, both players [33m 19324[2mms[22m[39m
+     [33m[2m✓[22m[39m s__meowmeoww_00__90a11d278d1f.ttrm — all rounds, both players [33m 40344[2mms[22m[39m
+     [33m[2m✓[22m[39m ss__chura-_-__09047f96d138.ttrm — all rounds, both players [33m 29305[2mms[22m[39m
+     [33m[2m✓[22m[39m ss__chura-_-__5e20a8da170f.ttrm — all rounds, both players [33m 14283[2mms[22m[39m
+     [33m[2m✓[22m[39m ss__chura-_-__936c280c0c88.ttrm — all rounds, both players [33m 52107[2mms[22m[39m
+     [33m[2m✓[22m[39m ss__chura-_-__a3f4285686b8.ttrm — all rounds, both players [33m 32024[2mms[22m[39m
+     [33m[2m✓[22m[39m ss__chura-_-__e3c9205e3e72.ttrm — all rounds, both players [33m 59763[2mms[22m[39m
+     [33m[2m✓[22m[39m ss__gary14242__14ce42450023.ttrm — all rounds, both players [33m 27481[2mms[22m[39m
+     [33m[2m✓[22m[39m ss__gary14242__2d2efaa964d7.ttrm — all rounds, both players [33m 38346[2mms[22m[39m
+     [33m[2m✓[22m[39m ss__gary14242__2f509a84dac8.ttrm — all rounds, both players [33m 14443[2mms[22m[39m
+     [33m[2m✓[22m[39m ss__gary14242__509194d5a3ff.ttrm — all rounds, both players [33m 52161[2mms[22m[39m
+     [33m[2m✓[22m[39m ss__gary14242__fe54642cf91b.ttrm — all rounds, both players [33m 45748[2mms[22m[39m
+     [33m[2m✓[22m[39m ss__hilloeid__401915b373fe.ttrm — all rounds, both players [33m 38079[2mms[22m[39m
+     [33m[2m✓[22m[39m ss__hilloeid__5d2703d60d03.ttrm — all rounds, both players [33m 16049[2mms[22m[39m
+     [33m[2m✓[22m[39m ss__hilloeid__62390c6ea1eb.ttrm — all rounds, both players [33m 18094[2mms[22m[39m
+     [33m[2m✓[22m[39m ss__hilloeid__6b1b0414a7d9.ttrm — all rounds, both players [33m 14106[2mms[22m[39m
+     [33m[2m✓[22m[39m ss__hilloeid__fbd93e0007d4.ttrm — all rounds, both players [33m 30545[2mms[22m[39m
+     [33m[2m✓[22m[39m u__gameplayer299__13b89dc72138.ttrm — all rounds, both players [33m 53677[2mms[22m[39m
+     [33m[2m✓[22m[39m u__gameplayer299__4adc77922124.ttrm — all rounds, both players [33m 42179[2mms[22m[39m
+     [33m[2m✓[22m[39m u__gameplayer299__882fd5c73f69.ttrm — all rounds, both players [33m 48472[2mms[22m[39m
+     [33m[2m✓[22m[39m u__gameplayer299__9f3172c9db90.ttrm — all rounds, both players [33m 30027[2mms[22m[39m
+     [33m[2m✓[22m[39m u__gameplayer299__ad05e1994bb4.ttrm — all rounds, both players [33m 42766[2mms[22m[39m
+     [33m[2m✓[22m[39m u__hillma__46c955806a6b.ttrm — all rounds, both players [33m 31005[2mms[22m[39m
+     [33m[2m✓[22m[39m u__hillma__780194c946af.ttrm — all rounds, both players [33m 54774[2mms[22m[39m
+[31m     [31m×[31m u__hillma__a9bba269897d.ttrm — all rounds, both players[39m[33m 54096[2mms[22m[39m
+     [33m[2m✓[22m[39m u__hillma__ba97189d8fcc.ttrm — all rounds, both players [33m 62328[2mms[22m[39m
+     [33m[2m✓[22m[39m u__hillma__d5c3e0d21fe5.ttrm — all rounds, both players [33m 31636[2mms[22m[39m
+     [33m[2m✓[22m[39m u__mlpiggy__1dfc49ef340e.ttrm — all rounds, both players [33m 66004[2mms[22m[39m
+     [33m[2m✓[22m[39m u__mlpiggy__377bbed176b5.ttrm — all rounds, both players [33m 73835[2mms[22m[39m
+     [33m[2m✓[22m[39m u__mlpiggy__a84a57255b65.ttrm — all rounds, both players [33m 82749[2mms[22m[39m
+     [33m[2m✓[22m[39m u__mlpiggy__dee815a10391.ttrm — all rounds, both players [33m 44103[2mms[22m[39m
+     [33m[2m✓[22m[39m u__mlpiggy__e9b00dbe9efe.ttrm — all rounds, both players [33m 33108[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 5 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/test/bulk-replay.test.ts[2m > [22mBulk Replay Analysis[2m > [22ma+__rabenous__e80249087cc2.ttrm — all rounds, both players
+[41m[1m FAIL [22m[49m src/test/bulk-replay.test.ts[2m > [22mBulk Replay Analysis[2m > [22ms+__blinkyamy123__85e50ddcd616.ttrm — all rounds, both players
+[41m[1m FAIL [22m[49m src/test/bulk-replay.test.ts[2m > [22mBulk Replay Analysis[2m > [22ms-__wryan0918__875c0c2babbc.ttrm — all rounds, both players
+[41m[1m FAIL [22m[49m src/test/bulk-replay.test.ts[2m > [22mBulk Replay Analysis[2m > [22ms__mcchary__31e0d579f4eb.ttrm — all rounds, both players
+[41m[1m FAIL [22m[49m src/test/bulk-replay.test.ts[2m > [22mBulk Replay Analysis[2m > [22mu__hillma__a9bba269897d.ttrm — all rounds, both players
+[31m[1mAssertionError[22m: expected 0 to be greater than 0[39m
+[36m [2m❯[22m src/test/bulk-replay.test.ts:[2m82:36[22m[39m
+    [90m 80| [39m
+    [90m 81| [39m          [35mif[39m (errors[33m.[39mlength [33m===[39m [34m0[39m) {
+    [90m 82| [39m            [34mexpect[39m(results[33m.[39mlength)[33m.[39m[34mtoBeGreaterThan[39m([34m0[39m)[33m;[39m
+    [90m   | [39m                                   [31m^[39m
+    [90m 83| [39m
+    [90m 84| [39m            [35mfor[39m ([35mconst[39m r [35mof[39m results) {
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m5 failed[39m[22m[2m | [22m[1m[32m145 passed[39m[22m[90m (150)[39m
+[2m   Start at [22m 14:08:04
+[2m   Duration [22m 3460.29s[2m (transform 269ms, setup 0ms, import 329ms, tests 3459.84s, environment 1ms)[22m
+

@@ -1,0 +1,22 @@
+Task 6 Calibration Determinism Hash Evidence
+Date: 2026-02-18
+
+Run 1 command:
+CLOUD_EXEC_SKIP=1 cargo run --quiet --bin calibrate_skill_buckets ".sisyphus/data/replay-corpus/s2-ranked-1v1-rd70-165/manifests/players_manifest.json" ".sisyphus/data/calibration/skill_bucket_calibration_v1_run1.cal"
+
+Run 2 command:
+CLOUD_EXEC_SKIP=1 cargo run --quiet --bin calibrate_skill_buckets ".sisyphus/data/replay-corpus/s2-ranked-1v1-rd70-165/manifests/players_manifest.json" ".sisyphus/data/calibration/skill_bucket_calibration_v1_run2.cal"
+
+Observed generator output (both runs):
+- generated calibration profile v1
+- source_fingerprint=5231541947547146063
+- rows=10
+
+Hash command:
+sha256sum ".sisyphus/data/calibration/skill_bucket_calibration_v1_run1.cal" ".sisyphus/data/calibration/skill_bucket_calibration_v1_run2.cal"
+
+Hashes:
+0a7d01c47c1baf81fa454076e344d4c4733159a2585021449dc9241478995f2d  .sisyphus/data/calibration/skill_bucket_calibration_v1_run1.cal
+0a7d01c47c1baf81fa454076e344d4c4733159a2585021449dc9241478995f2d  .sisyphus/data/calibration/skill_bucket_calibration_v1_run2.cal
+
+Result: PASS (hash-identical artifacts on same corpus snapshot)

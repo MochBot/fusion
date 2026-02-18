@@ -1,9 +1,12 @@
 // analysis.rs -- move evaluation + eval meter for coaching
 
+use crate::calibration::{
+    default_eval_thresholds, BucketThresholds, CalibrationProfile, SkillBucket,
+};
 use crate::eval::{evaluate, EvalWeights};
 use crate::header::Move;
 use crate::search::{find_best_move, SearchConfig};
-use crate::state::GameState;
+use crate::state::{CoachingState, FatalityState, GameState, ObligationState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
@@ -13,16 +16,65 @@ pub enum Severity {
     Blunder,
 }
 
-fn classify(eval_loss: f32) -> Severity {
-    if eval_loss < 0.5 {
+fn classify_eval_loss(eval_loss: f32, thresholds: BucketThresholds) -> Severity {
+    if eval_loss < thresholds.none_max {
         Severity::None
-    } else if eval_loss < 1.5 {
+    } else if eval_loss < thresholds.inaccuracy_max {
         Severity::Inaccuracy
-    } else if eval_loss < 3.0 {
+    } else if eval_loss < thresholds.mistake_max {
         Severity::Mistake
     } else {
         Severity::Blunder
     }
+}
+
+fn severity_rank(severity: Severity) -> u8 {
+    match severity {
+        Severity::None => 0,
+        Severity::Inaccuracy => 1,
+        Severity::Mistake => 2,
+        Severity::Blunder => 3,
+    }
+}
+
+fn max_severity(a: Severity, b: Severity) -> Severity {
+    if severity_rank(a) >= severity_rank(b) {
+        a
+    } else {
+        b
+    }
+}
+
+fn classify_major_first(
+    eval_loss: f32,
+    thresholds: BucketThresholds,
+    coaching_before: CoachingState,
+    coaching_after: CoachingState,
+    best_coaching_state: CoachingState,
+) -> Severity {
+    let eval_bucket = classify_eval_loss(eval_loss, thresholds);
+
+    let lethal_negligence = (coaching_after.fatality == FatalityState::Fatal
+        && (coaching_before.fatality != FatalityState::Fatal
+            || best_coaching_state.fatality != FatalityState::Fatal))
+        || (coaching_after.obligation == ObligationState::MustCancel
+            && (coaching_before.obligation != ObligationState::MustCancel
+                || best_coaching_state.obligation != ObligationState::MustCancel));
+
+    if lethal_negligence {
+        return Severity::Blunder;
+    }
+
+    let major_obligation_fail = (coaching_after.fatality == FatalityState::Critical
+        && best_coaching_state.fatality == FatalityState::Safe)
+        || (coaching_after.obligation == ObligationState::MustDownstack
+            && best_coaching_state.obligation == ObligationState::None);
+
+    if major_obligation_fail {
+        return max_severity(eval_bucket, Severity::Mistake);
+    }
+
+    eval_bucket
 }
 
 #[derive(Debug, Clone)]
@@ -32,6 +84,9 @@ pub struct MoveAnalysis {
     pub best_eval: f32,
     pub best_move: Move,
     pub best_hold_used: bool,
+    pub coaching_before: CoachingState,
+    pub coaching_after: CoachingState,
+    pub best_coaching_state: CoachingState,
     pub eval_loss: f32,
     pub severity: Severity,
     pub meter_value: f32,
@@ -83,6 +138,7 @@ impl EvalMeter {
             lines_cleared,
             &self.weights,
             &self.search_config,
+            default_eval_thresholds(),
         );
         self.history.push(result.meter_value);
         result
@@ -113,9 +169,10 @@ impl Default for EvalMeter {
 fn analyze_move_inner(
     state: &GameState,
     actual_move: &Move,
-    _lines_cleared: u8,
+    lines_cleared: u8,
     weights: &EvalWeights,
     config: &SearchConfig,
+    thresholds: BucketThresholds,
 ) -> MoveAnalysis {
     let eval_before = evaluate(&state.board, weights);
 
@@ -123,22 +180,43 @@ fn analyze_move_inner(
     result_board.do_move(actual_move);
 
     let eval_after = evaluate(&result_board, weights);
+    let inferred_hold_used = state.infer_hold_used_for_piece(actual_move.piece());
+    let spawn_envelope_blocked = GameState::spawn_envelope_blocked(&result_board);
+    let coaching_before = state.coaching;
+    let coaching_after = state.transition_for_move(
+        actual_move,
+        lines_cleared,
+        inferred_hold_used,
+        result_board.height(),
+        spawn_envelope_blocked,
+    );
 
     let search_result = find_best_move(state, config, weights);
 
-    let (best_eval, best_move, best_hold_used) = match search_result {
+    let (best_eval, best_move, best_hold_used, best_coaching_state) = match search_result {
         Some(sr) => {
             // compare immediate board quality (depth-1) not depth-N search score
             let mut best_board = state.board.clone();
             best_board.do_move(&sr.best_move);
             let best_immediate_eval = evaluate(&best_board, weights);
-            (best_immediate_eval, sr.best_move, sr.hold_used)
+            (
+                best_immediate_eval,
+                sr.best_move,
+                sr.hold_used,
+                sr.coaching_state,
+            )
         }
-        None => (eval_after, *actual_move, false),
+        None => (eval_after, *actual_move, false, coaching_after),
     };
 
     let eval_loss = (best_eval - eval_after).max(0.0);
-    let severity = classify(eval_loss);
+    let severity = classify_major_first(
+        eval_loss,
+        thresholds,
+        coaching_before,
+        coaching_after,
+        best_coaching_state,
+    );
     let meter_value = normalize_meter(eval_after);
 
     MoveAnalysis {
@@ -147,6 +225,9 @@ fn analyze_move_inner(
         best_eval,
         best_move,
         best_hold_used,
+        coaching_before,
+        coaching_after,
+        best_coaching_state,
         eval_loss,
         severity,
         meter_value,
@@ -160,16 +241,49 @@ pub fn evaluate_move(
     weights: &EvalWeights,
     config: &SearchConfig,
 ) -> MoveAnalysis {
-    analyze_move_inner(state, actual_move, lines_cleared, weights, config)
+    analyze_move_inner(
+        state,
+        actual_move,
+        lines_cleared,
+        weights,
+        config,
+        default_eval_thresholds(),
+    )
+}
+
+pub fn evaluate_move_for_bucket(
+    state: &GameState,
+    actual_move: &Move,
+    lines_cleared: u8,
+    weights: &EvalWeights,
+    config: &SearchConfig,
+    profile: &CalibrationProfile,
+    bucket: SkillBucket,
+) -> MoveAnalysis {
+    let thresholds = profile
+        .thresholds_for(bucket)
+        .unwrap_or_else(default_eval_thresholds);
+    analyze_move_inner(
+        state,
+        actual_move,
+        lines_cleared,
+        weights,
+        config,
+        thresholds,
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::board::Board;
+    use crate::calibration::{
+        generate_profile_from_players_manifest, CalibrationProfile, CALIBRATION_VERSION_V1,
+    };
     use crate::eval::evaluate;
     use crate::header::Piece;
     use crate::movegen::{generate, MoveBuffer};
+    use crate::state::{PhaseState, PlonkState, SurgeState};
 
     fn find_engine_best(state: &GameState) -> (Move, bool) {
         let config = SearchConfig {
@@ -181,6 +295,18 @@ mod tests {
         let sr = find_best_move(state, &config, &weights)
             .unwrap_or_else(|| panic!("no moves on test board"));
         (sr.best_move, sr.hold_used)
+    }
+
+    fn coaching_fixture(fatality: FatalityState, obligation: ObligationState) -> CoachingState {
+        CoachingState {
+            fatality,
+            obligation,
+            surge: SurgeState::Dormant,
+            phase: PhaseState::Midgame,
+            plonk: PlonkState::Stable,
+            plonk_streak: 0,
+            ply: 12,
+        }
     }
 
     #[test]
@@ -383,5 +509,76 @@ mod tests {
         assert_eq!(standalone.eval_loss, metered.eval_loss);
         assert_eq!(standalone.severity, metered.severity);
         assert_eq!(standalone.meter_value, metered.meter_value);
+    }
+
+    #[test]
+    fn test_major_first_severe_trigger_on_fatality_fixture() {
+        let before = coaching_fixture(FatalityState::Safe, ObligationState::None);
+        let after = coaching_fixture(FatalityState::Fatal, ObligationState::MustCancel);
+        let best = coaching_fixture(FatalityState::Safe, ObligationState::None);
+
+        let severity = classify_major_first(0.1, default_eval_thresholds(), before, after, best);
+        assert_eq!(severity, Severity::Blunder);
+    }
+
+    #[test]
+    fn test_major_first_severe_trigger_on_obligation_fixture() {
+        let before = coaching_fixture(FatalityState::Safe, ObligationState::None);
+        let after = coaching_fixture(FatalityState::Safe, ObligationState::MustCancel);
+        let best = coaching_fixture(FatalityState::Safe, ObligationState::None);
+
+        let severity = classify_major_first(0.2, default_eval_thresholds(), before, after, best);
+        assert_eq!(severity, Severity::Blunder);
+    }
+
+    #[test]
+    fn test_minor_fixture_does_not_escalate_to_severe() {
+        let before = coaching_fixture(FatalityState::Safe, ObligationState::None);
+        let after = coaching_fixture(FatalityState::Safe, ObligationState::None);
+        let best = coaching_fixture(FatalityState::Safe, ObligationState::None);
+
+        let severity = classify_major_first(0.2, default_eval_thresholds(), before, after, best);
+        assert_eq!(severity, Severity::None);
+    }
+
+    #[test]
+    fn test_calibrated_threshold_loading_and_application_is_stable() {
+        let manifest = r#"{
+  "players": [
+    {
+      "rank": "b",
+      "tr": 6900.0,
+      "qualified": true
+    },
+    {
+      "rank": "u",
+      "tr": 22800.0,
+      "qualified": true
+    }
+  ]
+}"#;
+
+        let profile = generate_profile_from_players_manifest(CALIBRATION_VERSION_V1, manifest)
+            .unwrap_or_else(|e| panic!("profile generation failed: {e}"));
+        let artifact = profile.to_artifact_string();
+        let loaded = CalibrationProfile::from_artifact_str(&artifact)
+            .unwrap_or_else(|e| panic!("profile load failed: {e}"));
+
+        let before = coaching_fixture(FatalityState::Safe, ObligationState::None);
+        let after = coaching_fixture(FatalityState::Safe, ObligationState::None);
+        let best = coaching_fixture(FatalityState::Safe, ObligationState::None);
+
+        let b_thresholds = loaded
+            .thresholds_for(SkillBucket::B)
+            .unwrap_or_else(default_eval_thresholds);
+        let u_thresholds = loaded
+            .thresholds_for(SkillBucket::U)
+            .unwrap_or_else(default_eval_thresholds);
+
+        let severity_b = classify_major_first(1.3, b_thresholds, before, after, best);
+        let severity_u = classify_major_first(1.3, u_thresholds, before, after, best);
+
+        assert_eq!(severity_b, Severity::Inaccuracy);
+        assert_eq!(severity_u, Severity::Mistake);
     }
 }

@@ -11,6 +11,9 @@ use crate::header::*;
 use crate::movegen::{generate, MoveBuffer};
 use crate::search::{self, SearchConfig};
 use crate::state::GameState;
+use crate::state::{
+    CoachingState, FatalityState, ObligationState, PhaseState, PlonkState, SurgeState,
+};
 
 // ---------------------------------------------------------------------------
 // Serialization helpers (serde_json + js_sys to avoid serde-wasm-bindgen 0.6 bug)
@@ -109,6 +112,56 @@ fn spin_from_u8(v: u8) -> SpinType {
         1 => SpinType::Mini,
         2 => SpinType::Full,
         _ => SpinType::NoSpin,
+    }
+}
+
+fn fatality_to_contract(v: FatalityState) -> &'static str {
+    match v {
+        FatalityState::Safe => "safe",
+        FatalityState::Critical => "critical",
+        FatalityState::Fatal => "fatal",
+    }
+}
+
+fn obligation_to_contract(v: ObligationState) -> &'static str {
+    match v {
+        ObligationState::None => "none",
+        ObligationState::MustDownstack => "must_downstack",
+        ObligationState::MustCancel => "must_cancel",
+    }
+}
+
+fn surge_to_contract(v: SurgeState) -> &'static str {
+    match v {
+        SurgeState::Dormant => "dormant",
+        SurgeState::Building => "building",
+        SurgeState::Active => "active",
+    }
+}
+
+fn phase_to_contract(v: PhaseState) -> &'static str {
+    match v {
+        PhaseState::Opener => "opener",
+        PhaseState::Midgame => "midgame",
+        PhaseState::Endgame => "endgame",
+    }
+}
+
+fn plonk_to_contract(v: PlonkState) -> &'static str {
+    match v {
+        PlonkState::Stable => "stable",
+        PlonkState::Drifting => "drifting",
+        PlonkState::Spiral => "spiral",
+    }
+}
+
+fn coaching_to_contract(v: CoachingState) -> MachineDiagnosticsJson {
+    MachineDiagnosticsJson {
+        fatality: fatality_to_contract(v.fatality).to_string(),
+        obligation: obligation_to_contract(v.obligation).to_string(),
+        surge: surge_to_contract(v.surge).to_string(),
+        phase: phase_to_contract(v.phase).to_string(),
+        plonk: plonk_to_contract(v.plonk).to_string(),
     }
 }
 
@@ -525,6 +578,9 @@ pub fn evaluate_move_wasm(
             }
             .to_string(),
             meter_value: result.meter_value,
+            coaching_before: coaching_to_contract(result.coaching_before),
+            coaching_after: coaching_to_contract(result.coaching_after),
+            best_coaching_state: coaching_to_contract(result.best_coaching_state),
         })
     }));
 
@@ -601,6 +657,9 @@ pub fn analyze_replay_wasm(frames: JsValue) -> JsValue {
                     }
                     .to_string(),
                     meter_value: analysis.meter_value,
+                    coaching_before: coaching_to_contract(analysis.coaching_before),
+                    coaching_after: coaching_to_contract(analysis.coaching_after),
+                    best_coaching_state: coaching_to_contract(analysis.best_coaching_state),
                 }
             }));
 
@@ -629,6 +688,15 @@ struct MoveResultJson {
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
+struct MachineDiagnosticsJson {
+    fatality: String,
+    obligation: String,
+    surge: String,
+    phase: String,
+    plonk: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
 struct MoveEvalResultJson {
     eval_before: f32,
     eval_after: f32,
@@ -637,6 +705,9 @@ struct MoveEvalResultJson {
     eval_loss: f32,
     severity: String,
     meter_value: f32,
+    coaching_before: MachineDiagnosticsJson,
+    coaching_after: MachineDiagnosticsJson,
+    best_coaching_state: MachineDiagnosticsJson,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -672,4 +743,175 @@ struct ReplayAnalysisJson {
     eval_loss: f32,
     severity: String,
     meter_value: f32,
+    coaching_before: MachineDiagnosticsJson,
+    coaching_after: MachineDiagnosticsJson,
+    best_coaching_state: MachineDiagnosticsJson,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_move_eval_contract_includes_machine_diagnostics_fields() {
+        let payload = MoveEvalResultJson {
+            eval_before: 1.0,
+            eval_after: 0.5,
+            best_eval: 1.2,
+            best_move: MoveResultJson {
+                piece: 2,
+                rotation: 0,
+                x: 4,
+                y: 20,
+                score: 1.2,
+                spin: 0,
+                hold_used: false,
+            },
+            eval_loss: 0.7,
+            severity: "mistake".to_string(),
+            meter_value: 3.0,
+            coaching_before: MachineDiagnosticsJson {
+                fatality: "safe".to_string(),
+                obligation: "none".to_string(),
+                surge: "dormant".to_string(),
+                phase: "opener".to_string(),
+                plonk: "stable".to_string(),
+            },
+            coaching_after: MachineDiagnosticsJson {
+                fatality: "critical".to_string(),
+                obligation: "must_downstack".to_string(),
+                surge: "building".to_string(),
+                phase: "midgame".to_string(),
+                plonk: "drifting".to_string(),
+            },
+            best_coaching_state: MachineDiagnosticsJson {
+                fatality: "safe".to_string(),
+                obligation: "none".to_string(),
+                surge: "active".to_string(),
+                phase: "midgame".to_string(),
+                plonk: "stable".to_string(),
+            },
+        };
+
+        let json = serde_json::to_value(&payload).expect("serialize move eval payload");
+        let obj = json.as_object().expect("move eval payload object");
+
+        assert_eq!(
+            obj.get("severity").and_then(|v| v.as_str()),
+            Some("mistake")
+        );
+        assert!(
+            obj.get("coaching_before").is_some(),
+            "missing coaching_before diagnostics field"
+        );
+        assert!(
+            obj.get("coaching_after").is_some(),
+            "missing coaching_after diagnostics field"
+        );
+        assert!(
+            obj.get("best_coaching_state").is_some(),
+            "missing best_coaching_state diagnostics field"
+        );
+        let coaching_before = obj
+            .get("coaching_before")
+            .and_then(|v| v.as_object())
+            .expect("coaching_before object");
+        assert_eq!(
+            coaching_before.get("fatality").and_then(|v| v.as_str()),
+            Some("safe")
+        );
+        assert_eq!(
+            coaching_before.get("obligation").and_then(|v| v.as_str()),
+            Some("none")
+        );
+        assert_eq!(
+            coaching_before.get("surge").and_then(|v| v.as_str()),
+            Some("dormant")
+        );
+        assert_eq!(
+            coaching_before.get("phase").and_then(|v| v.as_str()),
+            Some("opener")
+        );
+        assert_eq!(
+            coaching_before.get("plonk").and_then(|v| v.as_str()),
+            Some("stable")
+        );
+    }
+
+    #[test]
+    fn test_replay_analysis_contract_includes_machine_diagnostics_fields() {
+        let payload = ReplayAnalysisJson {
+            eval_before: 1.0,
+            eval_after: 0.6,
+            best_eval: 1.4,
+            eval_loss: 0.8,
+            severity: "blunder".to_string(),
+            meter_value: 2.0,
+            coaching_before: MachineDiagnosticsJson {
+                fatality: "safe".to_string(),
+                obligation: "none".to_string(),
+                surge: "dormant".to_string(),
+                phase: "opener".to_string(),
+                plonk: "stable".to_string(),
+            },
+            coaching_after: MachineDiagnosticsJson {
+                fatality: "fatal".to_string(),
+                obligation: "must_cancel".to_string(),
+                surge: "active".to_string(),
+                phase: "endgame".to_string(),
+                plonk: "spiral".to_string(),
+            },
+            best_coaching_state: MachineDiagnosticsJson {
+                fatality: "safe".to_string(),
+                obligation: "none".to_string(),
+                surge: "building".to_string(),
+                phase: "midgame".to_string(),
+                plonk: "stable".to_string(),
+            },
+        };
+
+        let json = serde_json::to_value(&payload).expect("serialize replay payload");
+        let obj = json.as_object().expect("replay payload object");
+
+        assert_eq!(
+            obj.get("severity").and_then(|v| v.as_str()),
+            Some("blunder")
+        );
+        assert!(
+            obj.get("coaching_before").is_some(),
+            "missing coaching_before diagnostics field"
+        );
+        assert!(
+            obj.get("coaching_after").is_some(),
+            "missing coaching_after diagnostics field"
+        );
+        assert!(
+            obj.get("best_coaching_state").is_some(),
+            "missing best_coaching_state diagnostics field"
+        );
+        let coaching_after = obj
+            .get("coaching_after")
+            .and_then(|v| v.as_object())
+            .expect("coaching_after object");
+        assert_eq!(
+            coaching_after.get("fatality").and_then(|v| v.as_str()),
+            Some("fatal")
+        );
+        assert_eq!(
+            coaching_after.get("obligation").and_then(|v| v.as_str()),
+            Some("must_cancel")
+        );
+        assert_eq!(
+            coaching_after.get("surge").and_then(|v| v.as_str()),
+            Some("active")
+        );
+        assert_eq!(
+            coaching_after.get("phase").and_then(|v| v.as_str()),
+            Some("endgame")
+        );
+        assert_eq!(
+            coaching_after.get("plonk").and_then(|v| v.as_str()),
+            Some("spiral")
+        );
+    }
 }

@@ -1,0 +1,63 @@
+
+> mosaic@0.0.1 test
+> vitest run --run src/test/replay-analysis.test.ts
+
+
+[1m[46m RUN [49m[22m [36mv4.0.18 [39m[90m/home/li859/projects/mosaic-fusion-engine-coaching/mosaic-fusion-testing[39m
+
+ [31m❯[39m src/test/replay-analysis.test.ts [2m([22m[2m3 tests[22m[2m | [22m[31m3 failed[39m[2m)[22m[33m 10589[2mms[22m[39m
+[31m       [31m×[31m produces deterministic analysis results[39m[33m 2393[2mms[22m[39m
+[31m       [31m×[31m produces deterministic analysis results[39m[33m 4498[2mms[22m[39m
+[31m       [31m×[31m produces deterministic analysis results[39m[33m 3696[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 3 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/test/replay-analysis.test.ts[2m > [22mReplay Analysis[2m > [22mshort-game-p0[2m > [22mproduces deterministic analysis results
+[31m[1mAssertionError[22m: lock #31 (frame 590, piece J): eval_loss delta (tolerance 0.5): expected 1.4000006 to be less than or equal to 0.5[39m
+[36m [2m❯[22m src/test/replay-analysis.test.ts:[2m102:13[22m[39m
+    [90m100| [39m            [33mMath[39m[33m.[39m[34mabs[39m(actual[33m.[39meval_loss [33m-[39m exp[33m.[39meval_loss)[33m,[39m
+    [90m101| [39m            [32m`[39m[36m${[39mctx[36m}[39m[32m: eval_loss delta (tolerance [39m[36m${[39mtolerance[36m}[39m[32m)`[39m[33m,[39m
+    [90m102| [39m          )[33m.[39m[34mtoBeLessThanOrEqual[39m(tolerance)[33m;[39m
+    [90m   | [39m            [31m^[39m
+    [90m103| [39m
+    [90m104| [39m          [35mif[39m (exp[33m.[39mbest_move [33m===[39m [35mnull[39m) {
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/test/replay-analysis.test.ts[2m > [22mReplay Analysis[2m > [22mshort-game-p1[2m > [22mproduces deterministic analysis results
+[31m[1mAssertionError[22m: lock #2 (frame 36, piece O): best_move.piece: expected 2 to be 1 // Object.is equality[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- 1[39m
+[31m+ 2[39m
+
+[36m [2m❯[22m src/test/replay-analysis.test.ts:[2m111:72[22m[39m
+    [90m109| [39m              [32m`[39m[36m${[39mctx[36m}[39m[32m: best_move should not be null`[39m[33m,[39m
+    [90m110| [39m            )[33m.[39mnot[33m.[39m[34mtoBeNull[39m()[33m;[39m
+    [90m111| [39m            expect(actual.best_move!.piece, `${ctx}: best_move.piece`)…
+    [90m   | [39m                                                                       [31m^[39m
+    [90m112| [39m              exp[33m.[39mbest_move[33m.[39mpiece[33m,[39m
+    [90m113| [39m            )[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯[22m[39m
+
+[41m[1m FAIL [22m[49m src/test/replay-analysis.test.ts[2m > [22mReplay Analysis[2m > [22mmedium-game-p0[2m > [22mproduces deterministic analysis results
+[31m[1mAssertionError[22m: lock #0 (frame 61, piece I): eval_loss delta (tolerance 0.5): expected 1 to be less than or equal to 0.5[39m
+[36m [2m❯[22m src/test/replay-analysis.test.ts:[2m102:13[22m[39m
+    [90m100| [39m            [33mMath[39m[33m.[39m[34mabs[39m(actual[33m.[39meval_loss [33m-[39m exp[33m.[39meval_loss)[33m,[39m
+    [90m101| [39m            [32m`[39m[36m${[39mctx[36m}[39m[32m: eval_loss delta (tolerance [39m[36m${[39mtolerance[36m}[39m[32m)`[39m[33m,[39m
+    [90m102| [39m          )[33m.[39m[34mtoBeLessThanOrEqual[39m(tolerance)[33m;[39m
+    [90m   | [39m            [31m^[39m
+    [90m103| [39m
+    [90m104| [39m          [35mif[39m (exp[33m.[39mbest_move [33m===[39m [35mnull[39m) {
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m3 failed[39m[22m[90m (3)[39m
+[2m   Start at [22m 15:03:09
+[2m   Duration [22m 10.97s[2m (transform 240ms, setup 0ms, import 299ms, tests 10.59s, environment 0ms)[22m
+

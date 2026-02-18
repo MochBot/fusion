@@ -18,6 +18,14 @@ path = "src/bin/profile_perft.rs"
 name = "bench_perft"
 path = "src/bin/bench_perft.rs"
 
+[[bin]]
+name = "calibrate_skill_buckets"
+path = "src/bin/calibrate_skill_buckets.rs"
+
+[[bin]]
+name = "replay_validation_gate"
+path = "src/bin/replay_validation_gate.rs"
+
 [features]
 default = ["rayon"]
 rayon = ["dep:rayon"]

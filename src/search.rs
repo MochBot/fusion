@@ -7,7 +7,7 @@ use crate::board::Board;
 use crate::eval::{evaluate, EvalWeights};
 use crate::header::*;
 use crate::movegen::{generate, MoveBuffer};
-use crate::state::GameState;
+use crate::state::{CoachingState, GameState, TransitionObservation};
 use crate::transposition::{TranspositionTable, ZobristKeys, DEFAULT_TT_SIZE};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
@@ -41,6 +41,7 @@ pub struct SearchResult {
     pub hold_used: bool,
     pub score: f32,
     pub pv: Vec<Move>,
+    pub coaching_state: CoachingState,
 }
 
 #[derive(Clone)]
@@ -48,6 +49,10 @@ struct SearchNode {
     board: Board,
     score: f32,
     hold: Option<Piece>,
+    b2b: u8,
+    combo: u32,
+    pending_garbage: u8,
+    coaching: CoachingState,
     root_move: Move,
     root_hold_used: bool,
     path: Vec<Move>,
@@ -126,10 +131,9 @@ pub fn find_best_move(
             &zobrist_keys,
             &mut tt,
         ) {
-            let should_replace = match &best_result {
-                Some(best) => result.score > best.score,
-                None => true,
-            };
+            let should_replace = best_result
+                .as_ref()
+                .is_none_or(|best| compare_results_desc(&result, best).is_lt());
 
             if should_replace {
                 best_result = Some(result);
@@ -186,9 +190,8 @@ fn run_beam_search_iteration(
         return None;
     }
 
-    // sort descending by score, truncate to beam width
     apply_futility_pruning(&mut beam, config.futility_delta);
-    beam.sort_unstable_by(|a, b| b.score.total_cmp(&a.score));
+    beam.sort_unstable_by(compare_nodes_desc);
     beam.truncate(beam_width);
 
     // expand remaining depths using queue pieces
@@ -212,6 +215,7 @@ fn run_beam_search_iteration(
                 node,
                 current_piece,
                 node.hold,
+                false,
                 weights,
                 &config.attack_config,
                 &mut next_beam,
@@ -228,6 +232,7 @@ fn run_beam_search_iteration(
                         node,
                         held,
                         Some(current_piece),
+                        true,
                         weights,
                         &config.attack_config,
                         &mut next_beam,
@@ -244,7 +249,7 @@ fn run_beam_search_iteration(
         }
 
         apply_futility_pruning(&mut next_beam, config.futility_delta);
-        next_beam.sort_unstable_by(|a, b| b.score.total_cmp(&a.score));
+        next_beam.sort_unstable_by(compare_nodes_desc);
         next_beam.truncate(beam_width);
         beam = next_beam;
     }
@@ -255,6 +260,7 @@ fn run_beam_search_iteration(
         hold_used: best.root_hold_used,
         score: best.score,
         pv: best.path.clone(),
+        coaching_state: best.coaching,
     })
 }
 
@@ -264,6 +270,14 @@ fn apply_futility_pruning(nodes: &mut Vec<SearchNode>, futility_delta: f32) {
     }
 
     let delta = futility_delta.max(0.0);
+    let best_tier = nodes
+        .iter()
+        .map(|node| policy_key(node))
+        .max()
+        .unwrap_or((0, 0));
+
+    nodes.retain(|node| policy_key(node) == best_tier);
+
     let best_score = nodes
         .iter()
         .map(|node| node.score)
@@ -271,6 +285,57 @@ fn apply_futility_pruning(nodes: &mut Vec<SearchNode>, futility_delta: f32) {
     let cutoff = best_score - delta;
 
     nodes.retain(|node| node.score >= cutoff);
+}
+
+fn policy_key(node: &SearchNode) -> (u8, u8) {
+    let survival = match node.coaching.fatality {
+        crate::state::FatalityState::Fatal => 0,
+        crate::state::FatalityState::Critical => 1,
+        crate::state::FatalityState::Safe => 2,
+    };
+
+    let obligation = match node.coaching.obligation {
+        crate::state::ObligationState::MustCancel => 0,
+        crate::state::ObligationState::MustDownstack => 1,
+        crate::state::ObligationState::None => 2,
+    };
+
+    (survival, obligation)
+}
+
+fn compare_nodes_desc(a: &SearchNode, b: &SearchNode) -> std::cmp::Ordering {
+    let a_key = policy_key(a);
+    let b_key = policy_key(b);
+
+    b_key.cmp(&a_key).then_with(|| b.score.total_cmp(&a.score))
+}
+
+fn compare_results_desc(a: &SearchResult, b: &SearchResult) -> std::cmp::Ordering {
+    let a_survival = match a.coaching_state.fatality {
+        crate::state::FatalityState::Fatal => 0,
+        crate::state::FatalityState::Critical => 1,
+        crate::state::FatalityState::Safe => 2,
+    };
+    let b_survival = match b.coaching_state.fatality {
+        crate::state::FatalityState::Fatal => 0,
+        crate::state::FatalityState::Critical => 1,
+        crate::state::FatalityState::Safe => 2,
+    };
+
+    let a_obligation = match a.coaching_state.obligation {
+        crate::state::ObligationState::MustCancel => 0,
+        crate::state::ObligationState::MustDownstack => 1,
+        crate::state::ObligationState::None => 2,
+    };
+    let b_obligation = match b.coaching_state.obligation {
+        crate::state::ObligationState::MustCancel => 0,
+        crate::state::ObligationState::MustDownstack => 1,
+        crate::state::ObligationState::None => 2,
+    };
+
+    (b_survival, b_obligation)
+        .cmp(&(a_survival, a_obligation))
+        .then_with(|| b.score.total_cmp(&a.score))
 }
 
 fn expand_root(
@@ -285,7 +350,7 @@ fn expand_root(
     let remaining_depth = max_depth.saturating_sub(1);
 
     gen_and_eval_root(
-        &state.board,
+        state,
         state.current,
         state.hold,
         false,
@@ -299,7 +364,7 @@ fn expand_root(
     match state.hold {
         Some(held) if held != state.current => {
             gen_and_eval_root(
-                &state.board,
+                state,
                 held,
                 Some(state.current),
                 true,
@@ -314,7 +379,7 @@ fn expand_root(
             let next = state.queue[0];
             if next != state.current {
                 gen_and_eval_root(
-                    &state.board,
+                    state,
                     next,
                     Some(state.current),
                     true,
@@ -333,7 +398,7 @@ fn expand_root(
 }
 
 fn gen_and_eval_root(
-    board: &Board,
+    state: &GameState,
     piece: Piece,
     new_hold: Option<Piece>,
     hold_used: bool,
@@ -344,11 +409,26 @@ fn gen_and_eval_root(
     tt: &mut Option<TranspositionTable>,
 ) {
     let mut moves = MoveBuffer::new();
-    generate(board, &mut moves, piece, false);
+    generate(&state.board, &mut moves, piece, false);
 
     for m in moves.as_slice() {
-        let mut result_board = board.clone();
-        result_board.do_move(m);
+        let mut result_board = state.board.clone();
+        let lines_cleared = result_board.do_move(m) as u8;
+        let next_pending_garbage = state.pending_garbage.saturating_sub(lines_cleared);
+        let spawn_envelope_blocked = GameState::spawn_envelope_blocked(&result_board);
+
+        let (next_b2b, next_combo) =
+            GameState::next_chain_values(state.b2b, state.combo, m, lines_cleared);
+        let coaching = state.coaching.transition(TransitionObservation {
+            resulting_height: result_board.height(),
+            resulting_b2b: next_b2b,
+            resulting_combo: next_combo,
+            lines_cleared,
+            hold_used,
+            pending_garbage: state.pending_garbage,
+            imminent_garbage: next_pending_garbage,
+            spawn_envelope_blocked,
+        });
 
         let score = evaluate_with_tt(&result_board, weights, remaining_depth, zobrist_keys, tt);
 
@@ -356,6 +436,10 @@ fn gen_and_eval_root(
             board: result_board,
             score,
             hold: new_hold,
+            b2b: next_b2b,
+            combo: next_combo,
+            pending_garbage: next_pending_garbage,
+            coaching,
             root_move: *m,
             root_hold_used: hold_used,
             path: vec![*m],
@@ -367,6 +451,7 @@ fn expand_node(
     parent: &SearchNode,
     piece: Piece,
     new_hold: Option<Piece>,
+    hold_used: bool,
     weights: &EvalWeights,
     _attack_config: &AttackConfig,
     out: &mut Vec<SearchNode>,
@@ -379,7 +464,22 @@ fn expand_node(
 
     for m in moves.as_slice() {
         let mut result_board = parent.board.clone();
-        result_board.do_move(m);
+        let lines_cleared = result_board.do_move(m) as u8;
+        let next_pending_garbage = parent.pending_garbage.saturating_sub(lines_cleared);
+        let spawn_envelope_blocked = GameState::spawn_envelope_blocked(&result_board);
+
+        let (next_b2b, next_combo) =
+            GameState::next_chain_values(parent.b2b, parent.combo, m, lines_cleared);
+        let coaching = parent.coaching.transition(TransitionObservation {
+            resulting_height: result_board.height(),
+            resulting_b2b: next_b2b,
+            resulting_combo: next_combo,
+            lines_cleared,
+            hold_used,
+            pending_garbage: parent.pending_garbage,
+            imminent_garbage: next_pending_garbage,
+            spawn_envelope_blocked,
+        });
 
         let score = evaluate_with_tt(&result_board, weights, remaining_depth, zobrist_keys, tt);
 
@@ -390,6 +490,10 @@ fn expand_node(
             board: result_board,
             score,
             hold: new_hold,
+            b2b: next_b2b,
+            combo: next_combo,
+            pending_garbage: next_pending_garbage,
+            coaching,
             root_move: parent.root_move,
             root_hold_used: parent.root_hold_used,
             path,
@@ -425,6 +529,31 @@ mod tests {
     use super::*;
     use crate::bag;
     use crate::board::{Board, FULL_ROW};
+
+    fn make_node(
+        score: f32,
+        fatality: crate::state::FatalityState,
+        obligation: crate::state::ObligationState,
+    ) -> SearchNode {
+        let coaching = CoachingState {
+            fatality,
+            obligation,
+            ..CoachingState::default()
+        };
+
+        SearchNode {
+            board: Board::new(),
+            score,
+            hold: None,
+            b2b: 0,
+            combo: 0,
+            pending_garbage: 0,
+            coaching,
+            root_move: Move::none(),
+            root_hold_used: false,
+            path: vec![Move::none()],
+        }
+    }
 
     #[test]
     fn test_find_best_move_empty_board() {
@@ -632,6 +761,10 @@ mod tests {
                 board: Board::new(),
                 score: 10.0,
                 hold: None,
+                b2b: 0,
+                combo: 0,
+                pending_garbage: 0,
+                coaching: CoachingState::default(),
                 root_move: Move::none(),
                 root_hold_used: false,
                 path: vec![Move::none()],
@@ -640,6 +773,10 @@ mod tests {
                 board: Board::new(),
                 score: 8.5,
                 hold: None,
+                b2b: 0,
+                combo: 0,
+                pending_garbage: 0,
+                coaching: CoachingState::default(),
                 root_move: Move::none(),
                 root_hold_used: false,
                 path: vec![Move::none()],
@@ -648,6 +785,10 @@ mod tests {
                 board: Board::new(),
                 score: 5.0,
                 hold: None,
+                b2b: 0,
+                combo: 0,
+                pending_garbage: 0,
+                coaching: CoachingState::default(),
                 root_move: Move::none(),
                 root_hold_used: false,
                 path: vec![Move::none()],
@@ -683,5 +824,115 @@ mod tests {
 
         let r = result.unwrap_or_else(|| panic!("checked"));
         assert!(!r.pv.is_empty(), "PV should include at least one move");
+    }
+
+    #[test]
+    fn test_compare_prefers_survival_before_raw_score() {
+        let mut nodes = vec![
+            make_node(
+                999.0,
+                crate::state::FatalityState::Critical,
+                crate::state::ObligationState::MustCancel,
+            ),
+            make_node(
+                10.0,
+                crate::state::FatalityState::Safe,
+                crate::state::ObligationState::None,
+            ),
+        ];
+
+        nodes.sort_unstable_by(compare_nodes_desc);
+
+        assert_eq!(
+            nodes[0].coaching.fatality,
+            crate::state::FatalityState::Safe
+        );
+        assert_eq!(
+            nodes[0].coaching.obligation,
+            crate::state::ObligationState::None
+        );
+        assert_eq!(
+            nodes[1].coaching.fatality,
+            crate::state::FatalityState::Critical
+        );
+    }
+
+    #[test]
+    fn test_futility_preserves_best_survival_tier() {
+        let mut nodes = vec![
+            make_node(
+                1000.0,
+                crate::state::FatalityState::Critical,
+                crate::state::ObligationState::MustCancel,
+            ),
+            make_node(
+                12.0,
+                crate::state::FatalityState::Safe,
+                crate::state::ObligationState::MustDownstack,
+            ),
+            make_node(
+                9.0,
+                crate::state::FatalityState::Safe,
+                crate::state::ObligationState::None,
+            ),
+            make_node(
+                4.0,
+                crate::state::FatalityState::Safe,
+                crate::state::ObligationState::None,
+            ),
+        ];
+
+        apply_futility_pruning(&mut nodes, 3.0);
+
+        assert!(nodes.iter().all(|n| {
+            n.coaching.fatality == crate::state::FatalityState::Safe
+                && n.coaching.obligation == crate::state::ObligationState::None
+        }));
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].score, 9.0);
+    }
+
+    #[test]
+    fn test_must_cancel_detected_from_imminent_garbage() {
+        let mut state = GameState::new(Board::new(), Piece::T, vec![Piece::I, Piece::O]);
+        state.pending_garbage = 4;
+
+        let config = SearchConfig {
+            beam_width: 100,
+            depth: 1,
+            ..SearchConfig::default()
+        };
+        let weights = EvalWeights::default();
+
+        let result = find_best_move(&state, &config, &weights)
+            .unwrap_or_else(|| panic!("expected a legal move"));
+
+        assert_eq!(
+            result.coaching_state.obligation,
+            crate::state::ObligationState::MustCancel
+        );
+    }
+
+    #[test]
+    fn test_spawn_envelope_violation_forces_fatal_tier() {
+        let mut board = Board::new();
+        board.rows[crate::default_ruleset::ACTIVE_RULES.spawn_row as usize] = 1u16 << 4;
+        board.cols = board.compute_cols();
+
+        let state = GameState::new(board, Piece::T, vec![Piece::I, Piece::O]);
+        let config = SearchConfig {
+            beam_width: 100,
+            depth: 1,
+            ..SearchConfig::default()
+        };
+        let weights = EvalWeights::default();
+
+        let result = find_best_move(&state, &config, &weights)
+            .unwrap_or_else(|| panic!("expected a legal move"));
+
+        assert_eq!(
+            result.coaching_state.fatality,
+            crate::state::FatalityState::Fatal
+        );
     }
 }

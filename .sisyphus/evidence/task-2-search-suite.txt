@@ -1,0 +1,15 @@
+Task 2 search suite regression
+
+Command:
+  cargo test search::tests
+
+Result:
+  PASS (13 passed, 0 failed)
+
+Observed:
+  - search::tests::test_compare_prefers_survival_before_raw_score ... ok
+  - search::tests::test_futility_preserves_best_survival_tier ... ok
+  - full search::tests module remained green
+
+Notes:
+  - Output included pre-existing compiler warnings in movegen/profile_perft.

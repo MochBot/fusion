@@ -1,0 +1,104 @@
+Task -1 Replay Corpus Dedup & Qualification Report
+Generated: 2026-02-18T22:22:05.963Z
+Corpus Root: .sisyphus/data/replay-corpus/s2-ranked-1v1-rd70-165
+Constraints: ranks=b,b+,a-,a,a+,s-,s,s+,ss,u | players/rank=3 | replays/player=5 | mode=league | age<=92 days
+
+[b]
+- cubomancer (6926d1c28d26f1b4938a4045) rd=60.89257526131247 tr=6899.114898549453 qualified=true replay_count=5
+  replay_ids: bde7dc4f4d09, 9af868e563e2, dbd0ecdfdb5a, 6ceb07d48bc2, f37e64851afb
+- praxand (62521a6bb6b1fefea8584be3) rd=61.26411798209181 tr=6897.651516759699 qualified=true replay_count=5
+  replay_ids: 3a2c6b128a69, 70e93f4485c9, f06966df2a26, 2c60f55900da, 504eeac4e865
+- sighrin (6933f755dd122f57ab43f0b9) rd=61.541547906027695 tr=6900.950864278277 qualified=true replay_count=5
+  replay_ids: 87c94e2417a5, 62394b9cd2d7, fe6465cedb2f, b4a78d67cebf, a8bf4be260a1
+  rank_pass=true
+
+[b+]
+- ateblain (6537e991efafce89753d8631) rd=65.13700312419108 tr=8539.758439684694 qualified=true replay_count=5
+  replay_ids: d5022f35a540, f1d6d13e8762, 30b8697afa2c, 3dfca1c1112a, 6615e1036e35
+- kerokero1689 (654a92e5ee26596858ad89ee) rd=60.77523951307697 tr=8548.24738730021 qualified=true replay_count=5
+  replay_ids: 24239d336104, fe89360f927b, b16d50b32c08, 0fa0097f37f8, 28c8dd1d47db
+- raeian (6770dd44c4696333cf319091) rd=60.729073962317955 tr=8545.16682935101 qualified=true replay_count=5
+  replay_ids: bc87f296c23f, a1e17708dc34, b2d1c242d5f9, 23657d43bfbf, 7171b9ce4e6d
+  rank_pass=true
+
+[a-]
+- chiara7800 (64ff653129c7402b399f03b9) rd=61.13485534963987 tr=10188.680106440786 qualified=true replay_count=5
+  replay_ids: 8b0ae4849fb9, f6cf3cfc6a95, b2fd393c2fb5, 99952633da3c, abcf79eac90e
+- gulmezinator (682732482d4735f1e224ce89) rd=60.71124017415942 tr=10188.454947233346 qualified=true replay_count=5
+  replay_ids: 5be500f0ef0b, 5944e084f1de, 808b06450776, f886e38b3f91, e1adbf7788a3
+- madfjun (697242561ba36e33140cd87a) rd=60.879958957719424 tr=10199.513593971109 qualified=true replay_count=5
+  replay_ids: ebb4b2135377, 7371e5817a1b, c533b2210753, aacba8bb4af2, aca9db54d1f9
+  rank_pass=true
+
+[a]
+- asdkjc (64b2a221cd1182dd6e41db77) rd=60.647151181980384 tr=11827.130127109649 qualified=true replay_count=5
+  replay_ids: 0f9335ef5872, 129a54380cb8, 2d9cdbdf1392, 21e6bbf34cdd, 48fdb6c5d021
+- henry0423 (655c18017a6fcecbb56407e7) rd=69.09696056663931 tr=11840.45454193391 qualified=true replay_count=5
+  replay_ids: faa2c695f0c7, ee311976dd76, d68228e78310, 497c8aaea237, 211a7e7af14a
+- sapphire909 (612d01607fe6ab44eaa41be7) rd=60.47527757864788 tr=11845.654716666653 qualified=true replay_count=5
+  replay_ids: 018a0fbbf2d8, 217b81240b74, abd34394889d, a1ffc77d81c8, ded2421b1a9b
+  rank_pass=true
+
+[a+]
+- amns (67fa086f4f319c18e6a9ae61) rd=60.50402471354725 tr=13680.035739166578 qualified=true replay_count=5
+  replay_ids: e7c91e3b99c7, f71c49f1d1fb, f26857dd9a1c, f15fdcfa5d2e, 22eb5d71b96a
+- kanghyu (661b9ce5c540730397df1a37) rd=60.827826883669125 tr=13681.03039159674 qualified=true replay_count=5
+  replay_ids: c59ee611082a, e60de51b70af, f913a2fe32af, 75fd1afc7131, 47393409cd94
+- rabenous (68b5a60578552e8c239f2344) rd=61.05009461033486 tr=13674.65202855347 qualified=true replay_count=5
+  replay_ids: e80249087cc2, 78bb951b4dbf, 4e586d96c6b7, 5b882c53ded2, 9a252308c019
+  rank_pass=true
+
+[s-]
+- e_munny20 (6057dfe857584423a8fd1d32) rd=60.75071539381537 tr=15124.271611944603 qualified=true replay_count=5
+  replay_ids: ecb43cc2d2db, c6a377d2debd, 9a0b252dc921, 0375e1ec817a, 5cd39e4458f8
+- haluhyun (65ec7da1e7d330b993b2f2c9) rd=64.9795373120123 tr=15128.376390332853 qualified=true replay_count=5
+  replay_ids: f8e50f0c6f38, b633ff970ae9, f87cbe0273c0, bd5715b1db6d, 2a8799ff797f
+- wryan0918 (6131e711d6971e44f8a65304) rd=62.11132422051641 tr=15126.386303953155 qualified=true replay_count=5
+  replay_ids: 89cc8951aaad, 3ff972f37f28, e9d86d0707db, 87c041851092, 875c0c2babbc
+  rank_pass=true
+
+[s]
+- chamberthd (674a2942077a0ebffa8babd1) rd=60.564219394133936 tr=16554.367584424566 qualified=true replay_count=5
+  replay_ids: 93e82f24e635, 41ad04a0273d, f34db8f1e6aa, 85a51d3a9df8, 60fa1bc806a5
+- mcchary (65955d4389171364eaf76b1c) rd=60.65833440533278 tr=16550.46672707038 qualified=true replay_count=5
+  replay_ids: b36eb4ac7426, 31e0d579f4eb, 342b95dd9a82, cfff4273ff58, caa77157b533
+- meowmeoww_00 (6509b8b51fcce341721f003a) rd=60.523190656106934 tr=16551.831934832 qualified=true replay_count=5
+  replay_ids: 4f8b1a86f936, 90a11d278d1f, 6597e6354b69, 325bdb21124a, 055d19096ebb
+  rank_pass=true
+
+[s+]
+- blinkyamy123 (5fa93c4b72f1d7d31385ba94) rd=60.95361439824779 tr=18235.606285302456 qualified=true replay_count=5
+  replay_ids: 85e50ddcd616, 21050e061940, fc58bd621cf8, e64fb0c1a154, 9bf644ec437b
+- lookypadooky (61b10edd381c530380d6464a) rd=62.65044142080199 tr=18219.134360192777 qualified=true replay_count=5
+  replay_ids: c5513d9852e7, b648073e8a9d, c733a381bcdd, 58cbc5ba184f, 2e7a709c30ba
+- peingoin (62b89e81dea07bce3641c1aa) rd=61.63335484543258 tr=18217.855303088552 qualified=true replay_count=5
+  replay_ids: 5357a2d5d559, 3303df6590a5, bf09a8351e31, 0c39932eee7c, f158822476d3
+  rank_pass=true
+
+[ss]
+- chura-_- (5f63344fead0072b56ced0df) rd=60.79334961076889 tr=20438.452596179573 qualified=true replay_count=5
+  replay_ids: e3c9205e3e72, 936c280c0c88, 09047f96d138, 5e20a8da170f, a3f4285686b8
+- gary14242 (605b40418adae6238ca8c7e8) rd=60.91523697219376 tr=20438.17449740759 qualified=true replay_count=5
+  replay_ids: fe54642cf91b, 2d2efaa964d7, 14ce42450023, 2f509a84dac8, 509194d5a3ff
+- hilloeid (63a0c453f1f2a5e084bd33ab) rd=61.23664480749917 tr=20450.928709579057 qualified=true replay_count=5
+  replay_ids: fbd93e0007d4, 401915b373fe, 62390c6ea1eb, 6b1b0414a7d9, 5d2703d60d03
+  rank_pass=true
+
+[u]
+- gameplayer299 (5e5be3db1f2ae73a3ce63941) rd=61.6181070657149 tr=22804.626652455427 qualified=true replay_count=5
+  replay_ids: 4adc77922124, 13b89dc72138, ad05e1994bb4, 9f3172c9db90, 882fd5c73f69
+- hillma (680ccebe00a585b68c4a5e63) rd=62.430476639998034 tr=22824.83822011569 qualified=true replay_count=5
+  replay_ids: ba97189d8fcc, a9bba269897d, 46c955806a6b, 780194c946af, d5c3e0d21fe5
+- mlpiggy (625a23d02b740ca380be62f3) rd=65.48274288214105 tr=22822.629240031936 qualified=true replay_count=5
+  replay_ids: e9b00dbe9efe, a84a57255b65, 377bbed176b5, 1dfc49ef340e, dee815a10391
+  rank_pass=true
+
+Summary
+- total_ranks=10
+- total_players=30
+- total_replays=150
+- unique_replay_ids=150
+- duplicate_replay_ids=0
+- duplicate_player_replay_pairs=0
+- pass=true
+- failures=none
