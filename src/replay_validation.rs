@@ -44,86 +44,20 @@ pub struct ReplayGateEvaluation {
     pub failures: Vec<String>,
 }
 
+#[path = "replay_validation_manifest.rs"]
+mod manifest;
+#[path = "replay_validation_labels.rs"]
+mod labels;
+
+use labels::{
+    fnv1a64, obligation_met_label, obligation_required_label, ratio_or_zero, severe_pred_label,
+    severe_truth_label, stable_sample_fingerprint,
+};
+
 pub fn parse_replay_samples_from_players_manifest(
     manifest: &str,
 ) -> Result<Vec<ReplaySample>, String> {
-    let mut in_players = false;
-    let mut in_player = false;
-    let mut in_replay_ids = false;
-
-    let mut current_rank: Option<String> = None;
-    let mut current_replay_ids: Vec<String> = Vec::new();
-    let mut samples: Vec<ReplaySample> = Vec::new();
-
-    for line in manifest.lines() {
-        let trimmed = line.trim();
-
-        if trimmed.starts_with("\"players\": [") {
-            in_players = true;
-            continue;
-        }
-        if !in_players {
-            continue;
-        }
-
-        if !in_player && (trimmed == "]," || trimmed == "]") {
-            break;
-        }
-
-        if trimmed == "{" {
-            in_player = true;
-            in_replay_ids = false;
-            current_rank = None;
-            current_replay_ids.clear();
-            continue;
-        }
-
-        if !in_player {
-            continue;
-        }
-
-        if let Some(rank) = parse_string_field(trimmed, "rank") {
-            current_rank = Some(rank);
-            continue;
-        }
-
-        if trimmed.starts_with("\"replay_ids\": [") {
-            in_replay_ids = true;
-            continue;
-        }
-
-        if in_replay_ids {
-            if trimmed == "]," || trimmed == "]" {
-                in_replay_ids = false;
-            } else if let Some(replay_id) = parse_array_string_item(trimmed) {
-                current_replay_ids.push(replay_id);
-            }
-            continue;
-        }
-
-        if trimmed == "}," || trimmed == "}" {
-            if let Some(rank) = current_rank.as_ref() {
-                for replay_id in &current_replay_ids {
-                    samples.push(ReplaySample {
-                        replay_id: replay_id.clone(),
-                        rank: rank.clone(),
-                    });
-                }
-            }
-
-            in_player = false;
-            in_replay_ids = false;
-            current_rank = None;
-            current_replay_ids.clear();
-        }
-    }
-
-    if samples.is_empty() {
-        return Err("no replay samples parsed from players manifest".to_string());
-    }
-
-    samples.sort_by(|a, b| a.replay_id.cmp(&b.replay_id).then(a.rank.cmp(&b.rank)));
-    Ok(samples)
+    manifest::parse_replay_samples_from_players_manifest(manifest)
 }
 
 pub fn evaluate_replay_samples(
@@ -272,60 +206,6 @@ pub fn render_replay_gate_report(evaluation: &ReplayGateEvaluation) -> String {
             evaluation.failures.join("; ")
         }
     )
-}
-
-fn parse_string_field(line: &str, key: &str) -> Option<String> {
-    let prefix = format!("\"{}\": \"", key);
-    let stripped = line.strip_prefix(&prefix)?;
-    let end_idx = stripped.find('"')?;
-    Some(stripped[..end_idx].to_string())
-}
-
-fn parse_array_string_item(line: &str) -> Option<String> {
-    let stripped = line.strip_prefix('"')?;
-    let end_idx = stripped.find('"')?;
-    Some(stripped[..end_idx].to_string())
-}
-
-fn ratio_or_zero(numerator: usize, denominator: usize) -> f32 {
-    if denominator == 0 {
-        0.0
-    } else {
-        numerator as f32 / denominator as f32
-    }
-}
-
-fn fnv1a64(bytes: &[u8]) -> u64 {
-    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
-    const FNV_PRIME: u64 = 0x100000001b3;
-
-    let mut hash = FNV_OFFSET;
-    for byte in bytes {
-        hash ^= *byte as u64;
-        hash = hash.wrapping_mul(FNV_PRIME);
-    }
-    hash
-}
-
-fn stable_sample_fingerprint(sample: &ReplaySample) -> u64 {
-    let composite = format!("{}|{}", sample.rank, sample.replay_id);
-    fnv1a64(composite.as_bytes())
-}
-
-fn severe_truth_label(fingerprint: u64) -> bool {
-    fingerprint % 5 == 0
-}
-
-fn severe_pred_label(fingerprint: u64) -> bool {
-    fingerprint % 5 == 0
-}
-
-fn obligation_required_label(fingerprint: u64) -> bool {
-    ((fingerprint >> 3) % 4) == 0
-}
-
-fn obligation_met_label(fingerprint: u64) -> bool {
-    ((fingerprint >> 5) % 100) != 0
 }
 
 #[cfg(test)]

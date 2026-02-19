@@ -19,8 +19,7 @@ impl MoveBuffer {
     #[inline]
     pub fn new() -> Self {
         MoveBuffer {
-            // skip zeroing — only data[..len] is valid, matches C++ uninitialized stack array
-            data: unsafe { std::mem::MaybeUninit::uninit().assume_init() },
+            data: [Move::none(); MAX_MOVES],
             len: 0,
         }
     }
@@ -90,11 +89,8 @@ fn generate_inner<const P: usize, const CHECK_SPIN: bool>(
     let mut move_set = [[0u64; ROTATION_NB]; COL_NB];
     // skip zeroing spin_set when CHECK_SPIN=false — all access is behind `if CHECK_SPIN` guards
     // matches Cobra's zero-size `spinSet[COL_NB][ROTATION_NB][checkSpin ? SPIN_NB : 0]`
-    let mut spin_set: [[[u64; SPIN_NB]; ROTATION_NB]; COL_NB] = if CHECK_SPIN {
-        [[[0u64; SPIN_NB]; ROTATION_NB]; COL_NB]
-    } else {
-        unsafe { std::mem::MaybeUninit::uninit().assume_init() }
-    };
+    let mut spin_set: [[[u64; SPIN_NB]; ROTATION_NB]; COL_NB] =
+        [[[0u64; SPIN_NB]; ROTATION_NB]; COL_NB];
 
     let remaining_index =
         |x: i32, r: Rotation| -> Bitboard { bb(x * ROTATION_NB as i32 + r as i32) };

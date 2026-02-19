@@ -1,10 +1,9 @@
 {
-  "active_plan": "/home/li859/projects/mosaic-fusion-engine-coaching/fusion-engine/.sisyphus/plans/s2-coaching-foundation-major-mistake-engine.md",
-  "started_at": "2026-02-18T14:32:49-06:00",
+  "active_plan": "/home/li859/projects/mosaic-fusion-engine-coaching/fusion-engine/.sisyphus/plans/fusion-mass-cleanup.md",
+  "started_at": "2026-02-20T20:43:35.725Z",
   "session_ids": [
-    "ses_38d93853affey0fQCMtyLVmXCW",
-    "ses_38d93853affey0fQCMtyLVmXCW",
     "ses_38d93853affey0fQCMtyLVmXCW"
   ],
-  "plan_name": "s2-coaching-foundation-major-mistake-engine"
+  "plan_name": "fusion-mass-cleanup",
+  "agent": "atlas"
 }

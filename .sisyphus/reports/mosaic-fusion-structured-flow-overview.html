@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mosaic-Fusion Structured Flow Overview</title>
+    <style>
+        :root {
+            --font-stack: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            --color-text: #e2e8f0;          /* slate-200 */
+            --color-text-subtle: #94a3b8;   /* slate-400 */
+            --color-border: #334155;         /* slate-700 */
+            --color-accent: #818cf8;         /* indigo-400 */
+            --color-accent-subtle: #1e1b4b; /* indigo-950 */
+            --color-bg: #0f172a;            /* slate-900 */
+            --color-bg-alt: #1e293b;        /* slate-800 */
+            --color-loop: #fbbf24;          /* amber-400 */
+            --color-error: #f87171;         /* red-400 */
+            --radius: 8px;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: var(--font-stack);
+            color: var(--color-text);
+            background: var(--color-bg);
+            line-height: 1.5;
+            margin: 0;
+            padding: 40px;
+            max-width: 1200px;
+            margin-left: auto;
+            margin-right: auto;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin: 0 0 8px 0;
+            letter-spacing: -0.02em;
+            color: var(--color-text);
+        }
+
+        .subtitle {
+            font-size: 16px;
+            color: var(--color-text-subtle);
+            margin-bottom: 32px;
+            padding-bottom: 24px;
+            border-bottom: 1px solid var(--color-border);
+        }
+
+        h2 {
+            font-size: 20px;
+            font-weight: 700;
+            margin-top: 3em;
+            margin-bottom: 1em;
+            color: var(--color-text);
+        }
+        .section-number {
+            color: var(--color-accent);
+            font-size: 20px;
+            margin-right: 8px;
+        }
+
+        p, li { font-size: 15px; color: var(--color-text-subtle); }
+
+        /* Meta & Legend */
+        .meta-container {
+            margin-bottom: 40px;
+            background: var(--color-bg-alt);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius);
+            overflow: hidden;
+        }
+        .meta-header {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 24px;
+            padding: 20px;
+            border-bottom: 1px solid var(--color-border);
+        }
+        .meta-item { display: flex; flex-direction: column; }
+        .meta-label { font-size: 12px; text-transform: uppercase; color: var(--color-text-subtle); font-weight: 600; margin-bottom: 4px; }
+        .meta-value { font-size: 14px; font-family: "SFMono-Regular", Consolas, monospace; }
+
+        .legend {
+            padding: 12px 20px;
+            display: flex;
+            gap: 24px;
+            font-size: 13px;
+            background: var(--color-bg-alt);
+            border-top: 1px solid var(--color-border); /* Explicit separator */
+        }
+        .legend-item { display: flex; align-items: center; gap: 8px; color: var(--color-text-subtle); font-weight: 500; }
+        .indicator { width: 10px; height: 10px; border-radius: 2px; }
+        .ind-ui { background: #818cf8; }
+        .ind-worker { background: #38bdf8; }
+        .ind-triangle { background: #34d399; }
+        .ind-fusion { background: #fb923c; }
+        .ind-loop { border: 1px solid var(--color-loop); }
+        .ind-error { border: 1px solid var(--color-error); }
+
+        /* Badges */
+        .badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 9999px;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }
+        .badge-active { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+        .badge-partial { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
+
+        /* Tables */
+        table { width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 14px; }
+        th { text-align: left; padding: 12px 16px; border-bottom: 1px solid #475569; font-weight: 600; color: var(--color-text); }
+        td { padding: 12px 16px; border-bottom: 1px solid var(--color-border); vertical-align: top; color: var(--color-text-subtle); }
+        tr:last-child td { border-bottom: none; }
+        code { background: #1e293b; padding: 2px 6px; border-radius: 4px; font-size: 13px; font-family: "SFMono-Regular", Consolas, monospace; color: #e2e8f0; }
+
+        /* Vertical Timeline Flow */
+        .flow-timeline {
+            max-width: 100%;
+            margin: 24px auto;
+            position: relative;
+        }
+
+        .flow-step {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            padding: 16px 20px;
+            background: var(--color-bg-alt);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius);
+            margin-bottom: 0;
+            position: relative;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+        }
+
+        .lane-badge {
+            flex-shrink: 0;
+            width: 68px;
+            padding: 4px 6px;
+            border-radius: 4px;
+            font-size: 9px;
+            font-weight: 700;
+            text-transform: uppercase;
+            text-align: center;
+            letter-spacing: 0.05em;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* Lane colors */
+        .lane-ui { background: rgba(129, 140, 248, 0.2); color: #818cf8; border: 1px solid rgba(129, 140, 248, 0.3); }
+        .lane-worker { background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }
+        .lane-triangle { background: rgba(52, 211, 153, 0.2); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3); }
+        .lane-fusion { background: rgba(251, 146, 60, 0.2); color: #fb923c; border: 1px solid rgba(251, 146, 60, 0.3); }
+        
+        /* Info card backgrounds for legend/top section */
+        .lane-triangle-bg { border-left: 3px solid #34d399; background: rgba(52, 211, 153, 0.05); }
+        .lane-fusion-bg { border-left: 3px solid #fb923c; background: rgba(251, 146, 60, 0.05); }
+
+        .step-content { display: flex; flex-direction: column; width: 100%; }
+        .step-header { display: flex; align-items: baseline; margin-bottom: 4px; }
+        
+        .step-number {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--color-accent);
+            margin-right: 10px;
+            font-family: monospace;
+        }
+        .step-title { font-weight: 600; color: var(--color-text); font-size: 14px; }
+        .step-detail { color: var(--color-text-subtle); font-size: 13px; line-height: 1.4; }
+
+        .flow-connector {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 4px 0 4px 0;
+            position: relative;
+            height: 32px;
+        }
+
+        .connector-line {
+            width: 2px;
+            height: 100%;
+            background: var(--color-border);
+            margin-left: 30px; /* Center under step content start roughly */
+            position: absolute;
+            left: 0;
+        }
+        
+        /* Connector text label */
+        .connector-label {
+            font-size: 11px;
+            color: var(--color-text-subtle);
+            font-style: italic;
+            margin-left: 44px; /* clearance for line */
+        }
+        
+        /* Arrow tip on connector line */
+        .connector-arrow {
+            position: absolute;
+            bottom: -2px;
+            left: 25px; /* Center on connector line */
+            color: var(--color-border);
+            font-size: 10px;
+            line-height: 1;
+        }
+
+        /* Loop groups */
+        .loop-group {
+            position: relative;
+            border-left: 2px solid var(--color-loop);
+            margin-left: 0;
+            padding-left: 16px;
+            margin-top: 8px;
+            margin-bottom: 8px;
+            background: rgba(251, 191, 36, 0.03);
+            border-radius: 0 8px 8px 0;
+            padding-right: 8px;
+            padding-top: 16px;
+            padding-bottom: 8px;
+        }
+
+        .loop-label {
+            position: absolute;
+            left: 8px;
+            top: -10px;
+            background: var(--color-bg);
+            padding: 0 6px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--color-loop);
+            letter-spacing: 0.05em;
+            border: 1px solid var(--color-loop);
+            border-radius: 4px;
+        }
+
+        /* Cross-component calls */
+        .cross-call {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
+            padding: 6px 12px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 4px;
+            font-size: 12px;
+            color: var(--color-text-subtle);
+            border: 1px dashed var(--color-border);
+        }
+        .cross-call .call-arrow { color: var(--color-accent); font-weight: bold; }
+        .cross-call .call-target { font-weight: 600; color: var(--color-text); }
+
+        /* Error box */
+        .error-box {
+            margin-top: 32px;
+            padding: 16px;
+            border: 1px solid var(--color-error);
+            background: rgba(248, 113, 113, 0.1);
+            border-radius: var(--radius);
+            color: #fca5a5;
+            font-size: 13px;
+        }
+        .error-title { font-weight: 700; color: var(--color-error); margin-bottom: 4px; display: block; }
+
+        /* Info Cards */
+        .info-cards {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin-bottom: 32px;
+        }
+        .info-card {
+            padding: 16px;
+            background: var(--color-bg-alt);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius);
+        }
+        .info-card-header {
+            font-weight: 700;
+            font-size: 14px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--color-text);
+        }
+        .info-card .lane-badge { position: static; margin: 0; }
+        .info-card ul { margin: 0; padding-left: 20px; }
+        .info-card li { font-size: 12px; margin-bottom: 6px; color: var(--color-text-subtle); }
+
+        /* Diff Panels */
+        .diff-container { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+        .panel { border: 1px solid var(--color-border); border-radius: var(--radius); overflow: hidden; background: var(--color-bg-alt); }
+        .panel-header { padding: 12px 16px; background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--color-border); font-weight: 600; font-size: 14px; color: var(--color-text); }
+        .panel-content table { margin: 0; border: none; }
+        .panel-content td, .panel-content th { border-bottom: 1px solid var(--color-border); padding: 10px 16px; }
+
+        .footer { margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--color-border); font-size: 12px; color: var(--color-text-subtle); font-family: monospace; }
+
+        @media print {
+            body { padding: 0; max-width: 100%; color: #000; background: #fff; }
+            .flow-step, .panel, .info-card { box-shadow: none; border: 1px solid #ccc; background: #fff; color: #000; }
+            .step-title, .step-number, .call-target { color: #000; }
+            .loop-group { background: none; border-left-color: #000; }
+            .loop-label { color: #000; border-color: #000; background: #fff; }
+            h1, h2, th { color: #000; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- SVG Defs for Arrowheads (Slate-500) -->
+    <svg style="position:absolute;width:0;height:0">
+        <defs>
+            <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L8,3 L0,6 Z" fill="#64748b"/>
+            </marker>
+        </defs>
+    </svg>
+
+    <!-- Header & Meta -->
+    <h1>Mosaic-Fusion Architecture Overview</h1>
+    <div class="subtitle">Structured flow analysis of the deterministic replay engine</div>
+
+    <div class="meta-container">
+        <div class="meta-header">
+            <div class="meta-item">
+                <span class="meta-label">Generated</span>
+                <span class="meta-value">2026-02-19T21:10:00-06:00</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Mosaic Head</span>
+                <span class="meta-value">75cfb18</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Fusion Head</span>
+                <span class="meta-value">252fc65</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Flow Type</span>
+                <span class="meta-value" style="font-family: var(--font-stack);">Deterministic replay analysis</span>
+            </div>
+        </div>
+        <div class="legend">
+            <div class="legend-item"><span class="indicator ind-ui"></span> UI</div>
+            <div class="legend-item"><span class="indicator ind-worker"></span> Worker</div>
+            <div class="legend-item"><span class="indicator ind-triangle"></span> Triangle</div>
+            <div class="legend-item"><span class="indicator ind-fusion"></span> Fusion</div>
+            <div class="legend-item"><span class="indicator ind-loop"></span> Loop Scope</div>
+        </div>
+    </div>
+
+    <!-- SECTION 1 -->
+    <h2><span class="section-number">1</span> Chronological Input Flow</h2>
+    <p>End-to-end execution path from user interaction to coaching result display.</p>
+
+    <!-- Info Reference Cards -->
+    <div class="info-cards">
+        <div class="info-card lane-triangle-bg">
+            <div class="info-card-header"><span class="lane-badge lane-triangle">Triangle</span> Responsibilities</div>
+            <ul>
+                <li>Authoritative replay simulation</li>
+                <li>Per-frame event application</li>
+                <li>Lock signal and board transition source</li>
+                <li>Spawn/lock context for Fusion eval bridge</li>
+            </ul>
+        </div>
+        <div class="info-card lane-fusion-bg">
+            <div class="info-card-header"><span class="lane-badge lane-fusion">Fusion</span> Runtime Path</div>
+            <ul>
+                <li>initFusion() loads WASM module in worker</li>
+                <li>evaluatePositionSafe() bridges to Rust evaluate_position</li>
+                <li>search.rs beam search (depth 12, width 300 default)</li>
+                <li>state.rs deterministic coaching state transition</li>
+                <li>analysis.rs major-first severity classification</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Vertical Flow Timeline -->
+    <div class="flow-timeline">
+
+        <!-- Step 1 -->
+        <div class="flow-step">
+            <div class="lane-badge lane-ui">UI</div>
+            <div class="step-content">
+                <div class="step-header">
+                    <span class="step-number">①</span>
+                    <span class="step-title">User clicks Analyze</span>
+                </div>
+                <span class="step-detail">startAnalysis() creates worker, posts START(configs, replays, frequency)</span>
+            </div>
+        </div>
+
+        <div class="flow-connector">
+            <div class="connector-line"><div class="connector-arrow">▼</div></div>
+            <span class="connector-label">posts START message</span>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="flow-step">
+            <div class="lane-badge lane-worker">Worker</div>
+            <div class="step-content">
+                <div class="step-header">
+                    <span class="step-number">②</span>
+                    <span class="step-title">Validate + Preprocess</span>
+                </div>
+                <span class="step-detail">compute totalFrames, splitFrames, init per-player Triangle engines</span>
+            </div>
+        </div>
+
+        <div class="flow-connector">
+            <div class="connector-line"><div class="connector-arrow">▼</div></div>
+        </div>
+
+        <!-- Loop: Snapshot -->
+        <div class="loop-group">
+            <div class="loop-label">Snapshot Phase</div>
+            <div class="flow-step">
+                <div class="lane-badge lane-worker">Worker</div>
+                <div class="step-content">
+                    <div class="step-header">
+                        <span class="step-number">③</span>
+                        <span class="step-title">Snapshot Phase Loop</span>
+                    </div>
+                    <span class="step-detail">tick engines to target frames, deep-copy snapshots, emit PROGRESS</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="flow-connector">
+            <div class="connector-line"><div class="connector-arrow">▼</div></div>
+        </div>
+
+        <!-- Step 4 -->
+        <div class="flow-step">
+            <div class="lane-badge lane-worker">Worker</div>
+            <div class="step-content">
+                <div class="step-header">
+                    <span class="step-number">④</span>
+                    <span class="step-title">Emit COMPLETE</span>
+                </div>
+                <span class="step-detail">Send snapshots/frames. Exit if analyzePlayers=none</span>
+            </div>
+        </div>
+
+        <div class="flow-connector">
+            <div class="connector-line"><div class="connector-arrow">▼</div></div>
+            <span class="connector-label">if players to analyze</span>
+        </div>
+
+        <!-- Loop: Player Analysis (Outer) -->
+        <div class="loop-group">
+            <div class="loop-label">Per-Player Analysis</div>
+            
+            <div class="flow-step">
+                <div class="lane-badge lane-worker">Worker</div>
+                <div class="step-content">
+                    <div class="step-header">
+                        <span class="step-number">⑤</span>
+                        <span class="step-title">Player Analysis Loop</span>
+                    </div>
+                    <span class="step-detail">Iterate targetPlayers: reset engines, select active engine, begin frame loop</span>
+                </div>
+            </div>
+
+            <!-- Loop: Frame/Tick (Inner) -->
+            <div class="loop-group" style="margin-left: 16px; border-left-style: dashed;">
+                <div class="loop-label">Frame/Tick Processing</div>
+                
+                <div class="flow-step">
+                    <div class="lane-badge lane-worker">Worker</div>
+                    <div class="step-content">
+                        <div class="step-header">
+                            <span class="step-number">⑥</span>
+                            <span class="step-title">Frame + Tick Loop</span>
+                        </div>
+                        <span class="step-detail">captureSpawnContext() → engine.tick() nested loop → captureLockContext() → detectBoardChange()</span>
+                        
+                        <div class="cross-call">
+                            <span class="call-arrow">→</span>
+                            <span class="call-target">Triangle</span>
+                            <span>engine.tick() drives per-frame simulation</span>
+                        </div>
+                        
+                        <div class="cross-call">
+                            <span class="call-arrow">→</span>
+                            <span class="call-target">Fusion WASM</span>
+                            <span>evaluatePositionSafe() → beam search (d=12, w=300)</span>
+                        </div>
+
+                        <span class="step-detail" style="margin-top:8px; display:block; border-top:1px solid var(--color-border); padding-top:4px;">
+                            if lock detected: buildCleanPostBoard() → flagImportantMoves() → emit ANALYSIS_RESULT(v2)
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flow-step">
+                <div class="lane-badge lane-worker">Worker</div>
+                <div class="step-content">
+                    <div class="step-header">
+                        <span class="step-number">⑦</span>
+                        <span class="step-title">Emit ANALYSIS_COMPLETE(v2)</span>
+                    </div>
+                    <span class="step-detail">finish player loop, reset engines, catch errors</span>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="flow-connector">
+            <div class="connector-line"><div class="connector-arrow">▼</div></div>
+            <span class="connector-label">streams results to UI</span>
+        </div>
+
+        <!-- Step 6-UI -->
+        <div class="flow-step">
+            <div class="lane-badge lane-ui">UI</div>
+            <div class="step-content">
+                <div class="step-header">
+                    <span class="step-number">⑥-UI</span>
+                    <span class="step-title">Receive ANALYSIS_RESULT stream</span>
+                </div>
+                <span class="step-detail">map displayFrame=max(1, preLockFrame-1), cache per-player result + flags</span>
+            </div>
+        </div>
+
+        <div class="flow-connector">
+            <div class="connector-line"><div class="connector-arrow">▼</div></div>
+        </div>
+
+        <!-- Step 8 -->
+        <div class="flow-step">
+            <div class="lane-badge lane-ui">UI</div>
+            <div class="step-content">
+                <div class="step-header">
+                    <span class="step-number">⑧</span>
+                    <span class="step-title">On ANALYSIS_COMPLETE</span>
+                </div>
+                <span class="step-detail">applyTemporalRelabelForPlayer(), rebuildDisplayFlagsForPlayer(), overlay/timeline update</span>
+            </div>
+        </div>
+
+        <div class="flow-connector">
+            <div class="connector-line"><div class="connector-arrow">▼</div></div>
+        </div>
+
+        <!-- Step 9 -->
+        <div class="flow-step">
+            <div class="lane-badge lane-ui">UI</div>
+            <div class="step-content">
+                <div class="step-header">
+                    <span class="step-number">⑨</span>
+                    <span class="step-title">Playback Loop</span>
+                </div>
+                <span class="step-detail">Viewer navigation + marker rendering active</span>
+            </div>
+        </div>
+
+        <!-- Error Guard -->
+        <div class="error-box">
+            <span class="error-title">Error Guard</span>
+            Worker posts ERROR → UI clears analyzing gate + terminates worker state
+        </div>
+
+    </div>
+
+    <div class="footer">
+        Source: ReplayViewer.svelte, snapshotWorker.ts, workerProtocol.ts, harness.ts, fusion-engine/src/{search,state,analysis,calibration,wasm}.rs
+    </div>
+
+    <!-- SECTION 2 -->
+    <h2><span class="section-number">2</span> Current Structured Architecture & Capabilities</h2>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 10%">Layer</th>
+                <th style="width: 20%">Structure</th>
+                <th style="width: 30%">Responsibility</th>
+                <th style="width: 20%">Capability</th>
+                <th style="width: 10%">Status</th>
+                <th style="width: 10%">Notes</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>UI</strong></td>
+                <td>ReplayViewer.svelte</td>
+                <td>Orchestration, playback state, overlay display, aggregation</td>
+                <td>Deterministic replay analysis stream</td>
+                <td><span class="badge badge-active">Active</span></td>
+                <td>v2 protocol messages</td>
+            </tr>
+            <tr>
+                <td><strong>Worker</strong></td>
+                <td>snapshotWorker.ts<br>workerProtocol.ts</td>
+                <td>Off-main-thread replay sim and analysis streaming</td>
+                <td>Pre-lock timing alignment</td>
+                <td><span class="badge badge-active">Active</span></td>
+                <td>Uses <code>preLockFrame - 1</code></td>
+            </tr>
+            <tr>
+                <td><strong>Sim</strong></td>
+                <td>Triangle Engine</td>
+                <td>Authoritative game progression, lock/spawn context</td>
+                <td>Attack-aware best-move search</td>
+                <td><span class="badge badge-active">Active</span></td>
+                <td>Beam search + hold support</td>
+            </tr>
+            <tr>
+                <td><strong>Eval</strong></td>
+                <td>Fusion WASM</td>
+                <td>Board comparison, best move search, severity output</td>
+                <td>Major-first severity taxonomy</td>
+                <td><span class="badge badge-active">Active</span></td>
+                <td>Obligation checks</td>
+            </tr>
+            <tr>
+                <td><strong>Policy</strong></td>
+                <td>state.rs<br>analysis.rs</td>
+                <td>Deterministic coaching state machine</td>
+                <td>Backend benchmark at scale</td>
+                <td><span class="badge badge-active">Active</span></td>
+                <td>150-replay harness</td>
+            </tr>
+            <tr>
+                <td><strong>Calib</strong></td>
+                <td>calibration.rs</td>
+                <td>Skill-bucket threshold generation</td>
+                <td>Corpus-grounded calibration</td>
+                <td><span class="badge badge-partial">WIP</span></td>
+                <td>Pipeline exists</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- SECTION 3 -->
+    <h2><span class="section-number">3</span> Upstream Diff Snapshot</h2>
+    <div class="diff-container">
+        <!-- Panel A -->
+        <div class="panel">
+            <div class="panel-header">Panel A: MochBot/mosaic (Frontend Upstream)</div>
+            <div class="panel-content">
+                <table>
+                    <tr>
+                        <td><strong>Remote Wiring</strong></td>
+                        <td><code>origin</code> = MochBot/mosaic.git</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Graph State</strong></td>
+                        <td>0 behind, 8 ahead</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Diffstat</strong></td>
+                        <td>75 files changed, +14,926 / -1,362</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Local Head</strong></td>
+                        <td><code>75cfb18</code> (snapshot series)</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Upstream Tip</strong></td>
+                        <td><code>1cd05f99</code> @ 2026-02-10</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- Panel B -->
+        <div class="panel">
+            <div class="panel-header">Panel B: MochBot/fusion (Engine Target)</div>
+            <div class="panel-content">
+                <table>
+                    <tr>
+                        <td><strong>Remote Wiring</strong></td>
+                        <td><code>origin</code> = Gladdonilli/Fusion2.git (Local Fork)</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Graph State</strong></td>
+                        <td>Not directly computable (structural divergence)</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Local Head</strong></td>
+                        <td><code>252fc65</code> (Fusion V2 crate)</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Origin Delta</strong></td>
+                        <td>0 behind, 6 ahead; +9,971 / -1,089</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Upstream Tip</strong></td>
+                        <td><code>cc33ae39</code> @ 2026-02-14</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+    <p style="margin-top: 12px; font-size: 13px; color: var(--color-text-subtle);">
+        * Mosaic comparison is exact commit-graph divergence. Fusion comparison is structural + local-origin divergence (repo not wired to MochBot/fusion for graph diffing).
+    </p>
+
+    <!-- SECTION 4 -->
+    <h2><span class="section-number">4</span> Practical Reading Guide</h2>
+    <ol class="guide-list">
+        <li><strong>Trace Chronology:</strong> Read Section 1 left-to-right to understand the runtime event loop and how the UI hands off to the Worker and WASM.</li>
+        <li><strong>Map Responsibilities:</strong> Use Section 2 to locate the concrete files responsible for each step (e.g., where "Snapshot Phase" actually lives in code).</li>
+        <li><strong>Assess Divergence:</strong> Use Section 3 to distinguish between code that is safely upstream (Mosaic) and code that is structurally distinct (Fusion V2).</li>
+    </ol>
+
+</body>
+</html>

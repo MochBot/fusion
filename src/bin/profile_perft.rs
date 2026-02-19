@@ -1,7 +1,6 @@
 // profiling harness: measures where time is spent in perft
 // breakdown: generate vs do_move vs board_clone
 
-use std::hint::black_box;
 use std::time::Instant;
 
 use direct_cobra_copy::board::Board;
