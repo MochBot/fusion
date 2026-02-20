@@ -97,7 +97,7 @@ fn generate_inner<const P: usize, const CHECK_SPIN: bool>(
 
     for x in 0..COL_NB {
         for r in 0..canonical_sz {
-            searched[x][r] = cm.get(x, unsafe { std::mem::transmute(r as u8) });
+            searched[x][r] = cm.get(x, Rotation::from_u8(r as u8));
             if is_group2 {
                 searched[x][r + 2] = searched[x][r];
             }
@@ -124,7 +124,7 @@ fn generate_inner<const P: usize, const CHECK_SPIN: bool>(
     } else {
         for x in 0..COL_NB {
             for ri in 0..canonical_sz {
-                let r: Rotation = unsafe { std::mem::transmute(ri as u8) };
+                let r: Rotation = Rotation::from_u8(ri as u8);
                 if !in_bounds(p, r, x as i32) {
                     continue;
                 }
@@ -168,7 +168,7 @@ fn generate_inner<const P: usize, const CHECK_SPIN: bool>(
     while remaining != 0 {
         let index = ctz(remaining);
         let x = (index >> 2) as usize;
-        let r: Rotation = unsafe { std::mem::transmute((index & 3) as u8) };
+        let r: Rotation = Rotation::from_u8((index & 3) as u8);
         let ri = r as usize;
 
         debug_assert!(is_ok_x(x as i32));
@@ -486,7 +486,7 @@ fn generate16<const P: usize>(cols: &[Bitboard; COL_NB], moves: &mut MoveBuffer)
 
         while m != 0 {
             let y = ctz(m);
-            let r: Rotation = unsafe { std::mem::transmute((y / 16) as u8) };
+            let r: Rotation = Rotation::from_u8((y / 16) as u8);
             moves.push(Move::new(p, r, x as i32, (y % 16) as i32, false));
             m &= m - 1;
         }
@@ -532,7 +532,7 @@ fn generate16<const P: usize>(cols: &[Bitboard; COL_NB], moves: &mut MoveBuffer)
                 let mut bits = m;
                 while bits != 0 {
                     let y = ctz(bits);
-                    let r: Rotation = unsafe { std::mem::transmute((y / 16) as u8) };
+                    let r: Rotation = Rotation::from_u8((y / 16) as u8);
                     moves.push(Move::new(p, r, x as i32, (y % 16) as i32, false));
                     bits &= bits - 1;
                 }
@@ -571,7 +571,7 @@ fn generate16<const P: usize>(cols: &[Bitboard; COL_NB], moves: &mut MoveBuffer)
                               cm16: &CollisionMap16,
                               x: usize| {
                 for ri in 0..ROTATION_NB {
-                    let r: Rotation = unsafe { std::mem::transmute(ri as u8) };
+                    let r: Rotation = Rotation::from_u8(ri as u8);
                     let shift_src = ri * 16;
                     let src_bits = (*current >> shift_src) & 0xFFFFu64;
                     if src_bits == 0 {
@@ -674,7 +674,7 @@ fn do_process_180<const P: usize>(
 ) {
     let p = piece_from_index(P);
     for ri in 0..ROTATION_NB {
-        let r: Rotation = unsafe { std::mem::transmute(ri as u8) };
+        let r: Rotation = Rotation::from_u8(ri as u8);
         let shift_src = ri * 16;
         let src_bits = (*current >> shift_src) & 0xFFFFu64;
         if src_bits == 0 {
@@ -782,7 +782,7 @@ pub fn generate(b: &Board, moves: &mut MoveBuffer, p: Piece, force: bool) {
                 spin_map[x][0] = spins;
                 if spins != 0 {
                     for ri in 0..ROTATION_NB {
-                        let r: Rotation = unsafe { std::mem::transmute(ri as u8) };
+                        let r: Rotation = Rotation::from_u8(ri as u8);
                         if in_bounds(Piece::T, r, x as i32) {
                             let cw_r = rotate(Direction::CW, r);
                             spin_map[x][1 + ri] = spins & corners[ri] & corners[cw_r as usize];

@@ -29,7 +29,7 @@ pub fn canonical_r(p: Piece, r: Rotation) -> Rotation {
         Piece::O => Rotation::North,
         Piece::I | Piece::S | Piece::Z => {
             // r & 1: North/South -> North(0), East/West -> East(1)
-            unsafe { std::mem::transmute::<u8, Rotation>((r as u8) & 1) }
+            Rotation::from_u8((r as u8) & 1)
         }
         _ => r, // L, J, T
     }
@@ -69,7 +69,7 @@ pub fn rotate(d: Direction, r: Rotation) -> Rotation {
         Direction::CCW => (ri + 3) & 3,
         Direction::Flip => (ri + 2) & 3,
     };
-    unsafe { std::mem::transmute::<u8, Rotation>(result) }
+    Rotation::from_u8(result)
 }
 
 // -- Kick tables --
@@ -227,7 +227,7 @@ impl CollisionMap {
 
         for x in 0..COL_NB as i32 {
             for ri in 0..cs {
-                let r: Rotation = unsafe { std::mem::transmute::<u8, Rotation>(ri as u8) };
+                let r: Rotation = Rotation::from_u8(ri as u8);
                 if !in_bounds(p, r, x) {
                     board[x as usize][ri] = !0u64;
                     continue;
@@ -272,7 +272,7 @@ impl CollisionMap16 {
         for x in 0..COL_NB as i32 {
             let mut val: Bitboard = 0;
             for ri in 0..ROTATION_NB as u8 {
-                let r: Rotation = unsafe { std::mem::transmute::<u8, Rotation>(ri) };
+                let r: Rotation = Rotation::from_u8(ri);
                 let rr = canonical_r(p, r);
                 let lane: u64;
 

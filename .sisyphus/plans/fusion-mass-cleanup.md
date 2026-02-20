@@ -209,7 +209,7 @@ Max Concurrent: 6 (Wave 2)
 > Implementation + Verification = ONE Task. Never separate.
 > EVERY task MUST have: Recommended Agent Profile + Parallelization info + QA Scenarios.
 
-- [ ] 1. Pre-cleanup snapshot + baseline recording
+- [x] 1. Pre-cleanup snapshot + baseline recording
 
   **What to do**:
   - Create JJ snapshot: `jj commit -m "snapshot: pre-cleanup baseline"`
@@ -263,7 +263,7 @@ Max Concurrent: 6 (Wave 2)
   - Message: `snapshot: pre-cleanup baseline`
   - Files: (none — snapshot only)
 
-- [ ] 2. Fix MaybeUninit UB in movegen.rs (CRITICAL — unblocks clippy)
+- [x] 2. Fix MaybeUninit UB in movegen.rs (CRITICAL — unblocks clippy)
 
   **What to do**:
   - Fix movegen.rs:23 — `MaybeUninit::uninit().assume_init()` on `[Move; 256]` array in MoveBuffer

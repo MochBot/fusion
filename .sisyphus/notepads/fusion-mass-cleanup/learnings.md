@@ -13,3 +13,16 @@
 - Remaining clippy: 51 style errors (separate tasks)
 - All 3 enums (Piece, Rotation, SpinType) have #[repr(u8)] — T3 can use match-based conversion
 - Tests: 145 pass, 0 fail, 4 ignored (unchanged)
+
+## 2026-02-20 Task 3: Replace transmute with safe from_u8 conversions
+- Added `const fn from_u8(v: u8) -> Self` match-based methods to Piece, Rotation, SpinType in header.rs
+- All 15 transmute calls replaced: header.rs(3), gen.rs(4), movegen.rs(8)
+- Every transmute was the sole unsafe operation in its block — all 15 unsafe blocks removed
+- Unsafe count: 17 → 2 (remaining: board.rs get_unchecked_mut, movegen.rs get_unchecked_mut)
+- Transmute count: 15 → 0
+- Piece variants: I=0, O=1, T=2, L=3, J=4, S=5, Z=6 (note L=3/J=4, not what task description said)
+- from_u8 panics on invalid discriminants — matches transmute's UB-on-invalid behavior but safely
+- All methods are const fn — required because Move::piece(), Move::rotation(), Move::spin() are const fn
+- Tests: 145 pass, 0 fail
+- Clippy transmute warnings: 0 (eliminated missing_transmute_annotations lints)
+- Pre-existing clippy style lints (49) left for T4/T8

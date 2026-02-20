@@ -1,0 +1,39 @@
+Task 3: Replace all transmute with safe from_u8 conversions
+===========================================================
+
+Date: 2026-02-20
+Files modified: src/header.rs, src/gen.rs, src/movegen.rs
+
+Changes Made:
+- Added const fn from_u8(v: u8) -> Self methods to Piece, Rotation, SpinType enums in header.rs
+- Replaced all 15 std::mem::transmute calls with safe from_u8() match-based conversions
+
+Transmute Sites Replaced (15 total):
+  header.rs:168 - Piece::from_u8(raw as u8)          [was: unsafe { transmute(raw as u8) }]
+  header.rs:173 - Rotation::from_u8(...)              [was: unsafe { transmute(...) }]
+  header.rs:180 - SpinType::from_u8(val)              [was: unsafe { transmute(val) }]
+  gen.rs:32     - Rotation::from_u8((r as u8) & 1)    [was: unsafe { transmute::<u8, Rotation>(...) }]
+  gen.rs:72     - Rotation::from_u8(result)            [was: unsafe { transmute::<u8, Rotation>(result) }]
+  gen.rs:230    - Rotation::from_u8(ri as u8)          [was: unsafe { transmute::<u8, Rotation>(ri as u8) }]
+  gen.rs:275    - Rotation::from_u8(ri)                [was: unsafe { transmute::<u8, Rotation>(ri) }]
+  movegen.rs:100 - Rotation::from_u8(r as u8)         [was: unsafe { transmute(r as u8) }]
+  movegen.rs:127 - Rotation::from_u8(ri as u8)        [was: unsafe { transmute(ri as u8) }]
+  movegen.rs:171 - Rotation::from_u8((index & 3)...)  [was: unsafe { transmute((index & 3) as u8) }]
+  movegen.rs:489 - Rotation::from_u8((y / 16)...)     [was: unsafe { transmute((y / 16) as u8) }]
+  movegen.rs:535 - Rotation::from_u8((y / 16)...)     [was: unsafe { transmute((y / 16) as u8) }]
+  movegen.rs:574 - Rotation::from_u8(ri as u8)        [was: unsafe { transmute(ri as u8) }]
+  movegen.rs:677 - Rotation::from_u8(ri as u8)        [was: unsafe { transmute(ri as u8) }]
+  movegen.rs:785 - Rotation::from_u8(ri as u8)        [was: unsafe { transmute(ri as u8) }]
+
+Unsafe Block Count:
+  Before: 17 (across board.rs, header.rs, gen.rs, movegen.rs)
+  After:  2  (board.rs:220 get_unchecked_mut, movegen.rs:30 get_unchecked_mut)
+  Reduction: 15 unsafe blocks removed (all were transmute-only blocks)
+
+Verification:
+  grep -rn "transmute" src/ -> 0 matches
+  cargo clippy --all-targets 2>&1 | grep transmute -> 0 matches
+  cargo test: 145 passed, 0 failed (131 unit + 4 integration perft + 10 presim validation)
+  No #[allow] attributes added
+  No algorithm logic changed
+  No function signatures changed

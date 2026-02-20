@@ -17,6 +17,21 @@ pub enum Piece {
     Z = 6,
 }
 
+impl Piece {
+    pub const fn from_u8(v: u8) -> Self {
+        match v {
+            0 => Piece::I,
+            1 => Piece::O,
+            2 => Piece::T,
+            3 => Piece::L,
+            4 => Piece::J,
+            5 => Piece::S,
+            6 => Piece::Z,
+            _ => panic!("invalid Piece discriminant"),
+        }
+    }
+}
+
 pub const PIECE_NB: usize = 7;
 /// Sentinel used in Move bitfield to mark T-spin moves
 pub const TSPIN: u16 = 7;
@@ -41,6 +56,18 @@ pub enum Rotation {
     West = 3,
 }
 
+impl Rotation {
+    pub const fn from_u8(v: u8) -> Self {
+        match v {
+            0 => Rotation::North,
+            1 => Rotation::East,
+            2 => Rotation::South,
+            3 => Rotation::West,
+            _ => panic!("invalid Rotation discriminant"),
+        }
+    }
+}
+
 pub const ROTATION_NB: usize = 4;
 
 pub const ALL_ROTATIONS: [Rotation; ROTATION_NB] = [
@@ -56,6 +83,17 @@ pub enum SpinType {
     NoSpin = 0,
     Mini = 1,
     Full = 2,
+}
+
+impl SpinType {
+    pub const fn from_u8(v: u8) -> Self {
+        match v {
+            0 => SpinType::NoSpin,
+            1 => SpinType::Mini,
+            2 => SpinType::Full,
+            _ => panic!("invalid SpinType discriminant"),
+        }
+    }
 }
 
 pub const SPIN_NB: usize = 3;
@@ -164,20 +202,19 @@ impl Move {
             // TSPIN maps to T
             Piece::T
         } else {
-            // Safety: values 0-6 are valid Piece variants
-            unsafe { std::mem::transmute(raw as u8) }
+            Piece::from_u8(raw as u8)
         }
     }
 
     pub const fn rotation(self) -> Rotation {
-        unsafe { std::mem::transmute(((self.data >> 13) & 0x3) as u8) }
+        Rotation::from_u8(((self.data >> 13) & 0x3) as u8)
     }
 
     pub const fn spin(self) -> SpinType {
         let piece_raw = (self.data >> 10) & 0x7;
         let spin_bit = (self.data >> 15) & 0x1;
         let val = (piece_raw == TSPIN) as u8 + spin_bit as u8;
-        unsafe { std::mem::transmute(val) }
+        SpinType::from_u8(val)
     }
 
     pub const fn x(self) -> i32 {
