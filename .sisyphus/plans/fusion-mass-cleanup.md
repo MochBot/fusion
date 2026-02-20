@@ -339,7 +339,7 @@ Max Concurrent: 6 (Wave 2)
   - Files: `src/movegen.rs`
   - Pre-commit: `CLOUD_EXEC_SKIP=1 cargo test`
 
-- [ ] 3. Replace all 15 transmute calls with safe conversions
+- [x] 3. Replace all 15 transmute calls with safe conversions
 
   **What to do**:
   - First: read Task 2's `.sisyphus/evidence/task-2-repr-check.txt` to check enum repr status

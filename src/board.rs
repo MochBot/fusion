@@ -2,6 +2,7 @@
 // Y-up convention (row 0 = bottom), matching Cobra
 
 use crate::header::*;
+use std::fmt;
 
 pub const BOARD_HEIGHT: usize = 40;
 pub const FULL_ROW: u16 = (1 << COL_NB) - 1; // 0x3FF
@@ -64,7 +65,7 @@ impl Board {
     /// Return cached column bitboards — O(1).
     /// Maintained in sync with rows by place/clear_lines/spawn_garbage/clear.
     #[inline(always)]
-    pub fn compute_cols(&self) -> [Bitboard; COL_NB as usize] {
+    pub fn compute_cols(&self) -> [Bitboard; COL_NB] {
         self.cols
     }
 
@@ -184,31 +185,13 @@ impl Board {
         0
     }
 
-    pub fn to_string(&self) -> String {
-        let lines = 20;
-        let mut output = String::with_capacity((lines + 1) * 86 + 44);
-        output.push_str("\n +---+---+---+---+---+---+---+---+---+---+\n");
-        for y in (0..=lines).rev() {
-            for x in 0..COL_NB {
-                output.push_str(" | ");
-                output.push(if self.rows[y] & (1 << x) != 0 {
-                    '#'
-                } else {
-                    ' '
-                });
-            }
-            output.push_str(" |\n +---+---+---+---+---+---+---+---+---+---+\n");
-        }
-        output
-    }
-
     pub fn to_string_with_move(&self, m: &Move) -> String {
         let mut output = self.to_string();
         if !self.obstructed_move(m) {
             let lines: i32 = 20;
             let pc = m.cells();
-            let x = m.x() as i32;
-            let y = m.y() as i32;
+            let x = m.x();
+            let y = m.y();
             for i in 0..4usize {
                 let inverse_y = lines - if i == 0 { y } else { pc[i - 1].y as i32 + y };
                 if inverse_y < 0 {
@@ -324,6 +307,26 @@ impl State {
 impl Default for State {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl fmt::Display for Board {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let lines = 20;
+        let mut output = String::with_capacity((lines + 1) * 86 + 44);
+        output.push_str("\n +---+---+---+---+---+---+---+---+---+---+\n");
+        for y in (0..=lines).rev() {
+            for x in 0..COL_NB {
+                output.push_str(" | ");
+                output.push(if self.rows[y] & (1 << x) != 0 {
+                    '#'
+                } else {
+                    ' '
+                });
+            }
+            output.push_str(" |\n +---+---+---+---+---+---+---+---+---+---+\n");
+        }
+        write!(f, "{}", output)
     }
 }
 

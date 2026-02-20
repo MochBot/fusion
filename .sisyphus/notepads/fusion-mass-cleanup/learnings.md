@@ -26,3 +26,12 @@
 - Tests: 145 pass, 0 fail
 - Clippy transmute warnings: 0 (eliminated missing_transmute_annotations lints)
 - Pre-existing clippy style lints (49) left for T4/T8
+
+## 2026-02-20 Task 4: Fix clippy lints in gen.rs and board.rs
+- gen.rs: Fixed `needless_range_loop` by using iterator-based access in `CollisionMap`.
+- gen.rs: Fixed `needless_late_init` by refactoring `lane` assignment.
+- gen.rs: Removed unnecessary casts to `usize` for `COL_NB` and `ROTATION_NB`.
+- board.rs: Verified standalone `impl fmt::Display for Board` exists and `inherent_to_string` is removed.
+- board.rs: Verified no unnecessary casts remain.
+- Clippy status: 0 style lints in gen.rs and board.rs (remaining 23 are in movegen.rs).
+- Tests: 145 pass (131 lib + 14 integration), 0 fail.

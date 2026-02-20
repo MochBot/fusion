@@ -128,7 +128,7 @@ pub fn extract_whitelist_features(input: &TetraStatsFeatureInput) -> TetraStatsF
 
     let opener_axis =
         ((nmapm + nmpps * 0.75 + nmvsapm * -10.0 + nmapp * 0.75 + nmdsp * -0.25) / 3.5) + 0.5;
-    let plonk_axis = ((nmgbe + nmapp + nmdsp * 0.75 + nmpps * -1.0) / 2.73) + 0.5;
+    let plonk_axis = ((nmgbe + nmapp + nmdsp * 0.75 - nmpps) / 2.73) + 0.5;
     let stride_axis = ((nmapm * -0.25 + nmpps + nmapp * -2.0 + nmdsp * -0.5) * 0.79) + 0.5;
     let infds_axis =
         ((nmdsp + nmapp * -0.75 + nmapm * 0.5 + nmvsapm * 1.5 + nmpps * 0.5) * 0.9) + 0.5;

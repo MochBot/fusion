@@ -95,11 +95,11 @@ fn generate_inner<const P: usize, const CHECK_SPIN: bool>(
     let remaining_index =
         |x: i32, r: Rotation| -> Bitboard { bb(x * ROTATION_NB as i32 + r as i32) };
 
-    for x in 0..COL_NB {
+    for (x, searched_x) in searched.iter_mut().enumerate() {
         for r in 0..canonical_sz {
-            searched[x][r] = cm.get(x, Rotation::from_u8(r as u8));
+            searched_x[r] = cm.get(x, Rotation::from_u8(r as u8));
             if is_group2 {
-                searched[x][r + 2] = searched[x][r];
+                searched_x[r + 2] = searched_x[r];
             }
         }
     }
@@ -254,18 +254,18 @@ fn generate_inner<const P: usize, const CHECK_SPIN: bool>(
 
                     let mut current = to_search[x][ri];
 
-                    for i in 0..n {
+                    for (i, kick) in kicks.iter().enumerate().take(n) {
                         if current == 0 {
                             break;
                         }
-                        let x1 = x as i32 + kicks[i].x as i32 + off.x as i32;
+                        let x1 = x as i32 + kick.x as i32 + off.x as i32;
                         if !is_ok_x(x1) {
                             continue;
                         }
                         let x1u = x1 as usize;
 
                         let threshold: i32 = 3;
-                        let y1 = threshold + kicks[i].y as i32 + off.y as i32;
+                        let y1 = threshold + kick.y as i32 + off.y as i32;
 
                         let mut m = ((current << y1) >> threshold) & !cm.get(x1u, rc);
                         current ^= (m << threshold) >> y1;
@@ -395,18 +395,18 @@ fn do_rotate_180<const P: usize, const CHECK_SPIN: bool>(
 
     let mut current = current_search;
 
-    for i in 0..n {
+    for (i, kick) in kicks.iter().enumerate().take(n) {
         if current == 0 {
             break;
         }
-        let x1 = x as i32 + kicks[i].x as i32 + off.x as i32;
+        let x1 = x as i32 + kick.x as i32 + off.x as i32;
         if !is_ok_x(x1) {
             continue;
         }
         let x1u = x1 as usize;
 
         let threshold: i32 = 3;
-        let y1 = threshold + kicks[i].y as i32 + off.y as i32;
+        let y1 = threshold + kick.y as i32 + off.y as i32;
 
         let mut m = ((current << y1) >> threshold) & !cm.get(x1u, rc);
         current ^= (m << threshold) >> y1;
@@ -570,7 +570,7 @@ fn generate16<const P: usize>(cols: &[Bitboard; COL_NB], moves: &mut MoveBuffer)
                               remaining: &mut u32,
                               cm16: &CollisionMap16,
                               x: usize| {
-                for ri in 0..ROTATION_NB {
+                for (ri, kicks) in kicks_rot.iter().enumerate() {
                     let r: Rotation = Rotation::from_u8(ri as u8);
                     let shift_src = ri * 16;
                     let src_bits = (*current >> shift_src) & 0xFFFFu64;
@@ -581,7 +581,6 @@ fn generate16<const P: usize>(cols: &[Bitboard; COL_NB], moves: &mut MoveBuffer)
                     let r1 = rotate(d, r);
                     let shift_dest = (r1 as usize) * 16;
                     let off = canonical_offset(p, r) - canonical_offset(p, r1);
-                    let kicks = &kicks_rot[ri];
                     let n = if !ACTIVE_RULES.srs_plus && kicks.len() == 6 {
                         2
                     } else {
@@ -589,18 +588,18 @@ fn generate16<const P: usize>(cols: &[Bitboard; COL_NB], moves: &mut MoveBuffer)
                     };
 
                     let mut src = src_bits;
-                    for i in 0..n {
+                    for kick in kicks.iter().take(n) {
                         if src == 0 {
                             break;
                         }
-                        let x1 = x as i32 + kicks[i].x as i32 + off.x as i32;
+                        let x1 = x as i32 + kick.x as i32 + off.x as i32;
                         if !is_ok_x(x1) {
                             continue;
                         }
                         let x1u = x1 as usize;
 
                         let threshold: i32 = 3;
-                        let shift_val = threshold + kicks[i].y as i32 + off.y as i32;
+                        let shift_val = threshold + kick.y as i32 + off.y as i32;
 
                         let mut m = (src << shift_val) >> threshold;
                         m &= !(cm16.get(x1u) >> shift_dest) & 0xFFFFu64;
@@ -673,7 +672,7 @@ fn do_process_180<const P: usize>(
     x: usize,
 ) {
     let p = piece_from_index(P);
-    for ri in 0..ROTATION_NB {
+    for (ri, kicks) in kicks_rot.iter().enumerate() {
         let r: Rotation = Rotation::from_u8(ri as u8);
         let shift_src = ri * 16;
         let src_bits = (*current >> shift_src) & 0xFFFFu64;
@@ -684,7 +683,6 @@ fn do_process_180<const P: usize>(
         let r1 = rotate(d, r);
         let shift_dest = (r1 as usize) * 16;
         let off = canonical_offset(p, r) - canonical_offset(p, r1);
-        let kicks = &kicks_rot[ri];
         let n = if !ACTIVE_RULES.srs_plus && kicks.len() == 6 {
             2
         } else {
@@ -692,18 +690,18 @@ fn do_process_180<const P: usize>(
         };
 
         let mut src = src_bits;
-        for i in 0..n {
+        for kick in kicks.iter().take(n) {
             if src == 0 {
                 break;
             }
-            let x1 = x as i32 + kicks[i].x as i32 + off.x as i32;
+            let x1 = x as i32 + kick.x as i32 + off.x as i32;
             if !is_ok_x(x1) {
                 continue;
             }
             let x1u = x1 as usize;
 
             let threshold: i32 = 3;
-            let shift_val = threshold + kicks[i].y as i32 + off.y as i32;
+            let shift_val = threshold + kick.y as i32 + off.y as i32;
 
             let mut m = (src << shift_val) >> threshold;
             m &= !(cm16.get(x1u) >> shift_dest) & 0xFFFFu64;
@@ -732,8 +730,8 @@ pub fn generate(b: &Board, moves: &mut MoveBuffer, p: Piece, force: bool) {
 
     let h = {
         let mut m = cols[0];
-        for i in 1..COL_NB {
-            m |= cols[i];
+        for col in cols.iter().skip(1) {
+            m |= col;
         }
         bitlen(m)
     };
@@ -894,7 +892,7 @@ impl MoveList {
                 return false;
             }
             let pc = m.cells();
-            let off = Coordinates::new(m.x() as i32, m.y() as i32);
+            let off = Coordinates::new(m.x(), m.y());
             if b.obstructed_coord(&off)
                 || b.obstructed_coord(&(pc[0] + off))
                 || b.obstructed_coord(&(pc[1] + off))
@@ -923,7 +921,7 @@ impl MoveList {
     }
 
     pub fn contains(&self, m: &Move) -> bool {
-        self.moves.as_slice().iter().any(|mv| *mv == *m)
+        self.moves.as_slice().contains(m)
     }
 
     pub fn iter(&self) -> std::slice::Iter<'_, Move> {

@@ -26,17 +26,17 @@ pub fn stable_sample_fingerprint(sample: &ReplaySample) -> u64 {
 }
 
 pub fn severe_truth_label(fingerprint: u64) -> bool {
-    fingerprint % 5 == 0
+    fingerprint.is_multiple_of(5)
 }
 
 pub fn severe_pred_label(fingerprint: u64) -> bool {
-    fingerprint % 5 == 0
+    fingerprint.is_multiple_of(5)
 }
 
 pub fn obligation_required_label(fingerprint: u64) -> bool {
-    ((fingerprint >> 3) % 4) == 0
+    (fingerprint >> 3).is_multiple_of(4)
 }
 
 pub fn obligation_met_label(fingerprint: u64) -> bool {
-    ((fingerprint >> 5) % 100) != 0
+    !((fingerprint >> 5).is_multiple_of(100))
 }

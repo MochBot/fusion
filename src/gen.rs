@@ -81,10 +81,10 @@ pub fn rotate(d: Direction, r: Rotation) -> Rotation {
 //   direction 0 = CW, 1 = CCW
 // Each entry: [4 rotations][5 offsets]
 pub type Offsets5 = [Coordinates; 5];
-pub type OffsetsRot5 = [Offsets5; ROTATION_NB as usize];
+pub type OffsetsRot5 = [Offsets5; ROTATION_NB];
 
 pub type Offsets6 = [Coordinates; 6];
-pub type OffsetsRot6 = [Offsets6; ROTATION_NB as usize];
+pub type OffsetsRot6 = [Offsets6; ROTATION_NB];
 
 macro_rules! c {
     ($x:expr, $y:expr) => {
@@ -92,7 +92,7 @@ macro_rules! c {
     };
 }
 
-pub static KICKS: [[[Offsets5; ROTATION_NB as usize]; DIRECTION_NB]; 3] = [
+pub static KICKS: [[[Offsets5; ROTATION_NB]; DIRECTION_NB]; 3] = [
     // [0] LJSZT
     [
         // CW
@@ -146,7 +146,7 @@ pub static KICKS: [[[Offsets5; ROTATION_NB as usize]; DIRECTION_NB]; 3] = [
     ],
 ];
 
-pub static KICKS_180: [[Offsets6; ROTATION_NB as usize]; 2] = [
+pub static KICKS_180: [[Offsets6; ROTATION_NB]; 2] = [
     // [0] LJSZT
     [
         [c!(0, 0), c!(0, 1), c!(1, 1), c!(-1, 1), c!(1, 0), c!(-1, 0)],
@@ -216,20 +216,20 @@ pub fn kick_180_index(p: Piece) -> usize {
 // C++ CollisionMap<p>: board[COL_NB][canonicalSize] of Bitboard
 // Each entry is OR of column bitboards shifted by piece cell offsets
 pub struct CollisionMap {
-    pub board: [[Bitboard; 4]; COL_NB as usize], // max 4 canonical rotations
+    pub board: [[Bitboard; 4]; COL_NB], // max 4 canonical rotations
     pub canonical_size: usize,
 }
 
 impl CollisionMap {
-    pub fn new(cols: &[Bitboard; COL_NB as usize], p: Piece) -> Self {
+    pub fn new(cols: &[Bitboard; COL_NB], p: Piece) -> Self {
         let cs = canonical_size(p);
-        let mut board = [[0u64; 4]; COL_NB as usize];
+        let mut board = [[0u64; 4]; COL_NB];
 
         for x in 0..COL_NB as i32 {
-            for ri in 0..cs {
+            for (ri, entry) in board[x as usize].iter_mut().enumerate().take(cs) {
                 let r: Rotation = Rotation::from_u8(ri as u8);
                 if !in_bounds(p, r, x) {
-                    board[x as usize][ri] = !0u64;
+                    *entry = !0u64;
                     continue;
                 }
                 let pc = piece_table(p, r);
@@ -243,7 +243,7 @@ impl CollisionMap {
                         result |= cols[cx as usize] >> (cy as u32);
                     }
                 }
-                board[x as usize][ri] = result;
+                *entry = result;
             }
         }
 
@@ -262,22 +262,21 @@ impl CollisionMap {
 // C++ CollisionMap16<p>: board[COL_NB] single Bitboard per column
 // 4 rotations packed in 16-bit lanes: bits [0..15]=North, [16..31]=East, etc.
 pub struct CollisionMap16 {
-    pub board: [Bitboard; COL_NB as usize],
+    pub board: [Bitboard; COL_NB],
 }
 
 impl CollisionMap16 {
-    pub fn new(cols: &[Bitboard; COL_NB as usize], p: Piece) -> Self {
-        let mut board = [0u64; COL_NB as usize];
+    pub fn new(cols: &[Bitboard; COL_NB], p: Piece) -> Self {
+        let mut board = [0u64; COL_NB];
 
         for x in 0..COL_NB as i32 {
             let mut val: Bitboard = 0;
             for ri in 0..ROTATION_NB as u8 {
                 let r: Rotation = Rotation::from_u8(ri);
                 let rr = canonical_r(p, r);
-                let lane: u64;
 
-                if !in_bounds(p, rr, x) {
-                    lane = 0xFFFFu64;
+                let lane = if !in_bounds(p, rr, x) {
+                    0xFFFFu64
                 } else {
                     let pc = piece_table(p, rr);
                     let mut result = cols[x as usize];
@@ -290,8 +289,8 @@ impl CollisionMap16 {
                             result |= cols[cx as usize] >> (cy as u32);
                         }
                     }
-                    lane = result & 0xFFFFu64;
-                }
+                    result & 0xFFFFu64
+                };
 
                 val |= lane << (ri as u32 * 16);
             }
@@ -373,9 +372,9 @@ mod tests {
 
     #[test]
     fn test_kick_tables_size() {
-        assert_eq!(KICKS[0][0].len(), ROTATION_NB as usize);
+        assert_eq!(KICKS[0][0].len(), ROTATION_NB);
         assert_eq!(KICKS[0][0][0].len(), 5);
-        assert_eq!(KICKS_180[0].len(), ROTATION_NB as usize);
+        assert_eq!(KICKS_180[0].len(), ROTATION_NB);
         assert_eq!(KICKS_180[0][0].len(), 6);
     }
 }

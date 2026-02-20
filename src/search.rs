@@ -270,11 +270,7 @@ fn apply_futility_pruning(nodes: &mut Vec<SearchNode>, futility_delta: f32) {
     }
 
     let delta = futility_delta.max(0.0);
-    let best_tier = nodes
-        .iter()
-        .map(|node| policy_key(node))
-        .max()
-        .unwrap_or((0, 0));
+    let best_tier = nodes.iter().map(policy_key).max().unwrap_or((0, 0));
 
     nodes.retain(|node| policy_key(node) == best_tier);
 
@@ -828,7 +824,7 @@ mod tests {
 
     #[test]
     fn test_compare_prefers_survival_before_raw_score() {
-        let mut nodes = vec![
+        let mut nodes = &mut [
             make_node(
                 999.0,
                 crate::state::FatalityState::Critical,
