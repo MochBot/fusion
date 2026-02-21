@@ -83,3 +83,9 @@
 - Module-level `#[allow(dead_code)]` requires `#![allow(dead_code)]` at the top of the file using the inner attribute syntax `#!`.
 - Enum variants that trigger `enum_variant_names` (e.g. `Input::NoInput`) can be suppressed at the module level with `#![allow(clippy::enum_variant_names)]`.
 - AST-aware find-and-replace (`ast_grep_replace`) is exceptionally fast and safe for renaming enums (e.g. `Direction::CW` to `Direction::Cw`) globally across multiple files.
+
+### MoveBuffer and MoveList Extraction (T13)
+- `MoveBuffer` and `MoveList` successfully extracted to `src/move_buffer.rs`.
+- `MAX_MOVES` moved to `move_buffer.rs` and re-exported in `movegen.rs` alongside the structs.
+- When extracting code with matching braces like structs/impls, precise python line-range extraction is often safer than naive `sed` deletes to avoid mismatched brace compiler errors, especially on 1000+ line files. 
+- Using `crate::header::*` inside `move_buffer.rs` ensures all piece/board primitive types and functions like `is_ok_move` are correctly resolved.

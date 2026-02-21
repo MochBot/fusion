@@ -7,6 +7,7 @@ pub mod default_ruleset;
 pub mod eval;
 pub mod gen;
 pub mod header;
+pub mod move_buffer;
 pub mod movegen;
 pub mod pathfinder;
 pub mod perft;
