@@ -89,3 +89,4 @@
 - `MAX_MOVES` moved to `move_buffer.rs` and re-exported in `movegen.rs` alongside the structs.
 - When extracting code with matching braces like structs/impls, precise python line-range extraction is often safer than naive `sed` deletes to avoid mismatched brace compiler errors, especially on 1000+ line files. 
 - Using `crate::header::*` inside `move_buffer.rs` ensures all piece/board primitive types and functions like `is_ok_move` are correctly resolved.
+- **Extraction slice technique**: When extracting large chunks of code, slicing files by exact line markers (e.g., function start/end boundaries) using Python is often more reliable than complex AST or brace-matching scripts.

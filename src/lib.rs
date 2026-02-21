@@ -13,6 +13,8 @@ pub mod pathfinder;
 pub mod perft;
 pub mod replay_validation;
 pub mod ruleset;
+pub mod search_config;
+pub mod search_expand;
 pub mod search;
 pub mod state;
 pub mod tetrastats_features;

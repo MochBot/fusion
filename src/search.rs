@@ -1,84 +1,20 @@
 // search.rs -- beam search with hold for coaching engine
 // expands moves breadth-first, pruned to beam_width at each depth
 
-use crate::attack::AttackConfig;
+
 use crate::bag;
-use crate::board::Board;
-use crate::eval::{evaluate, EvalWeights};
-use crate::header::*;
-use crate::movegen::{generate, MoveBuffer};
-use crate::state::{CoachingState, GameState, TransitionObservation};
+
+use crate::eval::EvalWeights;
+
+
+use crate::state::GameState;
 use crate::transposition::{TranspositionTable, ZobristKeys, DEFAULT_TT_SIZE};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 
-pub struct SearchConfig {
-    pub beam_width: usize,
-    pub depth: usize,
-    pub futility_delta: f32,
-    pub time_budget_ms: Option<u64>,
-    pub use_tt: bool,
-    pub extend_queue_7bag: bool,
-    pub attack_config: AttackConfig,
-}
-
-impl Default for SearchConfig {
-    fn default() -> Self {
-        Self {
-            beam_width: 300,
-            depth: 12,
-            futility_delta: 3.0,
-            time_budget_ms: None,
-            use_tt: false,
-            extend_queue_7bag: true,
-            attack_config: AttackConfig::tetra_league(),
-        }
-    }
-}
-
-pub struct SearchResult {
-    pub best_move: Move,
-    pub hold_used: bool,
-    pub score: f32,
-    pub pv: Vec<Move>,
-    pub coaching_state: CoachingState,
-}
-
-/// Shared context for node expansion functions (`gen_and_eval_root`, `expand_node`).
-/// Groups evaluation weights, attack config, depth tracking, and transposition table refs.
-pub(crate) struct SearchExpansionContext<'a> {
-    pub weights: &'a EvalWeights,
-    pub remaining_depth: usize,
-    pub zobrist_keys: &'a ZobristKeys,
-    pub tt: &'a mut Option<TranspositionTable>,
-}
-
-/// Parameters for a single beam search iteration.
-/// Groups game state, queue, configuration, and search infrastructure.
-pub(crate) struct SearchIterationParams<'a> {
-    pub state: &'a GameState,
-    pub queue: &'a [Piece],
-    pub config: &'a SearchConfig,
-    pub weights: &'a EvalWeights,
-    pub max_depth: usize,
-    pub beam_width: usize,
-    pub zobrist_keys: &'a ZobristKeys,
-    pub tt: &'a mut Option<TranspositionTable>,
-}
-
-#[derive(Clone)]
-struct SearchNode {
-    board: Board,
-    score: f32,
-    hold: Option<Piece>,
-    b2b: u8,
-    combo: u32,
-    pending_garbage: u8,
-    coaching: CoachingState,
-    root_move: Move,
-    root_hold_used: bool,
-    path: Vec<Move>,
-}
+pub use crate::search_config::{SearchConfig, SearchNode, SearchResult};
+pub(crate) use crate::search_config::{SearchExpansionContext, SearchIterationParams};
+pub(crate) use crate::search_expand::{expand_node, gen_and_eval_root};
 
 /// beam search from game state
 /// returns the best move found, or None if no legal moves exist
@@ -358,144 +294,14 @@ fn expand_root(state: &GameState, ctx: &mut SearchExpansionContext<'_>) -> Vec<S
     nodes
 }
 
-fn gen_and_eval_root(
-    state: &GameState,
-    piece: Piece,
-    new_hold: Option<Piece>,
-    hold_used: bool,
-    ctx: &mut SearchExpansionContext<'_>,
-    nodes: &mut Vec<SearchNode>,
-) {
-    let mut moves = MoveBuffer::new();
-    generate(&state.board, &mut moves, piece, false);
-
-    for m in moves.as_slice() {
-        let mut result_board = state.board.clone();
-        let lines_cleared = result_board.do_move(m) as u8;
-        let next_pending_garbage = state.pending_garbage.saturating_sub(lines_cleared);
-        let spawn_envelope_blocked = GameState::spawn_envelope_blocked(&result_board);
-
-        let (next_b2b, next_combo) =
-            GameState::next_chain_values(state.b2b, state.combo, m, lines_cleared);
-        let coaching = state.coaching.transition(TransitionObservation {
-            resulting_height: result_board.height(),
-            resulting_b2b: next_b2b,
-            resulting_combo: next_combo,
-            lines_cleared,
-            hold_used,
-            pending_garbage: state.pending_garbage,
-            imminent_garbage: next_pending_garbage,
-            spawn_envelope_blocked,
-        });
-
-        let score = evaluate_with_tt(
-            &result_board,
-            ctx.weights,
-            ctx.remaining_depth,
-            ctx.zobrist_keys,
-            ctx.tt,
-        );
-
-        nodes.push(SearchNode {
-            board: result_board,
-            score,
-            hold: new_hold,
-            b2b: next_b2b,
-            combo: next_combo,
-            pending_garbage: next_pending_garbage,
-            coaching,
-            root_move: *m,
-            root_hold_used: hold_used,
-            path: vec![*m],
-        });
-    }
-}
-
-fn expand_node(
-    parent: &SearchNode,
-    piece: Piece,
-    new_hold: Option<Piece>,
-    hold_used: bool,
-    ctx: &mut SearchExpansionContext<'_>,
-    out: &mut Vec<SearchNode>,
-) {
-    let mut moves = MoveBuffer::new();
-    generate(&parent.board, &mut moves, piece, false);
-
-    for m in moves.as_slice() {
-        let mut result_board = parent.board.clone();
-        let lines_cleared = result_board.do_move(m) as u8;
-        let next_pending_garbage = parent.pending_garbage.saturating_sub(lines_cleared);
-        let spawn_envelope_blocked = GameState::spawn_envelope_blocked(&result_board);
-
-        let (next_b2b, next_combo) =
-            GameState::next_chain_values(parent.b2b, parent.combo, m, lines_cleared);
-        let coaching = parent.coaching.transition(TransitionObservation {
-            resulting_height: result_board.height(),
-            resulting_b2b: next_b2b,
-            resulting_combo: next_combo,
-            lines_cleared,
-            hold_used,
-            pending_garbage: parent.pending_garbage,
-            imminent_garbage: next_pending_garbage,
-            spawn_envelope_blocked,
-        });
-
-        let score = evaluate_with_tt(
-            &result_board,
-            ctx.weights,
-            ctx.remaining_depth,
-            ctx.zobrist_keys,
-            ctx.tt,
-        );
-
-        let mut path = parent.path.clone();
-        path.push(*m);
-
-        out.push(SearchNode {
-            board: result_board,
-            score,
-            hold: new_hold,
-            b2b: next_b2b,
-            combo: next_combo,
-            pending_garbage: next_pending_garbage,
-            coaching,
-            root_move: parent.root_move,
-            root_hold_used: parent.root_hold_used,
-            path,
-        });
-    }
-}
-
-fn evaluate_with_tt(
-    board: &Board,
-    weights: &EvalWeights,
-    remaining_depth: usize,
-    zobrist_keys: &ZobristKeys,
-    tt: &mut Option<TranspositionTable>,
-) -> f32 {
-    if let Some(table) = tt.as_mut() {
-        let depth = remaining_depth.min(u8::MAX as usize) as u8;
-        let hash = zobrist_keys.hash_board(board);
-
-        if let Some(score) = table.probe(hash, depth) {
-            return score;
-        }
-
-        let score = evaluate(board, weights);
-        table.store(hash, depth, score);
-        return score;
-    }
-
-    evaluate(board, weights)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::bag;
     use crate::board::{Board, FULL_ROW};
 
+    use crate::header::{Move, Piece, COL_NB};
+    use crate::state::CoachingState;
     fn make_node(
         score: f32,
         fatality: crate::state::FatalityState,
