@@ -158,34 +158,45 @@ pub fn calculate_attack(
     config: &AttackConfig,
     is_perfect_clear: bool,
 ) -> f32 {
-    calculate_attack_full(
+    calculate_attack_full(&AttackContext {
         lines,
         spin,
         b2b,
         combo,
         config,
         is_perfect_clear,
-        None,
-        false,
-    )
+        b2b_broken_from: None,
+        clears_garbage: false,
+    })
+}
+
+/// Parameters for the extended attack calculation.
+pub struct AttackContext<'a> {
+    pub lines: u8,
+    pub spin: SpinType,
+    pub b2b: u8,
+    pub combo: u8,
+    pub config: &'a AttackConfig,
+    pub is_perfect_clear: bool,
+    /// If Some(prev_b2b) and prev_b2b >= 4, a non-difficult clear just broke
+    /// a long B2B chain — release stored surge as bonus attack.
+    pub b2b_broken_from: Option<u8>,
+    /// If true and the clear is b2b-eligible, add +1.
+    pub clears_garbage: bool,
 }
 
 /// Extended attack calculation with surge release and garbage clear boost.
-///
-/// `b2b_broken_from`: if Some(prev_b2b) and prev_b2b >= 4, a non-difficult
-/// clear just broke a long B2B chain — release stored surge as bonus attack.
-///
-/// `clears_garbage`: if true and the clear is b2b-eligible, add +1.
-pub fn calculate_attack_full(
-    lines: u8,
-    spin: SpinType,
-    b2b: u8,
-    combo: u8,
-    config: &AttackConfig,
-    is_perfect_clear: bool,
-    b2b_broken_from: Option<u8>,
-    clears_garbage: bool,
-) -> f32 {
+pub fn calculate_attack_full(ctx: &AttackContext<'_>) -> f32 {
+    let AttackContext {
+        lines,
+        spin,
+        b2b,
+        combo,
+        config,
+        is_perfect_clear,
+        b2b_broken_from,
+        clears_garbage,
+    } = *ctx;
     if lines == 0 {
         return 0.0;
     }
@@ -497,7 +508,16 @@ mod tests {
     fn test_surge_release_b2b4_broken() {
         // single clear (non-difficult) breaks b2b=4 chain
         // base=0, surge = 4 + (4-4) = 4
-        let dmg = calculate_attack_full(1, SpinType::NoSpin, 0, 0, &tl(), false, Some(4), false);
+        let dmg = calculate_attack_full(&AttackContext {
+            lines: 1,
+            spin: SpinType::NoSpin,
+            b2b: 0,
+            combo: 0,
+            config: &tl(),
+            is_perfect_clear: false,
+            b2b_broken_from: Some(4),
+            clears_garbage: false,
+        });
         assert_eq!(dmg, 4.0);
     }
 
@@ -505,24 +525,58 @@ mod tests {
     fn test_surge_release_b2b7_broken() {
         // double clear (non-difficult) breaks b2b=7 chain
         // base=1, surge = 4 + (7-4) = 7, total = 8
-        let dmg = calculate_attack_full(2, SpinType::NoSpin, 0, 0, &tl(), false, Some(7), false);
+        let dmg = calculate_attack_full(&AttackContext {
+            lines: 2,
+            spin: SpinType::NoSpin,
+            b2b: 0,
+            combo: 0,
+            config: &tl(),
+            is_perfect_clear: false,
+            b2b_broken_from: Some(7),
+            clears_garbage: false,
+        });
         assert_eq!(dmg, 8.0);
     }
 
     #[test]
     fn test_surge_release_not_triggered_by_difficult_clear() {
         // quad (b2b-eligible) should NOT trigger surge release even if b2b_broken_from
-        let with_surge =
-            calculate_attack_full(4, SpinType::NoSpin, 0, 0, &tl(), false, Some(6), false);
-        let without_surge =
-            calculate_attack_full(4, SpinType::NoSpin, 0, 0, &tl(), false, None, false);
+        let with_surge = calculate_attack_full(&AttackContext {
+            lines: 4,
+            spin: SpinType::NoSpin,
+            b2b: 0,
+            combo: 0,
+            config: &tl(),
+            is_perfect_clear: false,
+            b2b_broken_from: Some(6),
+            clears_garbage: false,
+        });
+        let without_surge = calculate_attack_full(&AttackContext {
+            lines: 4,
+            spin: SpinType::NoSpin,
+            b2b: 0,
+            combo: 0,
+            config: &tl(),
+            is_perfect_clear: false,
+            b2b_broken_from: None,
+            clears_garbage: false,
+        });
         assert_eq!(with_surge, without_surge);
     }
 
     #[test]
     fn test_surge_release_not_triggered_below_4() {
         // b2b_broken_from=3, below threshold — no surge
-        let dmg = calculate_attack_full(1, SpinType::NoSpin, 0, 0, &tl(), false, Some(3), false);
+        let dmg = calculate_attack_full(&AttackContext {
+            lines: 1,
+            spin: SpinType::NoSpin,
+            b2b: 0,
+            combo: 0,
+            config: &tl(),
+            is_perfect_clear: false,
+            b2b_broken_from: Some(3),
+            clears_garbage: false,
+        });
         assert_eq!(dmg, 0.0);
     }
 
@@ -530,7 +584,16 @@ mod tests {
     fn test_old_api_unchanged() {
         // old 6-arg API passes defaults (no surge, no garbage boost)
         let old = calculate_attack(4, SpinType::NoSpin, 0, 0, &tl(), false);
-        let new = calculate_attack_full(4, SpinType::NoSpin, 0, 0, &tl(), false, None, false);
+        let new = calculate_attack_full(&AttackContext {
+            lines: 4,
+            spin: SpinType::NoSpin,
+            b2b: 0,
+            combo: 0,
+            config: &tl(),
+            is_perfect_clear: false,
+            b2b_broken_from: None,
+            clears_garbage: false,
+        });
         assert_eq!(old, new);
     }
 
@@ -539,24 +602,78 @@ mod tests {
     #[test]
     fn test_garbage_clear_boost_on_quad() {
         // quad (b2b-eligible) + clears garbage = +1
-        let without = calculate_attack_full(4, SpinType::NoSpin, 0, 0, &tl(), false, None, false);
-        let with = calculate_attack_full(4, SpinType::NoSpin, 0, 0, &tl(), false, None, true);
+        let without = calculate_attack_full(&AttackContext {
+            lines: 4,
+            spin: SpinType::NoSpin,
+            b2b: 0,
+            combo: 0,
+            config: &tl(),
+            is_perfect_clear: false,
+            b2b_broken_from: None,
+            clears_garbage: false,
+        });
+        let with = calculate_attack_full(&AttackContext {
+            lines: 4,
+            spin: SpinType::NoSpin,
+            b2b: 0,
+            combo: 0,
+            config: &tl(),
+            is_perfect_clear: false,
+            b2b_broken_from: None,
+            clears_garbage: true,
+        });
         assert_eq!(with - without, 1.0);
     }
 
     #[test]
     fn test_garbage_clear_boost_on_spin() {
         // spin single (b2b-eligible) + clears garbage = +1
-        let without = calculate_attack_full(1, SpinType::Full, 0, 0, &tl(), false, None, false);
-        let with = calculate_attack_full(1, SpinType::Full, 0, 0, &tl(), false, None, true);
+        let without = calculate_attack_full(&AttackContext {
+            lines: 1,
+            spin: SpinType::Full,
+            b2b: 0,
+            combo: 0,
+            config: &tl(),
+            is_perfect_clear: false,
+            b2b_broken_from: None,
+            clears_garbage: false,
+        });
+        let with = calculate_attack_full(&AttackContext {
+            lines: 1,
+            spin: SpinType::Full,
+            b2b: 0,
+            combo: 0,
+            config: &tl(),
+            is_perfect_clear: false,
+            b2b_broken_from: None,
+            clears_garbage: true,
+        });
         assert_eq!(with - without, 1.0);
     }
 
     #[test]
     fn test_garbage_clear_boost_not_on_non_difficult() {
         // double clear (not b2b-eligible, no spin) — no boost
-        let without = calculate_attack_full(2, SpinType::NoSpin, 0, 0, &tl(), false, None, false);
-        let with = calculate_attack_full(2, SpinType::NoSpin, 0, 0, &tl(), false, None, true);
+        let without = calculate_attack_full(&AttackContext {
+            lines: 2,
+            spin: SpinType::NoSpin,
+            b2b: 0,
+            combo: 0,
+            config: &tl(),
+            is_perfect_clear: false,
+            b2b_broken_from: None,
+            clears_garbage: false,
+        });
+        let with = calculate_attack_full(&AttackContext {
+            lines: 2,
+            spin: SpinType::NoSpin,
+            b2b: 0,
+            combo: 0,
+            config: &tl(),
+            is_perfect_clear: false,
+            b2b_broken_from: None,
+            clears_garbage: true,
+        });
         assert_eq!(without, with);
     }
 }

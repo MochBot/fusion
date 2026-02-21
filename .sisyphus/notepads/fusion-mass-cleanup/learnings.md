@@ -35,3 +35,31 @@
 - board.rs: Verified no unnecessary casts remain.
 - Clippy status: 0 style lints in gen.rs and board.rs (remaining 23 are in movegen.rs).
 - Tests: 145 pass (131 lib + 14 integration), 0 fail.
+
+## 2026-02-20 Task 9: Struct-ify search.rs too_many_arguments functions
+- Created `SearchExpansionContext<'a>` (pub(crate)): groups weights, remaining_depth, zobrist_keys, tt
+  - Shared by `gen_and_eval_root` (9→6 params) and `expand_node` (10→6 params)
+- Created `SearchIterationParams<'a>` (pub(crate)): groups state, queue, config, weights, max_depth, beam_width, zobrist_keys, tt
+  - Used by `run_beam_search_iteration` (8→1 param)
+- `expand_root` also simplified: 6→2 params (state, ctx) as natural consequence
+- Removed `attack_config` from expansion context — was `_attack_config` (never read) in original code
+- `&mut` on context struct because `tt: &'a mut Option<TranspositionTable>` requires exclusive borrow
+- `remaining_depth` on context (not params) because it changes per-depth in the beam loop
+- Clippy: zero too_many_arguments on search.rs, zero warnings of any kind
+- LSP diagnostics: zero errors
+- Tests: BLOCKED by pre-existing movegen.rs (12 errors) and attack.rs (6 errors) from other tasks' in-progress struct-ification
+- Pattern: when struct-ifying, remove `_`-prefixed unused params rather than carrying dead fields into structs
+
+## 2026-02-20 Task 10: Struct-ify attack.rs + movegen.rs too_many_arguments + impl Default
+- Created `AttackContext<'a>` in attack.rs: groups lines, spin, b2b, combo, config, is_perfect_clear, b2b_broken_from, clears_garbage (8→1 param for `calculate_attack_full`)
+- Created `RotateContext<'a>` in movegen.rs: groups kicks_rot, current_search, x, r, to_search, searched, remaining, spin_set, cm, spin_map (10→1 param for `do_rotate_180`)
+- Created `ProcessContext<'a>` in movegen.rs: groups kicks_rot, d, current, to_search, searched, remaining, cm16, x (8→1 param for `do_process_180`)
+- Added `impl Default for MoveBuffer` (delegates to `MoveBuffer::new()`) in movegen.rs
+- Added `impl Default for Inputs` (delegates to `Inputs::new()`) in pathfinder.rs
+- All callers of `calculate_attack_full` are internal to attack.rs (wrapper + 12 test calls) — no external callers
+- `do_rotate_180` and `do_process_180` each have exactly 1 call site (internal to movegen.rs)
+- Both RotateContext and ProcessContext take `&mut self` because they contain `&mut` references
+- AttackContext uses destructuring at function entry: `let AttackContext { lines, spin, ... } = *ctx;` — keeps body unchanged
+- Clippy: 0 too_many_arguments, 0 new_without_default (was 6+2)
+- Tests: 145 pass (131 lib + 4 perft + 10 presim), 0 fail
+- pathfinder.rs also modified (Inputs lives there, not movegen.rs) — task scope expanded from 2 files to 3

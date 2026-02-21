@@ -44,6 +44,28 @@ pub struct SearchResult {
     pub coaching_state: CoachingState,
 }
 
+/// Shared context for node expansion functions (`gen_and_eval_root`, `expand_node`).
+/// Groups evaluation weights, attack config, depth tracking, and transposition table refs.
+pub(crate) struct SearchExpansionContext<'a> {
+    pub weights: &'a EvalWeights,
+    pub remaining_depth: usize,
+    pub zobrist_keys: &'a ZobristKeys,
+    pub tt: &'a mut Option<TranspositionTable>,
+}
+
+/// Parameters for a single beam search iteration.
+/// Groups game state, queue, configuration, and search infrastructure.
+pub(crate) struct SearchIterationParams<'a> {
+    pub state: &'a GameState,
+    pub queue: &'a [Piece],
+    pub config: &'a SearchConfig,
+    pub weights: &'a EvalWeights,
+    pub max_depth: usize,
+    pub beam_width: usize,
+    pub zobrist_keys: &'a ZobristKeys,
+    pub tt: &'a mut Option<TranspositionTable>,
+}
+
 #[derive(Clone)]
 struct SearchNode {
     board: Board,
@@ -83,16 +105,17 @@ pub fn find_best_move(
         .then(|| TranspositionTable::new(DEFAULT_TT_SIZE));
 
     if config.time_budget_ms.is_none() {
-        return run_beam_search_iteration(
+        let mut params = SearchIterationParams {
             state,
-            &search_queue,
+            queue: &search_queue,
             config,
             weights,
             max_depth,
-            config.beam_width,
-            &zobrist_keys,
-            &mut tt,
-        );
+            beam_width: config.beam_width,
+            zobrist_keys: &zobrist_keys,
+            tt: &mut tt,
+        };
+        return run_beam_search_iteration(&mut params);
     }
 
     let max_width = config.beam_width;
@@ -121,16 +144,17 @@ pub fn find_best_move(
             table.clear();
         }
 
-        if let Some(result) = run_beam_search_iteration(
+        let mut params = SearchIterationParams {
             state,
-            &search_queue,
+            queue: &search_queue,
             config,
             weights,
             max_depth,
-            width,
-            &zobrist_keys,
-            &mut tt,
-        ) {
+            beam_width: width,
+            zobrist_keys: &zobrist_keys,
+            tt: &mut tt,
+        };
+        if let Some(result) = run_beam_search_iteration(&mut params) {
             let should_replace = best_result
                 .as_ref()
                 .is_none_or(|best| compare_results_desc(&result, best).is_lt());
@@ -167,78 +191,58 @@ pub fn find_best_move(
     best_result
 }
 
-fn run_beam_search_iteration(
-    state: &GameState,
-    queue: &[Piece],
-    config: &SearchConfig,
-    weights: &EvalWeights,
-    max_depth: usize,
-    beam_width: usize,
-    zobrist_keys: &ZobristKeys,
-    tt: &mut Option<TranspositionTable>,
-) -> Option<SearchResult> {
+fn run_beam_search_iteration(params: &mut SearchIterationParams<'_>) -> Option<SearchResult> {
+    let mut ctx = SearchExpansionContext {
+        weights: params.weights,
+        remaining_depth: params.max_depth.saturating_sub(1),
+        zobrist_keys: params.zobrist_keys,
+        tt: params.tt,
+    };
+
     // expand root: generate moves for current piece, and hold piece if available
-    let mut beam = expand_root(
-        state,
-        weights,
-        &config.attack_config,
-        max_depth,
-        zobrist_keys,
-        tt,
-    );
+    let mut beam = expand_root(params.state, &mut ctx);
     if beam.is_empty() {
         return None;
     }
 
-    apply_futility_pruning(&mut beam, config.futility_delta);
+    apply_futility_pruning(&mut beam, params.config.futility_delta);
     beam.sort_unstable_by(compare_nodes_desc);
-    beam.truncate(beam_width);
+    beam.truncate(params.beam_width);
 
     // expand remaining depths using queue pieces
-    for depth_idx in 0..max_depth.saturating_sub(1) {
-        let queue_piece = match queue.get(depth_idx).copied() {
+    for depth_idx in 0..params.max_depth.saturating_sub(1) {
+        let queue_piece = match params.queue.get(depth_idx).copied() {
             Some(p) => p,
             None => break,
         };
 
         let child_depth = depth_idx + 2;
-        let remaining_depth = max_depth.saturating_sub(child_depth);
+        ctx.remaining_depth = params.max_depth.saturating_sub(child_depth);
 
-        let mut next_beam: Vec<SearchNode> = Vec::with_capacity(beam_width.saturating_mul(2));
+        let mut next_beam: Vec<SearchNode> =
+            Vec::with_capacity(params.beam_width.saturating_mul(2));
 
         for node in &beam {
-            // figure out what piece this node plays next
             let current_piece = queue_piece;
 
-            // generate moves for current piece (hold unchanged)
             expand_node(
                 node,
                 current_piece,
                 node.hold,
                 false,
-                weights,
-                &config.attack_config,
+                &mut ctx,
                 &mut next_beam,
-                remaining_depth,
-                zobrist_keys,
-                tt,
             );
 
-            // also try hold swap if it gives a different piece
             if let Some(held) = node.hold {
                 if held != current_piece {
-                    // play held piece, queue piece goes into hold
                     expand_node(
                         node,
                         held,
                         Some(current_piece),
                         true,
-                        weights,
-                        &config.attack_config,
+                        &mut ctx,
                         &mut next_beam,
-                        remaining_depth,
-                        zobrist_keys,
-                        tt,
                     );
                 }
             }
@@ -248,13 +252,12 @@ fn run_beam_search_iteration(
             break;
         }
 
-        apply_futility_pruning(&mut next_beam, config.futility_delta);
+        apply_futility_pruning(&mut next_beam, params.config.futility_delta);
         next_beam.sort_unstable_by(compare_nodes_desc);
-        next_beam.truncate(beam_width);
+        next_beam.truncate(params.beam_width);
         beam = next_beam;
     }
 
-    // best node is first after final sort
     beam.first().map(|best| SearchResult {
         best_move: best.root_move,
         hold_used: best.root_hold_used,
@@ -334,57 +337,19 @@ fn compare_results_desc(a: &SearchResult, b: &SearchResult) -> std::cmp::Orderin
         .then_with(|| b.score.total_cmp(&a.score))
 }
 
-fn expand_root(
-    state: &GameState,
-    weights: &EvalWeights,
-    _attack_config: &AttackConfig,
-    max_depth: usize,
-    zobrist_keys: &ZobristKeys,
-    tt: &mut Option<TranspositionTable>,
-) -> Vec<SearchNode> {
+fn expand_root(state: &GameState, ctx: &mut SearchExpansionContext<'_>) -> Vec<SearchNode> {
     let mut nodes = Vec::with_capacity(128);
-    let remaining_depth = max_depth.saturating_sub(1);
 
-    gen_and_eval_root(
-        state,
-        state.current,
-        state.hold,
-        false,
-        weights,
-        &mut nodes,
-        remaining_depth,
-        zobrist_keys,
-        tt,
-    );
+    gen_and_eval_root(state, state.current, state.hold, false, ctx, &mut nodes);
 
     match state.hold {
         Some(held) if held != state.current => {
-            gen_and_eval_root(
-                state,
-                held,
-                Some(state.current),
-                true,
-                weights,
-                &mut nodes,
-                remaining_depth,
-                zobrist_keys,
-                tt,
-            );
+            gen_and_eval_root(state, held, Some(state.current), true, ctx, &mut nodes);
         }
         None if !state.queue.is_empty() => {
             let next = state.queue[0];
             if next != state.current {
-                gen_and_eval_root(
-                    state,
-                    next,
-                    Some(state.current),
-                    true,
-                    weights,
-                    &mut nodes,
-                    remaining_depth,
-                    zobrist_keys,
-                    tt,
-                );
+                gen_and_eval_root(state, next, Some(state.current), true, ctx, &mut nodes);
             }
         }
         _ => {}
@@ -398,11 +363,8 @@ fn gen_and_eval_root(
     piece: Piece,
     new_hold: Option<Piece>,
     hold_used: bool,
-    weights: &EvalWeights,
+    ctx: &mut SearchExpansionContext<'_>,
     nodes: &mut Vec<SearchNode>,
-    remaining_depth: usize,
-    zobrist_keys: &ZobristKeys,
-    tt: &mut Option<TranspositionTable>,
 ) {
     let mut moves = MoveBuffer::new();
     generate(&state.board, &mut moves, piece, false);
@@ -426,7 +388,13 @@ fn gen_and_eval_root(
             spawn_envelope_blocked,
         });
 
-        let score = evaluate_with_tt(&result_board, weights, remaining_depth, zobrist_keys, tt);
+        let score = evaluate_with_tt(
+            &result_board,
+            ctx.weights,
+            ctx.remaining_depth,
+            ctx.zobrist_keys,
+            ctx.tt,
+        );
 
         nodes.push(SearchNode {
             board: result_board,
@@ -448,12 +416,8 @@ fn expand_node(
     piece: Piece,
     new_hold: Option<Piece>,
     hold_used: bool,
-    weights: &EvalWeights,
-    _attack_config: &AttackConfig,
+    ctx: &mut SearchExpansionContext<'_>,
     out: &mut Vec<SearchNode>,
-    remaining_depth: usize,
-    zobrist_keys: &ZobristKeys,
-    tt: &mut Option<TranspositionTable>,
 ) {
     let mut moves = MoveBuffer::new();
     generate(&parent.board, &mut moves, piece, false);
@@ -477,7 +441,13 @@ fn expand_node(
             spawn_envelope_blocked,
         });
 
-        let score = evaluate_with_tt(&result_board, weights, remaining_depth, zobrist_keys, tt);
+        let score = evaluate_with_tt(
+            &result_board,
+            ctx.weights,
+            ctx.remaining_depth,
+            ctx.zobrist_keys,
+            ctx.tt,
+        );
 
         let mut path = parent.path.clone();
         path.push(*m);

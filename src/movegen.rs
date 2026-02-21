@@ -54,6 +54,12 @@ impl MoveBuffer {
     }
 }
 
+impl Default for MoveBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // compile-time piece from const generic index — must match Piece enum discriminants
 #[inline(always)]
 const fn piece_from_index(p: usize) -> Piece {
@@ -320,18 +326,18 @@ fn generate_inner<const P: usize, const CHECK_SPIN: bool>(
 
             if ACTIVE_RULES.enable_180 {
                 let ki180 = kick_180_index(p);
-                do_rotate_180::<P, CHECK_SPIN>(
-                    &KICKS_180[ki180],
-                    to_search[x][ri],
+                do_rotate_180::<P, CHECK_SPIN>(&mut RotateContext {
+                    kicks_rot: &KICKS_180[ki180],
+                    current_search: to_search[x][ri],
                     x,
                     r,
-                    &mut to_search,
-                    &searched,
-                    &mut remaining,
-                    &mut spin_set,
+                    to_search: &mut to_search,
+                    searched: &searched,
+                    remaining: &mut remaining,
+                    spin_set: &mut spin_set,
                     cm,
                     spin_map,
-                );
+                });
             }
         }
 
@@ -366,24 +372,26 @@ fn generate_inner<const P: usize, const CHECK_SPIN: bool>(
     }
 }
 
-fn do_rotate_180<const P: usize, const CHECK_SPIN: bool>(
-    kicks_rot: &[[Coordinates; 6]; ROTATION_NB],
+struct RotateContext<'a> {
+    kicks_rot: &'a [[Coordinates; 6]; ROTATION_NB],
     current_search: Bitboard,
     x: usize,
     r: Rotation,
-    to_search: &mut [[Bitboard; ROTATION_NB]; COL_NB],
-    searched: &[[Bitboard; ROTATION_NB]; COL_NB],
-    remaining: &mut Bitboard,
-    spin_set: &mut [[[Bitboard; SPIN_NB]; ROTATION_NB]; COL_NB],
-    cm: &CollisionMap,
-    spin_map: Option<&[[Bitboard; 5]; COL_NB]>,
-) {
+    to_search: &'a mut [[Bitboard; ROTATION_NB]; COL_NB],
+    searched: &'a [[Bitboard; ROTATION_NB]; COL_NB],
+    remaining: &'a mut Bitboard,
+    spin_set: &'a mut [[[Bitboard; SPIN_NB]; ROTATION_NB]; COL_NB],
+    cm: &'a CollisionMap,
+    spin_map: Option<&'a [[Bitboard; 5]; COL_NB]>,
+}
+
+fn do_rotate_180<const P: usize, const CHECK_SPIN: bool>(ctx: &mut RotateContext<'_>) {
     let p = piece_from_index(P);
-    let ri = r as usize;
-    let r1 = rotate(Direction::Flip, r);
+    let ri = ctx.r as usize;
+    let r1 = rotate(Direction::Flip, ctx.r);
     let rc = canonical_r(p, r1);
-    let off = canonical_offset(p, r) - canonical_offset(p, r1);
-    let kicks = &kicks_rot[ri];
+    let off = canonical_offset(p, ctx.r) - canonical_offset(p, r1);
+    let kicks = &ctx.kicks_rot[ri];
     let n = if !ACTIVE_RULES.srs_plus && kicks.len() == 6 {
         2
     } else {
@@ -393,13 +401,13 @@ fn do_rotate_180<const P: usize, const CHECK_SPIN: bool>(
     let remaining_index =
         |x: i32, r: Rotation| -> Bitboard { bb(x * ROTATION_NB as i32 + r as i32) };
 
-    let mut current = current_search;
+    let mut current = ctx.current_search;
 
     for (i, kick) in kicks.iter().enumerate().take(n) {
         if current == 0 {
             break;
         }
-        let x1 = x as i32 + kick.x as i32 + off.x as i32;
+        let x1 = ctx.x as i32 + kick.x as i32 + off.x as i32;
         if !is_ok_x(x1) {
             continue;
         }
@@ -408,29 +416,31 @@ fn do_rotate_180<const P: usize, const CHECK_SPIN: bool>(
         let threshold: i32 = 3;
         let y1 = threshold + kick.y as i32 + off.y as i32;
 
-        let mut m = ((current << y1) >> threshold) & !cm.get(x1u, rc);
+        let mut m = ((current << y1) >> threshold) & !ctx.cm.get(x1u, rc);
         current ^= (m << threshold) >> y1;
 
         if CHECK_SPIN {
-            if let Some(smap) = spin_map {
+            if let Some(smap) = ctx.spin_map {
                 let spins = m & smap[x1u][0];
                 let r1i = r1 as usize;
-                spin_set[x1u][r1i][SpinType::NoSpin as usize] |= m ^ spins;
+                ctx.spin_set[x1u][r1i][SpinType::NoSpin as usize] |= m ^ spins;
                 if spins != 0 {
                     if i >= 4 {
-                        spin_set[x1u][r1i][SpinType::Full as usize] |= spins;
+                        ctx.spin_set[x1u][r1i][SpinType::Full as usize] |= spins;
                     } else {
-                        spin_set[x1u][r1i][SpinType::Mini as usize] |= spins & !smap[x1u][1 + r1i];
-                        spin_set[x1u][r1i][SpinType::Full as usize] |= spins & smap[x1u][1 + r1i];
+                        ctx.spin_set[x1u][r1i][SpinType::Mini as usize] |=
+                            spins & !smap[x1u][1 + r1i];
+                        ctx.spin_set[x1u][r1i][SpinType::Full as usize] |=
+                            spins & smap[x1u][1 + r1i];
                     }
                 }
             }
         }
 
-        m &= !searched[x1u][r1 as usize];
+        m &= !ctx.searched[x1u][r1 as usize];
         if m != 0 {
-            to_search[x1u][r1 as usize] |= m;
-            *remaining |= remaining_index(x1, r1);
+            ctx.to_search[x1u][r1 as usize] |= m;
+            *ctx.remaining |= remaining_index(x1, r1);
         }
     }
 }
@@ -643,16 +653,16 @@ fn generate16<const P: usize>(cols: &[Bitboard; COL_NB], moves: &mut MoveBuffer)
 
             if ACTIVE_RULES.enable_180 {
                 let ki180 = kick_180_index(p);
-                do_process_180::<P>(
-                    &KICKS_180[ki180],
-                    Direction::Flip,
-                    &mut current,
-                    &mut to_search,
-                    &searched,
-                    &mut remaining,
-                    &cm,
+                do_process_180::<P>(&mut ProcessContext {
+                    kicks_rot: &KICKS_180[ki180],
+                    d: Direction::Flip,
+                    current: &mut current,
+                    to_search: &mut to_search,
+                    searched: &searched,
+                    remaining: &mut remaining,
+                    cm16: &cm,
                     x,
-                );
+                });
             }
         }
 
@@ -660,27 +670,28 @@ fn generate16<const P: usize>(cols: &[Bitboard; COL_NB], moves: &mut MoveBuffer)
     }
 }
 
-// 180 rotate handler for generate16 (6 offsets)
-fn do_process_180<const P: usize>(
-    kicks_rot: &[[Coordinates; 6]; ROTATION_NB],
+struct ProcessContext<'a> {
+    kicks_rot: &'a [[Coordinates; 6]; ROTATION_NB],
     d: Direction,
-    current: &mut Bitboard,
-    to_search: &mut [Bitboard; COL_NB],
-    searched: &[Bitboard; COL_NB],
-    remaining: &mut u32,
-    cm16: &CollisionMap16,
+    current: &'a mut Bitboard,
+    to_search: &'a mut [Bitboard; COL_NB],
+    searched: &'a [Bitboard; COL_NB],
+    remaining: &'a mut u32,
+    cm16: &'a CollisionMap16,
     x: usize,
-) {
+}
+
+fn do_process_180<const P: usize>(ctx: &mut ProcessContext<'_>) {
     let p = piece_from_index(P);
-    for (ri, kicks) in kicks_rot.iter().enumerate() {
+    for (ri, kicks) in ctx.kicks_rot.iter().enumerate() {
         let r: Rotation = Rotation::from_u8(ri as u8);
         let shift_src = ri * 16;
-        let src_bits = (*current >> shift_src) & 0xFFFFu64;
+        let src_bits = (*ctx.current >> shift_src) & 0xFFFFu64;
         if src_bits == 0 {
             continue;
         }
 
-        let r1 = rotate(d, r);
+        let r1 = rotate(ctx.d, r);
         let shift_dest = (r1 as usize) * 16;
         let off = canonical_offset(p, r) - canonical_offset(p, r1);
         let n = if !ACTIVE_RULES.srs_plus && kicks.len() == 6 {
@@ -694,7 +705,7 @@ fn do_process_180<const P: usize>(
             if src == 0 {
                 break;
             }
-            let x1 = x as i32 + kick.x as i32 + off.x as i32;
+            let x1 = ctx.x as i32 + kick.x as i32 + off.x as i32;
             if !is_ok_x(x1) {
                 continue;
             }
@@ -704,18 +715,18 @@ fn do_process_180<const P: usize>(
             let shift_val = threshold + kick.y as i32 + off.y as i32;
 
             let mut m = (src << shift_val) >> threshold;
-            m &= !(cm16.get(x1u) >> shift_dest) & 0xFFFFu64;
+            m &= !(ctx.cm16.get(x1u) >> shift_dest) & 0xFFFFu64;
             src ^= (m << threshold) >> shift_val;
 
-            let mut visited = searched[x1u];
-            if x1u == x {
-                visited |= *current;
+            let mut visited = ctx.searched[x1u];
+            if x1u == ctx.x {
+                visited |= *ctx.current;
             }
             m &= !(visited >> shift_dest);
 
             if m != 0 {
-                to_search[x1u] |= m << shift_dest;
-                *remaining |= 1 << x1u;
+                ctx.to_search[x1u] |= m << shift_dest;
+                *ctx.remaining |= 1 << x1u;
             }
         }
     }

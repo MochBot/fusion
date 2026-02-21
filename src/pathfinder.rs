@@ -50,6 +50,12 @@ impl Inputs {
     }
 }
 
+impl Default for Inputs {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // -- PathNode --
 
 struct PathNode {
