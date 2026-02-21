@@ -63,3 +63,23 @@
 - Clippy: 0 too_many_arguments, 0 new_without_default (was 6+2)
 - Tests: 145 pass (131 lib + 4 perft + 10 presim), 0 fail
 - pathfinder.rs also modified (Inputs lives there, not movegen.rs) — task scope expanded from 2 files to 3
+
+## 2026-02-20 Task 11: Remove dead WASM exports from wasm.rs
+- wasm.rs: 917 → 762 lines (155 lines removed, -17%)
+- Removed JsBoard methods: get, set, clear_lines, apply_move, clone_board (clone_board was unlisted but confirmed dead)
+- Removed JsMove getter/setter methods: piece, rotation, x, y, hold_used, set_hold_used, spin, set_spin (8 methods)
+- Kept JsMove struct + constructor + to_internal() — evaluate_move_wasm depends on JsMove as parameter type
+- Removed JsAttackConfig::quick_play
+- Removed standalone functions: find_best_move_wasm, get_all_moves_wasm
+- Removed unused imports: `crate::movegen::{generate, MoveBuffer}`, `search` self-import (kept `SearchConfig`)
+- Verification: all exports grepped against mosaic-fusion-testing/src/**/*.{ts,svelte} — zero hits for any removed export
+- Note: mosaic-fusion-testing/src/lib/fusion/index.ts re-exports find_best_move, get_all_moves, JsMove but they are never consumed by any .ts/.svelte file
+- Note: evaluate_move is listed as "active" in task spec despite also having zero .ts/.svelte consumers — kept per instructions
+- cargo check: 0 errors, 0 warnings
+- cargo build --target wasm32-unknown-unknown: success
+- cargo test: 145 pass, 0 fail, 4 ignored
+
+### T12 Post-Cleanup (Clippy Fixes)
+- Module-level `#[allow(dead_code)]` requires `#![allow(dead_code)]` at the top of the file using the inner attribute syntax `#!`.
+- Enum variants that trigger `enum_variant_names` (e.g. `Input::NoInput`) can be suppressed at the module level with `#![allow(clippy::enum_variant_names)]`.
+- AST-aware find-and-replace (`ast_grep_replace`) is exceptionally fast and safe for renaming enums (e.g. `Direction::CW` to `Direction::Cw`) globally across multiple files.

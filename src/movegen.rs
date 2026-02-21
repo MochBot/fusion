@@ -304,8 +304,8 @@ fn generate_inner<const P: usize, const CHECK_SPIN: bool>(
 
             let ki = kick_index(p, ACTIVE_RULES.srs_plus);
             do_rotate(
-                &KICKS[ki][Direction::CW as usize],
-                Direction::CW,
+                &KICKS[ki][Direction::Cw as usize],
+                Direction::Cw,
                 &mut to_search,
                 &searched,
                 &mut remaining,
@@ -314,8 +314,8 @@ fn generate_inner<const P: usize, const CHECK_SPIN: bool>(
                 spin_map,
             );
             do_rotate(
-                &KICKS[ki][Direction::CCW as usize],
-                Direction::CCW,
+                &KICKS[ki][Direction::Ccw as usize],
+                Direction::Ccw,
                 &mut to_search,
                 &searched,
                 &mut remaining,
@@ -631,8 +631,8 @@ fn generate16<const P: usize>(cols: &[Bitboard; COL_NB], moves: &mut MoveBuffer)
 
             let ki = kick_index(p, ACTIVE_RULES.srs_plus);
             do_process(
-                &KICKS[ki][Direction::CW as usize],
-                Direction::CW,
+                &KICKS[ki][Direction::Cw as usize],
+                Direction::Cw,
                 &mut current,
                 &mut to_search,
                 &searched,
@@ -641,8 +641,8 @@ fn generate16<const P: usize>(cols: &[Bitboard; COL_NB], moves: &mut MoveBuffer)
                 x,
             );
             do_process(
-                &KICKS[ki][Direction::CCW as usize],
-                Direction::CCW,
+                &KICKS[ki][Direction::Ccw as usize],
+                Direction::Ccw,
                 &mut current,
                 &mut to_search,
                 &searched,
@@ -793,7 +793,7 @@ pub fn generate(b: &Board, moves: &mut MoveBuffer, p: Piece, force: bool) {
                     for ri in 0..ROTATION_NB {
                         let r: Rotation = Rotation::from_u8(ri as u8);
                         if in_bounds(Piece::T, r, x as i32) {
-                            let cw_r = rotate(Direction::CW, r);
+                            let cw_r = rotate(Direction::Cw, r);
                             spin_map[x][1 + ri] = spins & corners[ri] & corners[cw_r as usize];
                             check_spin |= (spins & !cm.get(x, r) & ((cm.get(x, r) << 1) | 1)) != 0;
                         }

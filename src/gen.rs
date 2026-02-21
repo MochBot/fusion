@@ -1,10 +1,10 @@
 // gen.rs -- 1:1 port of gen.hpp
 use crate::header::*;
 
-pub const SPAWN_COL: usize = 4;
+pub(crate) const SPAWN_COL: usize = 4;
 
 // C++ in_bounds<p, r>(x): checks pivot x and all 3 relative cells are valid columns
-pub fn in_bounds(p: Piece, r: Rotation, x: i32) -> bool {
+pub(crate) fn in_bounds(p: Piece, r: Rotation, x: i32) -> bool {
     if !is_ok_x(x) {
         return false;
     }
@@ -12,11 +12,11 @@ pub fn in_bounds(p: Piece, r: Rotation, x: i32) -> bool {
     is_ok_x(pc[0].x as i32 + x) && is_ok_x(pc[1].x as i32 + x) && is_ok_x(pc[2].x as i32 + x)
 }
 
-pub const fn group2(p: Piece) -> bool {
+pub(crate) const fn group2(p: Piece) -> bool {
     matches!(p, Piece::I | Piece::S | Piece::Z)
 }
 
-pub const fn canonical_size(p: Piece) -> usize {
+pub(crate) const fn canonical_size(p: Piece) -> usize {
     match p {
         Piece::O => 1,
         Piece::I | Piece::S | Piece::Z => 2,
@@ -24,7 +24,7 @@ pub const fn canonical_size(p: Piece) -> usize {
     }
 }
 
-pub fn canonical_r(p: Piece, r: Rotation) -> Rotation {
+pub(crate) fn canonical_r(p: Piece, r: Rotation) -> Rotation {
     match p {
         Piece::O => Rotation::North,
         Piece::I | Piece::S | Piece::Z => {
@@ -35,7 +35,7 @@ pub fn canonical_r(p: Piece, r: Rotation) -> Rotation {
     }
 }
 
-pub fn canonical_offset(p: Piece, r: Rotation) -> Coordinates {
+pub(crate) fn canonical_offset(p: Piece, r: Rotation) -> Coordinates {
     match p {
         Piece::I => match r {
             Rotation::South => Coordinates::new(1, 0),
@@ -54,19 +54,19 @@ pub fn canonical_offset(p: Piece, r: Rotation) -> Coordinates {
 // -- Direction --
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
-pub enum Direction {
-    CW = 0,
-    CCW = 1,
+pub(crate) enum Direction {
+    Cw = 0,
+    Ccw = 1,
     Flip = 2,
 }
 
-pub const DIRECTION_NB: usize = 2; // CW and CCW only (Flip is separate)
+pub(crate) const DIRECTION_NB: usize = 2; // Cw and Ccw only (Flip is separate)
 
-pub fn rotate(d: Direction, r: Rotation) -> Rotation {
+pub(crate) fn rotate(d: Direction, r: Rotation) -> Rotation {
     let ri = r as u8;
     let result = match d {
-        Direction::CW => (ri + 1) & 3,
-        Direction::CCW => (ri + 3) & 3,
+        Direction::Cw => (ri + 1) & 3,
+        Direction::Ccw => (ri + 3) & 3,
         Direction::Flip => (ri + 2) & 3,
     };
     Rotation::from_u8(result)
@@ -80,11 +80,9 @@ pub fn rotate(d: Direction, r: Rotation) -> Rotation {
 //   kick_set 0 = LJSZT, 1 = I SRS, 2 = I SRS+
 //   direction 0 = CW, 1 = CCW
 // Each entry: [4 rotations][5 offsets]
-pub type Offsets5 = [Coordinates; 5];
-pub type OffsetsRot5 = [Offsets5; ROTATION_NB];
+pub(crate) type Offsets5 = [Coordinates; 5];
 
-pub type Offsets6 = [Coordinates; 6];
-pub type OffsetsRot6 = [Offsets6; ROTATION_NB];
+pub(crate) type Offsets6 = [Coordinates; 6];
 
 macro_rules! c {
     ($x:expr, $y:expr) => {
@@ -92,10 +90,10 @@ macro_rules! c {
     };
 }
 
-pub static KICKS: [[[Offsets5; ROTATION_NB]; DIRECTION_NB]; 3] = [
+pub(crate) static KICKS: [[[Offsets5; ROTATION_NB]; DIRECTION_NB]; 3] = [
     // [0] LJSZT
     [
-        // CW
+        // Cw
         [
             [c!(0, 0), c!(-1, 0), c!(-1, 1), c!(0, -2), c!(-1, -2)],
             [c!(0, 0), c!(1, 0), c!(1, -1), c!(0, 2), c!(1, 2)],
@@ -146,7 +144,7 @@ pub static KICKS: [[[Offsets5; ROTATION_NB]; DIRECTION_NB]; 3] = [
     ],
 ];
 
-pub static KICKS_180: [[Offsets6; ROTATION_NB]; 2] = [
+pub(crate) static KICKS_180: [[Offsets6; ROTATION_NB]; 2] = [
     // [0] LJSZT
     [
         [c!(0, 0), c!(0, 1), c!(1, 1), c!(-1, 1), c!(1, 0), c!(-1, 0)],
@@ -199,7 +197,7 @@ pub static KICKS_180: [[Offsets6; ROTATION_NB]; 2] = [
 ];
 
 // kick table index: srs_plus uses (p==I)*2, srs uses (p==I)
-pub fn kick_index(p: Piece, srs_plus: bool) -> usize {
+pub(crate) fn kick_index(p: Piece, srs_plus: bool) -> usize {
     let is_i = (p == Piece::I) as usize;
     if srs_plus {
         is_i * 2
@@ -208,20 +206,19 @@ pub fn kick_index(p: Piece, srs_plus: bool) -> usize {
     }
 }
 
-pub fn kick_180_index(p: Piece) -> usize {
+pub(crate) fn kick_180_index(p: Piece) -> usize {
     (p == Piece::I) as usize
 }
 
 // -- CollisionMap --
 // C++ CollisionMap<p>: board[COL_NB][canonicalSize] of Bitboard
 // Each entry is OR of column bitboards shifted by piece cell offsets
-pub struct CollisionMap {
-    pub board: [[Bitboard; 4]; COL_NB], // max 4 canonical rotations
-    pub canonical_size: usize,
+pub(crate) struct CollisionMap {
+    pub(crate) board: [[Bitboard; 4]; COL_NB], // max 4 canonical rotations
 }
 
 impl CollisionMap {
-    pub fn new(cols: &[Bitboard; COL_NB], p: Piece) -> Self {
+    pub(crate) fn new(cols: &[Bitboard; COL_NB], p: Piece) -> Self {
         let cs = canonical_size(p);
         let mut board = [[0u64; 4]; COL_NB];
 
@@ -247,13 +244,10 @@ impl CollisionMap {
             }
         }
 
-        CollisionMap {
-            board,
-            canonical_size: cs,
-        }
+        CollisionMap { board }
     }
 
-    pub fn get(&self, x: usize, r: Rotation) -> Bitboard {
+    pub(crate) fn get(&self, x: usize, r: Rotation) -> Bitboard {
         self.board[x][r as usize]
     }
 }
@@ -261,12 +255,12 @@ impl CollisionMap {
 // -- CollisionMap16 --
 // C++ CollisionMap16<p>: board[COL_NB] single Bitboard per column
 // 4 rotations packed in 16-bit lanes: bits [0..15]=North, [16..31]=East, etc.
-pub struct CollisionMap16 {
-    pub board: [Bitboard; COL_NB],
+pub(crate) struct CollisionMap16 {
+    pub(crate) board: [Bitboard; COL_NB],
 }
 
 impl CollisionMap16 {
-    pub fn new(cols: &[Bitboard; COL_NB], p: Piece) -> Self {
+    pub(crate) fn new(cols: &[Bitboard; COL_NB], p: Piece) -> Self {
         let mut board = [0u64; COL_NB];
 
         for x in 0..COL_NB as i32 {
@@ -300,7 +294,7 @@ impl CollisionMap16 {
         CollisionMap16 { board }
     }
 
-    pub fn get(&self, x: usize) -> Bitboard {
+    pub(crate) fn get(&self, x: usize) -> Bitboard {
         self.board[x]
     }
 }
@@ -350,9 +344,9 @@ mod tests {
 
     #[test]
     fn test_rotate_direction() {
-        assert_eq!(rotate(Direction::CW, Rotation::North), Rotation::East);
-        assert_eq!(rotate(Direction::CW, Rotation::West), Rotation::North);
-        assert_eq!(rotate(Direction::CCW, Rotation::North), Rotation::West);
+        assert_eq!(rotate(Direction::Cw, Rotation::North), Rotation::East);
+        assert_eq!(rotate(Direction::Cw, Rotation::West), Rotation::North);
+        assert_eq!(rotate(Direction::Ccw, Rotation::North), Rotation::West);
         assert_eq!(rotate(Direction::Flip, Rotation::North), Rotation::South);
     }
 

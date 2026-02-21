@@ -8,14 +8,14 @@ use crate::header::{Piece, ALL_PIECES, PIECE_NB};
 
 /// Tracks consumption within the current 7-bag.
 #[derive(Debug, Clone)]
-pub struct BagTracker {
+pub(crate) struct BagTracker {
     seen: [bool; PIECE_NB],
     count: u8,
 }
 
 impl BagTracker {
     /// Create a new tracker with an empty bag (no pieces consumed).
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             seen: [false; PIECE_NB],
             count: 0,
@@ -26,7 +26,7 @@ impl BagTracker {
     ///
     /// If the bag is complete (all 7 consumed), resets to a new bag and
     /// marks the piece as the first of that new bag.
-    pub fn consume(&mut self, piece: Piece) {
+    pub(crate) fn consume(&mut self, piece: Piece) {
         if self.count >= 7 {
             self.reset();
         }
@@ -40,7 +40,7 @@ impl BagTracker {
     }
 
     /// Return pieces NOT yet consumed in the current bag.
-    pub fn remaining(&self) -> Vec<Piece> {
+    pub(crate) fn remaining(&self) -> Vec<Piece> {
         ALL_PIECES
             .iter()
             .copied()
@@ -50,7 +50,9 @@ impl BagTracker {
 
     /// Given a visible queue, consume all pieces and return the remaining
     /// unseen pieces that must appear before the next bag starts.
-    pub fn predict_next(&mut self, queue: &[Piece]) -> Vec<Piece> {
+    // Future: needed for extended queue prediction
+    #[allow(dead_code)]
+    pub(crate) fn predict_next(&mut self, queue: &[Piece]) -> Vec<Piece> {
         for &piece in queue {
             self.consume(piece);
         }
@@ -58,7 +60,9 @@ impl BagTracker {
     }
 
     /// Number of pieces consumed in the current bag.
-    pub fn count(&self) -> u8 {
+    // Future: needed for extended queue prediction
+    #[allow(dead_code)]
+    pub(crate) fn count(&self) -> u8 {
         self.count
     }
 
@@ -82,7 +86,7 @@ impl Default for BagTracker {
 ///
 /// Returns a new vector containing the original queue plus any predicted
 /// pieces appended at the end.
-pub fn extend_queue(queue: &[Piece], current: Piece, hold: Option<Piece>) -> Vec<Piece> {
+pub(crate) fn extend_queue(queue: &[Piece], current: Piece, hold: Option<Piece>) -> Vec<Piece> {
     let mut tracker = BagTracker::new();
 
     if let Some(h) = hold {

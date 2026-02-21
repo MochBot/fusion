@@ -1,4 +1,7 @@
 // pathfinder.rs -- 1:1 port of pathfinder.hpp + pathfinder.cpp
+#![allow(dead_code)]
+#![allow(clippy::enum_variant_names)] // NoInput variant triggers this
+
 use std::collections::VecDeque;
 
 use crate::board::Board;
@@ -8,11 +11,11 @@ use crate::header::*;
 
 // -- Input --
 
-pub const MAX_INPUTS: usize = 64;
+pub(crate) const MAX_INPUTS: usize = 64;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
-pub enum Input {
+pub(crate) enum Input {
     NoInput = 0,
     ShiftLeft,
     ShiftRight,
@@ -28,24 +31,24 @@ pub enum Input {
 // -- Inputs --
 
 #[derive(Clone, Debug)]
-pub struct Inputs {
-    pub data: Vec<Input>,
+pub(crate) struct Inputs {
+    pub(crate) data: Vec<Input>,
 }
 
 impl Inputs {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Inputs { data: Vec::new() }
     }
 
-    pub fn push(&mut self, input: Input) {
+    pub(crate) fn push(&mut self, input: Input) {
         self.data.push(input);
     }
 
-    pub fn reverse(&mut self) {
+    pub(crate) fn reverse(&mut self) {
         self.data.reverse();
     }
 
-    pub fn size(&self) -> usize {
+    pub(crate) fn size(&self) -> usize {
         self.data.len()
     }
 }
@@ -81,7 +84,7 @@ impl GhostMove {
 
 // -- get_input --
 
-pub fn get_input(board: &Board, target: &Move, use_finesse: bool, force: bool) -> Inputs {
+pub(crate) fn get_input(board: &Board, target: &Move, use_finesse: bool, force: bool) -> Inputs {
     get_input_inner(board, target, use_finesse, force, target.piece())
 }
 
@@ -176,13 +179,13 @@ fn get_input_inner(
             let dirs = if ACTIVE_RULES.enable_180 { 3 } else { 2 };
             for d_idx in 0..dirs {
                 let d = match d_idx {
-                    0 => Direction::CW,
-                    1 => Direction::CCW,
+                    0 => Direction::Cw,
+                    1 => Direction::Ccw,
                     _ => Direction::Flip,
                 };
                 let input = match d {
-                    Direction::CW => Input::RotateCw,
-                    Direction::CCW => Input::RotateCcw,
+                    Direction::Cw => Input::RotateCw,
+                    Direction::Ccw => Input::RotateCcw,
                     Direction::Flip => Input::RotateFlip,
                 };
 

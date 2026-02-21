@@ -1,5 +1,6 @@
+#![allow(dead_code)] // TetraStats feature extraction — used by WASM analysis pipeline
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TetraStatsFeatureInput {
+pub(crate) struct TetraStatsFeatureInput {
     pub apm: f64,
     pub pps: f64,
     pub vs: f64,
@@ -25,7 +26,7 @@ pub struct TetraStatsFeatureInput {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TetraStatsFeatures {
+pub(crate) struct TetraStatsFeatures {
     pub dsp: f64,
     pub dss: f64,
     pub cheese_index: f64,
@@ -71,7 +72,7 @@ fn clamp_finite(value: f64) -> f64 {
     }
 }
 
-pub fn extract_whitelist_features(input: &TetraStatsFeatureInput) -> TetraStatsFeatures {
+pub(crate) fn extract_whitelist_features(input: &TetraStatsFeatureInput) -> TetraStatsFeatures {
     let app = safe_div(input.apm, input.pps * 60.0);
     let vsapm = safe_div(input.vs, input.apm);
     let dss = safe_div(input.vs, 100.0) - safe_div(input.apm, 60.0);

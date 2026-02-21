@@ -8,8 +8,7 @@ use crate::attack::{self, AttackConfig, ComboTable};
 use crate::board::Board;
 use crate::eval::{self, EvalWeights};
 use crate::header::*;
-use crate::movegen::{generate, MoveBuffer};
-use crate::search::{self, SearchConfig};
+use crate::search::SearchConfig;
 use crate::state::GameState;
 use crate::state::{
     CoachingState, FatalityState, ObligationState, PhaseState, PlonkState, SurgeState,
@@ -229,56 +228,9 @@ impl JsBoard {
         }
     }
 
-    pub fn get(&self, x: i8, y: i8) -> bool {
-        if x < 0 || x >= 10 || y < 0 || y >= 40 {
-            return false;
-        }
-        self.inner.occupied(x as i32, y as i32)
-    }
-
-    pub fn set(&mut self, x: i8, y: i8, val: bool) {
-        if x < 0 || x >= 10 || y < 0 || y >= 40 {
-            return;
-        }
-        let xu = x as usize;
-        let yu = y as usize;
-        if val {
-            self.inner.rows[yu] |= 1u16 << x;
-            self.inner.cols[xu] |= 1u64 << y;
-        } else {
-            self.inner.rows[yu] &= !(1u16 << x);
-            self.inner.cols[xu] &= !(1u64 << y);
-        }
-    }
-
-    #[wasm_bindgen(js_name = "clear_lines")]
-    pub fn clear_lines(&mut self) -> u8 {
-        let clears = self.inner.line_clears();
-        if clears == 0 {
-            return 0;
-        }
-        let count = clears.count_ones() as u8;
-        self.inner.clear_lines(clears);
-        count
-    }
-
     #[wasm_bindgen(js_name = "to_rows")]
     pub fn to_rows(&self) -> Vec<u64> {
         board_to_row_bitmasks(&self.inner)
-    }
-
-    #[wasm_bindgen(js_name = "apply_move")]
-    pub fn apply_move(&mut self, m: &JsMove) -> u8 {
-        let internal_move = m.to_internal();
-        let lines = self.inner.do_move(&internal_move);
-        lines as u8
-    }
-
-    #[wasm_bindgen(js_name = "clone_board")]
-    pub fn clone_board(&self) -> JsBoard {
-        JsBoard {
-            inner: self.inner.clone(),
-        }
     }
 }
 
@@ -308,41 +260,6 @@ impl JsMove {
             hold_used_val: false,
             spin_val: 0,
         }
-    }
-
-    pub fn piece(&self) -> u8 {
-        self.piece_val
-    }
-
-    pub fn rotation(&self) -> u8 {
-        self.rotation_val
-    }
-
-    pub fn x(&self) -> i8 {
-        self.x_val
-    }
-
-    pub fn y(&self) -> i8 {
-        self.y_val
-    }
-
-    #[wasm_bindgen(js_name = "hold_used")]
-    pub fn hold_used(&self) -> bool {
-        self.hold_used_val
-    }
-
-    #[wasm_bindgen(js_name = "set_hold_used")]
-    pub fn set_hold_used(&mut self, val: bool) {
-        self.hold_used_val = val;
-    }
-
-    pub fn spin(&self) -> u8 {
-        self.spin_val
-    }
-
-    #[wasm_bindgen(js_name = "set_spin")]
-    pub fn set_spin(&mut self, val: u8) {
-        self.spin_val = val;
     }
 }
 
@@ -380,13 +297,6 @@ impl JsAttackConfig {
     pub fn tetra_league() -> Self {
         Self {
             inner: AttackConfig::tetra_league(),
-        }
-    }
-
-    #[wasm_bindgen(js_name = "quickPlay")]
-    pub fn quick_play() -> Self {
-        Self {
-            inner: AttackConfig::quick_play(),
         }
     }
 
@@ -433,71 +343,6 @@ pub fn calculate_attack_wasm(
 ) -> f32 {
     let spin_type = spin_from_u8(spin);
     attack::calculate_attack(lines, spin_type, b2b, combo, &config.inner, is_pc)
-}
-
-#[wasm_bindgen(js_name = "find_best_move")]
-pub fn find_best_move_wasm(board: &JsBoard, piece: u8) -> JsValue {
-    let p = match piece_from_external(piece) {
-        Some(p) => p,
-        None => return JsValue::NULL,
-    };
-
-    let state = game_state_from_external_context(board.inner.clone(), p, None, None);
-    let config = SearchConfig {
-        time_budget_ms: Some(50),
-        ..SearchConfig::default()
-    };
-    let weights = EvalWeights::default();
-
-    match search::find_best_move(&state, &config, &weights) {
-        Some(result) => {
-            let m = &result.best_move;
-            to_js(&MoveResultJson {
-                piece: piece_to_external(m.piece()),
-                rotation: m.rotation() as u8,
-                x: m.x() as i8,
-                y: m.y() as i8,
-                score: result.score,
-                spin: m.spin() as u8,
-                hold_used: result.hold_used,
-            })
-        }
-        None => JsValue::NULL,
-    }
-}
-
-#[wasm_bindgen(js_name = "get_all_moves")]
-pub fn get_all_moves_wasm(board: &JsBoard, piece: u8) -> JsValue {
-    let p = match piece_from_external(piece) {
-        Some(p) => p,
-        None => return JsValue::NULL,
-    };
-
-    let mut moves = MoveBuffer::new();
-    generate(&board.inner, &mut moves, p, true);
-
-    let weights = EvalWeights::default();
-
-    let results: Vec<MoveResultJson> = moves
-        .as_slice()
-        .iter()
-        .map(|m| {
-            let mut result_board = board.inner.clone();
-            result_board.do_move(m);
-            let score = eval::evaluate(&result_board, &weights);
-            MoveResultJson {
-                piece: piece_to_external(m.piece()),
-                rotation: m.rotation() as u8,
-                x: m.x() as i8,
-                y: m.y() as i8,
-                score,
-                spin: m.spin() as u8,
-                hold_used: false,
-            }
-        })
-        .collect();
-
-    to_js(&results)
 }
 
 #[wasm_bindgen(js_name = "evaluate_board")]

@@ -54,15 +54,15 @@ pub struct CoachingState {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TransitionObservation {
-    pub resulting_height: u32,
-    pub resulting_b2b: u8,
-    pub resulting_combo: u32,
-    pub lines_cleared: u8,
-    pub hold_used: bool,
-    pub pending_garbage: u8,
-    pub imminent_garbage: u8,
-    pub spawn_envelope_blocked: bool,
+pub(crate) struct TransitionObservation {
+    pub(crate) resulting_height: u32,
+    pub(crate) resulting_b2b: u8,
+    pub(crate) resulting_combo: u32,
+    pub(crate) lines_cleared: u8,
+    pub(crate) hold_used: bool,
+    pub(crate) pending_garbage: u8,
+    pub(crate) imminent_garbage: u8,
+    pub(crate) spawn_envelope_blocked: bool,
 }
 
 impl Default for CoachingState {
@@ -80,7 +80,7 @@ impl Default for CoachingState {
 }
 
 impl CoachingState {
-    pub fn transition(&self, obs: TransitionObservation) -> Self {
+    pub(crate) fn transition(&self, obs: TransitionObservation) -> Self {
         let fatality = if obs.spawn_envelope_blocked || obs.resulting_height >= 35 {
             FatalityState::Fatal
         } else if obs.resulting_height >= 28 {

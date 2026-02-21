@@ -2,15 +2,15 @@ use crate::board::{Board, BOARD_HEIGHT};
 use crate::header::COL_NB;
 
 const ZOBRIST_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
-pub const DEFAULT_TT_SIZE: usize = 65_536;
+pub(crate) const DEFAULT_TT_SIZE: usize = 65_536;
 
 #[derive(Clone)]
-pub struct ZobristKeys {
+pub(crate) struct ZobristKeys {
     keys: [[u64; BOARD_HEIGHT]; COL_NB],
 }
 
 impl ZobristKeys {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let mut rng = SplitMix64::new(ZOBRIST_SEED);
         let mut keys = [[0u64; BOARD_HEIGHT]; COL_NB];
 
@@ -23,7 +23,7 @@ impl ZobristKeys {
         Self { keys }
     }
 
-    pub fn hash_board(&self, board: &Board) -> u64 {
+    pub(crate) fn hash_board(&self, board: &Board) -> u64 {
         let mut hash = 0u64;
 
         for y in 0..BOARD_HEIGHT {
@@ -65,18 +65,18 @@ impl SplitMix64 {
 
 #[repr(C, align(16))]
 #[derive(Clone, Copy, Default)]
-pub struct TTEntry {
-    pub hash: u64,
-    pub depth: u8,
-    pub score: f32,
+pub(crate) struct TTEntry {
+    pub(crate) hash: u64,
+    pub(crate) depth: u8,
+    pub(crate) score: f32,
 }
 
-pub struct TranspositionTable {
+pub(crate) struct TranspositionTable {
     entries: Box<[TTEntry]>,
 }
 
 impl TranspositionTable {
-    pub fn new(size: usize) -> Self {
+    pub(crate) fn new(size: usize) -> Self {
         let size = size.max(1);
         Self {
             entries: vec![TTEntry::default(); size].into_boxed_slice(),
@@ -88,7 +88,7 @@ impl TranspositionTable {
         (hash as usize) % self.entries.len()
     }
 
-    pub fn probe(&self, hash: u64, depth: u8) -> Option<f32> {
+    pub(crate) fn probe(&self, hash: u64, depth: u8) -> Option<f32> {
         let entry = self.entries[self.index(hash)];
         if entry.hash == hash && entry.depth >= depth {
             Some(entry.score)
@@ -97,14 +97,14 @@ impl TranspositionTable {
         }
     }
 
-    pub fn store(&mut self, hash: u64, depth: u8, score: f32) {
+    pub(crate) fn store(&mut self, hash: u64, depth: u8, score: f32) {
         let entry = &mut self.entries[self.index(hash)];
         if depth >= entry.depth {
             *entry = TTEntry { hash, depth, score };
         }
     }
 
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.entries.fill(TTEntry::default());
     }
 }
