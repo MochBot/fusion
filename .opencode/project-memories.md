@@ -1,197 +1,349 @@
 # Supermemory Export
 
-**Exported:** 2026-02-20T03:54:47.852Z
+**Exported:** 2026-02-24T18:36:40.569Z
 **Scope:** project
 
 ---
 
-## Project Memories (81)
+## Project Memories (125)
 
-### [z4nrm3nAdseYXsX3AjEBgk] (architecture)
+### [utn1MKEswWMSSbQ3MKqsgB] (error-solution)
 
-[PROJECT] EXCLUDING ARTIFACTS FROM REFACTORING (2026-02-19):
+[PROJECT] error-solution: Z-scoring desync in relabel.ts — applyPhaseZScoringForPlayer was modifying flag.severity but NOT result.severity, causing analysis results to show original severity while timeline flags showed reclassified severity. Fix: after flag loop, sync result.severity by finding primaryFlag with non-none severity and copying it to result.severity, or setting result.severity='none' if all flags were downgraded.
 
-## Standard Exclusion Patterns
-```
-# .refactorignore (custom, used by IDE/tools)
-node_modules/
-dist/
-build/
-target/
-pkg/              # wasm-pack output
-*.generated.ts
-*.generated.rs
-*.d.ts
-__generated__/
-fixtures/
-*.wasm
-*.png
-*.jpg
-*.pdf
-third-party/
-vendor/
-```
+*Created: 2026-02-24T18:35:03.966Z*
 
-## Tool-Specific Config
-**knip**: `ignoreFiles: ["src/generated/**", "fixtures/**"]`, `ignoreDependencies: ["@internal/pkg"]`
-**cargo-machete**: `package.metadata.cargo-machete.ignored = ["prost"]` (build.rs deps)
-**clippy**: `#[allow(dead_code)]` on FFI exports
+### [jgYViUPv9PBsE4K1zDBXmB] (architecture)
 
-## Detection vs Exclusion
-- Run tools FIRST to identify candidates
-- Add false positives to exclusion lists
-- Review exclusions quarterly (stale entries)
+[PROJECT] architecture: Composite display in ReplayViewer.svelte uses path accumulators (path_attack, path_chain, path_context) NOT leaf-node channel scores (attack_score, chain_score, context_score). Leaf values are ~0 at depth 14 because they reflect the last move in beam search, not the root move. Path accumulators sum along the full search path root→leaf. board_score is still leaf value (valid since it's the final board eval). Visibility gate: `board_score !== 0 || path_attack !== 0 || path_chain !== 0 || path_context !== 0`.
 
-## Binary/Large Fixture Handling
-- Never include in refactor scopes
-- Keep separate `.gitignore` entries
-- Use Git LFS if tracked
+*Created: 2026-02-24T18:35:00.578Z*
 
-*Created: 2026-02-19T23:16:20.955Z*
+### [733gcuQ6UxZvsmje7bfa1L] (architecture)
 
-### [ZLHiHasXg166nh11EHGKPv] (architecture)
+[PROJECT] architecture: combo_before wiring complete (2026-02-24). Pre-tick combo captured in snapshotWorker.ts (line after holdLockedBefore), passed as 16th arg to evaluatePositionSafe in analyzer.ts, which forwards it as `combo_before: comboBefore ?? null` in the WASM frame context object (ReplayFrameContextJson). Rust side reads combo_before from ctx for InsightDetectorInput, enabling ChainBreak detector to compare pre-lock vs post-lock combo (was previously dead code reading same post-lock value for both).
 
-[PROJECT] ATOMIC COMMIT SEQUENCING FOR REFACTORS (2026-02-19):
+*Created: 2026-02-24T18:34:55.366Z*
 
-## Atomic Commit Definition
-- Single purpose, cannot be subdivided
-- Builds AND tests pass
-- Self-documenting message
+### [tU3FA8Y32xZEYingH1Jhss] (error-solution)
 
-## Refactor-Only Commit Rules
-1. **No behavior changes** (input→output identical)
-2. **One extraction per commit** (Extract Method, Move Class, etc.)
-3. **Message format**: `refactor(scope): extract X from Y for Z reason`
+[PROJECT] error-solution: ReplayViewer.svelte had TWO stray closing braces (at original lines 280 and 316) that caused "Unexpected else" Svelte compilation errors (ERROR 500). Root cause: previous edits to the if/else-if chain (COMPLETE → ANALYSIS_RESULT → ANALYSIS_COMPLETE → ERROR) left extra `}` braces that prematurely closed blocks before their `else if` continuations. Fix: removed both stray `}` lines. The brace chain structure must be: each `} else if` opens/closes in sequence without intermediate closing braces from inner if blocks leaking out.
 
-## Sequencing Pattern
-```
-commit 1: refactor(auth): extract PasswordValidator from UserAuthService
-commit 2: test(auth): add characterization tests for PasswordValidator
-commit 3: refactor(auth): move PasswordValidator to validators/
-commit 4: refactor(auth): remove deprecated wrapper from UserAuthService
-```
+*Created: 2026-02-24T18:34:49.330Z*
 
-## Safe Merge Strategy
-- Squash only if commits span <1 day and single author
-- Keep characterization test commits separate
-- Never squash across test failures
+### [a7MDoortgHSW5LHi8wMQGU] (error-solution)
 
-## JJ Workflow
-```bash
-jj describe -m "refactor: extract PasswordValidator"
-jj new  # clean commit boundary
-```
+[PROJECT] error-solution: Oracle+Deep review (2026-02-24) found 3 CRITICAL bugs in insight detectors: (1) ChainBreak DEAD — wasm.rs reads ctx.combo for BOTH combo_before and combo_after (same post-lock value), so combo_before>0 && combo_after==0 is impossible. Need pre-lock combo from frontend. (2) AttackWindowMiss STARVED — uses leaf-node attack_score (~0 at depth 14) instead of path_attack. Threshold needs bump from 1.0 to 2.0-3.0 for path scale. (3) DownstackEfficiencyMiss INVALID — board_gap = best_board_score (absolute) - board_eval_delta (1-depth delta), dimension mismatch. Also: composite display shows leaf values (~0), should show path accumulators. Progress toast uses frames*playerCount (~20K) instead of lock frames (~1000). These bugs explain "no pins" on 30-sec replays.
 
-## PR Review Optimization
-- Group related commits in PR description
-- "Refactor chain: extract → move → cleanup"
-- Link to pre-refactor checkpoint tag
+*Created: 2026-02-24T14:31:52.997Z*
 
-*Created: 2026-02-19T23:16:20.721Z*
+### [rhVt7R6d4iFbaLn4QK9YMw] (architecture)
 
-### [LeazpNB4ZHNE4qdtocjwer] (architecture)
+[PROJECT] architecture: Coaching objective layer refactor COMPLETE (T1-T16, F1-F4) + post-E2E fixes. Final architecture: composite scoring with DIFFERENTIATED weights (board_weight=1.0, attack_weight=0.25, chain_weight=0.15, context_weight=0.10) wired through assemble_composite via SearchConfig (no longer hardcoded DEFAULT_*_WEIGHT=1.0). Context signal now threaded: shape_context_modifier(next_combo - current_combo) instead of hardcoded 0.0. 3 path accumulators: path_attack + path_chain + path_context on SearchNode/SearchResultFull/MoveEvalResultJson. chain_break insight threshold raised 0.1→0.3 + requires actual_combo_before>0 (was 85% noise, now fires only when player actually broke an active combo). InsightDetectorInput gained actual_combo_before field. Frontend MoveEvalResult in types.ts has board_score/attack_score/chain_score/context_score/path_attack/path_chain/path_context/insight_tags. SIGMOID_K=0.10. All gates pass: 139/139 lib, 14/14 presim (3 ignored), 1/1 e2e, clippy clean, WASM 227KB.
 
-[PROJECT] STEPWISE VERIFICATION + ROLLBACK CHECKPOINTS (2026-02-19):
+*Created: 2026-02-24T13:28:14.362Z*
 
-## Pre-Refactor Checkpoint
-- `jj describe -m "checkpoint: pre-refactor snapshot"` OR `git tag pre-refactor-YYYYMMDD`
-- Run full test suite, capture baseline
+### [WjwpLc4gXirtpu39JNTViq] (architecture)
 
-## Incremental Verification Pattern
-1. **Characterization tests** (for untested code): Capture actual behavior, not expected
-2. **Run after each extraction**: `cargo test` / `bun test`
-3. **Gate with CI**: PR must pass before merge
+[PROJECT] E2E QUALITY VALIDATION RESULTS (2026-02-24): Two real replays (firestorm 124 moves, tiki2tgt 135 moves) tested through full WASM pipeline (beam=800, depth=14). Severity classification working (93-95% none, 5-7% flagged). chain_break insight fires 85%+ of moves — TOO NOISY, threshold 0.1 needs raising to 0.3+ or adding combo_before>0 precondition. attack_window_miss and downstack_efficiency_miss fire appropriately. T-spin detection works correctly (F1803/F1827 in tiki2tgt replay). Composite weights still placeholder (DEFAULT_*_WEIGHT=1.0 in assemble_composite, not using SearchConfig differentiated weights). Context modifier hardcoded to shape_context_modifier(0.0). path_attack accumulation works (max ~34.7 across both replays). E2E test file: mosaic-fusion-testing/src/test/e2e-quality.test.ts.
 
-## Rollback Strategy
-- **JJ**: `jj undo` (single command, instant)
-- **Git**: `git revert --no-commit` then review
-- **Feature flags**: Disable new path, re-enable old path (no redeployment)
+*Created: 2026-02-24T12:52:38.316Z*
 
-## Git Bisect Hygiene
-- Every commit must build AND pass tests (no "WIP" commits)
-- Refactor-only commits: no behavior changes
-- If refactor reveals bug, fix in separate commit
+### [utBPTtjhMcp5NJBNR6aHSD] (architecture)
 
-## Checkpoint Cadence
-- After every major extraction
-- Before touching shared/util code
-- Before modifying public APIs
+[PROJECT] architecture: Coaching objective layer refactor COMPLETE (T1-T16, F1-F4). Final architecture: composite scoring (board_weight=1.0, attack_weight=0.25, chain_weight=0.15, context_weight=0.10) in search_expand.rs gen_and_eval_root + expand_node. 3 MVP insight detectors (AttackWindowMiss, ChainBreak, DownstackEfficiencyMiss) in analysis.rs detect_insights(). SIGMOID_K=0.10 (calibrated down from 0.15 for wider composite range). WASM pkg/ output 227KB. All gates pass: 139/139 lib tests, 14/14 presim (3 ignored fixtures), clippy -D warnings clean, WASM build clean.
 
-*Created: 2026-02-19T23:16:11.368Z*
+*Created: 2026-02-24T12:07:51.322Z*
 
-### [xPm5Cx3Ks2cQfR6mT5H4VJ] (architecture)
+### [SRp7XHzftk8VJd6BibxaKz] (error-solution)
 
-[PROJECT] AGGRESSIVE DEAD-CODE ELIMINATION BEST PRACTICES (2026-02-19):
+[PROJECT] error-solution: T13 calibration sweep — composite scoring (board+attack+chain+context) widened score gaps causing 13.3% blunder rate (limit ≤5%) in test_calibration_severity_distributions. Fix: reduced SIGMOID_K from 0.15 to 0.10 in analysis.rs:127. K controls sigmoid steepness — lower K = less sensitivity to score gaps, compensating for ~2x wider composite range. SIGMOID_C_BASE (-13.5) unchanged. classify_win_prob_drop thresholds (5%/12%/22%) unchanged. All presim_validation tests pass with K=0.10.
 
-## RUST Toolchain
-- `cargo clippy --all-targets -- -D warnings -W dead_code` (CI enforcement)
-- `cargo +nightly udeps` (unused dependencies in Cargo.toml)
-- `cargo machete` (fast but imprecise dep check, use --with-metadata for accuracy)
-- `#[allow(dead_code)]` for false positives (e.g., FFI entry points, macro-generated callers)
+*Created: 2026-02-24T11:56:21.101Z*
 
-## TypeScript/Svelte Toolchain
-- **knip** (recommended): `knip --fix` auto-removes unused exports/dependencies. Config: `ignoreFiles`, `ignoreDependencies`, `ignoreExportsUsedInFile: { interface: true, type: true }`
-- **ts-prune**: `npx ts-prune --error` for CI gating. Use `.ts-prunerc` to ignore entrypoints.
-- **ts-morph**: `sourceFile.fixUnusedIdentifiers()` for programmatic cleanup (iterate 2-3x for cascading removals)
+### [z28bs8ERkPCYZFgCnB2qjP] (architecture)
 
-## Svelte-Specific
-- Tree-shaking works on ESM imports only (no require)
-- Svelte 5 runes ($state, $derived) are tree-shakeable; transition code requires component usage to avoid pruning
-- Vite's production build applies tree-shaking automatically
+[PROJECT] architecture: T12 MVP insight detectors implemented in analysis.rs — 3 detectors: AttackWindowMiss (best_attack>1.0 + loss>0.5), ChainBreak (best_chain>0.1 + combo_after=0), DownstackEfficiencyMiss (board_gap>2.0 + delta<0). InsightDetectorInput struct takes best channel scores + actual_score + frame context (combo, lines, board eval delta). detect_insights() returns Vec<InsightResult> with tag/severity/delta. Wired into wasm.rs evaluate_position_wasm via 11-tuple destructuring. insight_tags populated as Vec<String> from InsightTag::to_str().
 
-## False Positive Guards
-- Dynamic imports: `await import()` not detected by static analysis
-- Exported types used in .svelte files (knip's `ignoreExportsUsedInFile`)
-- Reflection patterns (emit/decorators)
-- Test utilities with indirect usage
+*Created: 2026-02-24T11:56:15.976Z*
 
-*Created: 2026-02-19T23:16:11.190Z*
+### [CMvaxfMuRB6ecmA5NRgao4] (architecture)
 
-### [FAqi2HuL4M1rWQJxrnx7ZJ] (architecture)
+[PROJECT] architecture: T11 WASM wiring complete — MoveEvalResultJson now has board_score/attack_score/chain_score/context_score (f32) and insight_tags (Vec<String>). Fields populated from SearchResultFull in evaluate_position_wasm via expanded destructuring tuple. insight_tags defaults to Vec::new() until T12 wires detectors. SearchResultFull already had these fields from T10 (copies from best node's composite scores).
 
-[PROJECT] GOD-FILE REDUCTION STRATEGY (2026-02-19):
+*Created: 2026-02-24T11:47:15.368Z*
 
-## Detection Heuristics (God Class/Module)
-- >500 lines OR >20 public methods OR >15 dependencies
-- Cohesion score <0.3 (methods access disjoint field subsets)
-- Change frequency across unrelated bug fixes
+### [DkZcdJoj8e43PPh25SZDCm] (learned-pattern)
 
-## Staged Extraction (Martin Fowler)
-1. **Identify code regions** (file I/O, validation, rendering, etc.)
-2. **Create covering tests** for region before extraction
-3. **Extract Method** for region-specific logic
-4. **Move Method** to new class with minimal interface
-5. **Replace caller** with new class delegation
-6. **Iterate** until god-file is thin orchestration layer
+[USER] learned-pattern: OMO todo continuation hook fires independently of subagent task() completion. When task() returns, the file-change summary may reflect the full repo JJ diff (all uncommitted changes) rather than just the subagent's edits. If two parallel task() calls return with identical massive file-change lists, this is the JJ colocated diff showing ALL uncommitted work — not evidence of scope creep. Always verify by reading the actual target files rather than trusting the diff summary.
 
-## Risk Mitigation
-- One region per commit (atomic + revertible)
-- Keep original methods as deprecated wrappers temporarily
-- Feature flag for new class path if high traffic
-- Never extract >3 methods in single PR
+*Created: 2026-02-24T11:20:38.378Z*
 
-## Prioritization
-- Most-changed regions first (highest ROI)
-- Stateless utilities (easiest to move)
-- Dependencies with clear boundaries
+### [9hNqGXFmWRW4a9CWZv7FjP] (error-solution)
 
-*Created: 2026-02-19T23:16:11.161Z*
+[PROJECT] error-solution: T6 (MoveEvalResultJson extension) was marked complete in Wave 1 compressed summary but fields board_score/attack_score/chain_score/context_score/insight_tags are NOT present in wasm.rs MoveEvalResultJson struct (verified via grep). T6 needs to be re-done as part of T11 (WASM wiring). Always verify compressed summaries against actual code.
 
-### [rXQ9966wMgzyEjwDRriv7t] (architecture)
+*Created: 2026-02-24T11:13:31.501Z*
 
-[PROJECT] REFACTORING RESEARCH REQUEST (2026-02-19): User requested best practices research on: (1) Aggressive dead-code elimination in Rust + TypeScript/Svelte repos, (2) Staged god-file reduction strategy, (3) Stepwise verification and rollback checkpoints, (4) Excluding generated/third-party/binary artifacts from refactors, (5) Atomic commit sequencing for refactor-only changes. Research in progress.
+### [KRUzRfdDTJjaREa4LPTzyG] (architecture)
 
-*Created: 2026-02-19T23:13:14.929Z*
+[PROJECT] architecture: T7+T8 implementation requires threading SearchConfig through SearchExpansionContext (add `config: &'a SearchConfig` field), then using it in gen_and_eval_root and expand_node to call calculate_attack(), shape_chain_value(), shape_context_modifier(), and assemble_composite(). Key: SearchExpansionContext construction is in search.rs run_beam_search_iteration (~L157-162), params.config is already available there. Both gen/expand functions call generate() with check_spin=false that needs to become true.
 
-### [D3SdA3CLzLo3kFwutyi4eB] (conversation)
+*Created: 2026-02-24T11:13:31.117Z*
 
-[PROJECT] Plan recovery expectation: The active implementation plan should be recovered from past session history (after crash recovery), not assumed from the only file currently under `.sisyphus/plans/`.
+### [xUV8SWcXYqXKReDwwfmTto] (learned-pattern)
 
-*Created: 2026-02-18T20:37:34.742Z*
+[PROJECT] learned-pattern: Subagent task() delegation can return with "no assistant response found" when the subagent was still reading files — the file change list in the output shows the entire JJ working copy diff (all uncommitted changes), NOT new changes by the subagent. Always verify actual source file state with `read` before assuming scope creep. The jj diff --stat shows cumulative uncommitted changes across all waves, not per-task deltas.
+
+*Created: 2026-02-24T11:13:23.778Z*
+
+### [KEJzzxgCe4BL84GUWeuKe6] (learned-pattern)
+
+[PROJECT] learned-pattern: JJ colocated repo file recovery — `jj op restore` reverts the ENTIRE working copy to that operation's state, not just one change. Files created between the restore target and current state disappear from the working copy but are NEVER lost. Recovery path: (1) `jj --at-op <id> file list/show` to check visible revisions at each op, (2) if not found there, use `git log --all -- '<path>'` on the colocated git backend to find JJ's automatic working-copy snapshot commits (unreferenced git objects), then `git show <hash>:<path>` to extract. To undo just ONE operation, prefer `jj undo` (undoes only last op) or `jj op restore` to the op immediately before the bad one. Concrete case: `coaching-objective-layer-refactor.md` lost during restore to 16hr-old state, recovered from git commit `51f4968`.
+
+*Created: 2026-02-24T10:32:24.156Z*
+
+### [ZUN6cM33f2kZveuuNCqUqq] (learned-pattern)
+
+[PROJECT] learned-pattern: When using `jj op restore` to revert one specific change, be aware it reverts the ENTIRE working copy to that operation's state — not just the one change you're targeting. Files created between the restore target and the current state will disappear from the working copy. Always use `jj op log` to find the most recent clean state, not an arbitrarily old one. To undo just ONE operation, prefer `jj undo` (which undoes only the last op) or use `jj op restore` to the operation immediately before the bad one. The `coaching-objective-layer-refactor.md` plan file was lost because restore targeted an op from 16 hours ago instead of the op immediately before the bad `jj describe`.
+
+*Created: 2026-02-24T10:28:31.073Z*
+
+### [KWrjNGUbMxNy8xYoxk7xCw] (error-solution)
+
+[PROJECT] learned-pattern: Atlas orchestrator executed wrong plan (fusion-mass-cleanup, already complete) instead of the active coaching-objective-layer-refactor plan. Root cause: boulder.json still pointed to fusion-mass-cleanup from prior sessions, and the orchestrator followed it blindly instead of checking conversation context. Recovery: jj op restore to undo the bad jj describe, then deleted stale plans/boulder/notepads/evidence. Lesson: always verify boulder.json matches the user's current intent before executing, and delete completed plan artifacts after a plan is done.
+
+*Created: 2026-02-24T10:26:02.707Z*
+
+### [ncGPDLbt1Q9RzpECX6ECcy] (architecture)
+
+[PROJECT] Plan identity + detector scope update (2026-02-24): planning artifact is now `.sisyphus/plans/coaching-objective-layer-refactor.md` (renamed from `v6-eval-rework.md`) to reflect a larger architecture-layer shift rather than a minor version bump. Allspin is explicitly global in expansion (`check_spin=true` root/depth), and detector MVP scope is `attack_window_miss`, `chain_break`, `downstack_efficiency_miss` to prioritize high-signal stability. This narrows first-pass complexity while preserving iterative extension later.
+
+*Created: 2026-02-24T07:42:07.009Z*
+
+### [NVfH1CT5iv3B7snyXHSvKv] (architecture)
+
+[PROJECT] Offense/defense intent model lock (2026-02-24): `downstack_efficiency_miss` is always computed over the 14-piece horizon using `lpp = lines_cleared / pieces_used`, but it only fires when move intent is classified as downstack. Intent classifier is 2-signal primary (`OffenseOpportunity` vs `DefensePressure`) with `move_effect_delta` used only as near-tie tiebreak, preventing circular logic and reducing overfit risk. This lock preserves deliberate upstack burst lines while still penalizing true downstack inefficiency under pressure.
+
+*Created: 2026-02-24T07:41:44.271Z*
+
+### [aNVfJwETSgWG7d7GHUY7Su] (architecture)
+
+[PROJECT] High-accuracy review consolidation (2026-02-24): Momus returned [OKAY] on `.sisyphus/plans/coaching-objective-layer-refactor.md`, then Oracle identified three planning tighten-ups that were applied: (1) define downstack intent inputs explicitly (`DefensePressure` vs `OffenseOpportunity`) with default gate params `τ=0.30`, `ε=0.10`; (2) fix dependency realism by removing unnecessary T13<-T12 coupling and making T15 independent; (3) explicitly initialize `root.path_attack = attack_val` for root/depth consistency. Parallelism estimate was revised from ~60-70% to ~40-50% to match actual staged dependencies.
+
+*Created: 2026-02-24T07:41:44.254Z*
+
+### [SCxSPB8MjPSKx6fufiHV29] (architecture)
+
+[PROJECT] V6 plan decision update (2026-02-24): allspin is now explicitly in scope for composite-scoring rollout, replacing earlier T-only spin-gating assumptions. Plan tasks were updated so `generate(..., check_spin)` is enabled globally in both root and depth expansion paths, because spin-driven chain maintenance is considered core meta signal. Detector scope was intentionally narrowed to an MVP set (attack_window_miss, chain_break, false_safety_clear) to improve early signal quality and reduce noisy overreach before iterative refinements.
+
+*Created: 2026-02-24T06:49:32.261Z*
+
+### [xYuESx2CXtuqfH3zkvEhtW] (architecture)
+
+[PROJECT] ATTACK SCORING STATUS CORRECTION (2026-02-23): Current `src/search_expand.rs` still scores nodes with `evaluate_with_tt(...)` only; `calculate_attack()` is not yet part of expansion score assembly. The b2b/combo/coaching propagation exists, so integration is straightforward, but it has not been wired into `SearchNode.score` yet. V6 rollout should treat this as an implementation task and keep TT-safe composition by caching board-eval only and adding path-dependent terms outside TT.
+
+*Created: 2026-02-24T04:53:19.609Z*
+
+### [obWfsSoxKBGcBUdgXZxd8s] (architecture)
+
+[PROJECT] V6 planning constraint discovered in Metis gap analysis (2026-02-23): spin detection in search generation is controlled by a single `check_spin` boolean at `generate(...)`, so enabling it changes branching behavior materially and requires explicit policy (piece-gated vs global). Composite scoring introduces path-dependent terms, therefore `evaluate_with_tt` should remain board-eval caching only, with attack/chain/context terms composed outside TT to avoid cache invalidation artifacts. Because score variance increases, pruning settings (notably `futility_delta`) need retuning as part of the same rollout or pruning behavior becomes unreliable.
+
+*Created: 2026-02-24T04:52:58.803Z*
+
+### [8y8hbLo8iABwc3wxBzhUfb] (architecture)
+
+V6 architecture review outcome (2026-02-23 brainstorming): For presim coaching objective upgrade, recommended rollout is additive-composite scoring first (board + strategic/path terms) before two-stage gates or policy-conditional objectives. Reason: lowest control-flow disruption and easiest calibration surface while still addressing current board-shape dominance. Two-stage and state-conditional objectives are deferred due to threshold cliffs/score comparability risks; validate additive behavior first with coefficient sweeps and regression checks for over-aggression vs under-correction.
+
+*Created: 2026-02-24T04:38:47.585Z*
+
+### [NJfuBo5PGoKu8SwKtQdcmj] (architecture)
+
+[PROJECT] TETRIS RANK-SPECIFIC COACHING PRIORITIES (2026-02-23): D-C (<1.0 PPS): flat stacking, avoiding covering holes, recognizing garbage holes — don't penalize B2B breaks. B-A (1.0-1.4 PPS): 9-0/6-3 structure, basic TSD, one opener — penalize missing obvious TSDs. S-SS (1.5-2.0 PPS): B2B maintenance, opener proficiency, queue reading — strongly penalize dropping B2B for unnecessary singles ("skimming"). U-X (2.5-3.5+ PPS): timing, opponent tracking, cheese survival, efficiency — penalize attacking into ready opponent, flag missed spike opportunities. Midgame 3-phase framework: Build/Plonk (opponent clean → build setups), Surge/Spike (opponent vulnerable → burst), Downstack/Cheese (you're high → survive efficiently). Maps directly to CoachingState (Surge/Fatal/Build phases).
+
+*Created: 2026-02-23T17:41:53.573Z*
+
+### [28E9hDL9ggC52u2hprXLfE] (architecture)
+
+[PROJECT] COACHING ENGINE PEDAGOGY RESEARCH (2026-02-23): Key findings from chess/Tetris coaching research: (1) Lichess uses Win Probability Drop (sigmoid-normalized) not raw centipawn — maps to our classify_win_prob_drop. (2) Chess.com "Brilliant" uses depth discrepancy (shallow=bad, deep=good) — maps to T-spin setups that look messy at depth 2 but resolve at depth 14. (3) Lc0 "high prior + low posterior" = move looks natural but is tactically flawed — most valuable coaching signal, identifies intuition traps. (4) Maia behavioral cloning: 9 models per 100-Elo band, surprise=-log(P) from peer model — recommending X+ moves to B-rank is mathematically optimal but pedagogically useless. (5) MochBot "no eval just presim": deep search naturally discovers penalties because bad moves constrain board 12+ moves later — show CONSEQUENCES not HEURISTIC VIOLATIONS. (6) Deliberate practice research: aggregate across games, identify patterns ("60% of blunders when stack>row 12"), ONE thing done wrong most often >> showing optimal play for every move.
+
+*Created: 2026-02-23T17:41:46.193Z*
+
+### [YFBhMtLwfgL4pdPdXCMX7d] (architecture)
+
+[PROJECT] V6 EVAL REWORK — CORE INSIGHT (2026-02-23): The fundamental problem with V5 presim is that SearchNode.score = evaluate(board) which is pure board-shape heuristic (9 features: holes, height, bumpiness, well_depth, etc). The beam search optimizes for "flattest board in 14 moves" instead of "most damage / best survival path." All infrastructure for path-aware scoring ALREADY EXISTS in codebase: calculate_attack() in attack.rs is pure arithmetic (cheap), search_expand.rs already tracks lines_cleared/b2b/combo/spin_type via Move.spin() and next_chain_values(), CoachingState::transition() runs at every expansion. The only missing wire is calling calculate_attack() during expansion and adding result to score. check_spin=false in generate() prevents T-spin detection during search — must enable for T-pieces at minimum.
+
+*Created: 2026-02-23T17:41:35.952Z*
+
+### [5S3dCXcG9CgZk6zLJcKB32] (architecture)
+
+[PROJECT] Fusion Debug Panel Removal (2026-02-23): Deleted src/lib/fusion/debug/ directory (FusionDebugPanel.svelte, AttackCalculator.svelte, BoardEvaluator.svelte, MoveEvalDisplay.svelte, index.ts). Removed from ReplayViewer.svelte: import line 30, showFusionDebug state + currentBoardRows derived (lines 563-572), settings toggle (lines 1333-1365), modal block (lines 1484-1551). Added analysis progress toast using toast.loading+update pattern: tracks analysisFramesProcessed counter, updates every 10 frames with "Analyzing... N/total moves (X%)", dismisses + shows success on ANALYSIS_COMPLETE. The edit tool repeatedly fails with "undefined is not an object (evaluating 'ref.trim')" on this file — use sed for line deletions instead.
+
+*Created: 2026-02-23T17:12:10.340Z*
+
+### [iw9DWSZuwRTeg823d7uoLE] (architecture)
+
+[PROJECT] Mosaic Frontend - Fusion Debug Panel Architecture (2026-02-23): Debug panel lives at src/lib/fusion/debug/ with FusionDebugPanel.svelte, AttackCalculator.svelte, BoardEvaluator.svelte, MoveEvalDisplay.svelte, and index.ts re-export. Controlled by `showFusionDebug` state in ReplayViewer.svelte (line 564). Toggle in Settings section lines 1344-1371, modal rendering lines 1495-1562. Toast library at src/lib/web/toast.ts wraps external _toast — loading() returns {dismiss, update} for progress tracking. Video generation progress pattern at line 708 uses update() callback. Analysis flow uses `analyzing` boolean + `analysisPlayersExpected/Completed` tracking per worker ANALYSIS_RESULT/ANALYSIS_COMPLETE messages.
+
+*Created: 2026-02-23T17:04:58.548Z*
+
+### [HjPZjKwuzPjtoLvGBsF5YD] (error-solution)
+
+[PROJECT] WASM Cache Gotcha: `cargo clean -p direct-cobra-copy` only cleans native targets, NOT the wasm32-unknown-unknown target. When WASM binary has stale compiled code despite source changes, must `rm -rf target/wasm32-unknown-unknown` before `wasm-pack build`. Vite dev server also caches WASM modules aggressively — clearing `node_modules/.vite` AND restarting the dev server is needed. Verify with `strings fusion_wasm_bg.wasm | grep <removed_symbol>` to confirm binary is actually rebuilt.
+
+*Created: 2026-02-23T16:51:23.154Z*
+
+### [AbHP2EvZYWJW7fHTsBSBFf] (project-config)
+
+[PROJECT] WASM Build V5 Final: PlonkState removed from coaching system (state.rs, analysis.rs, wasm.rs). WASM rebuilt at 223KB via `CLOUD_EXEC_SKIP=1 wasm-pack build --target web --out-dir mosaic-fusion-testing/src/lib/fusion/wasm --out-name fusion_wasm --features wasm --no-default-features`. Output at mosaic-fusion-testing/src/lib/fusion/wasm/. 12 exports: JsAttackConfig, JsBoard, JsMove, calculateAttack, evaluate_board, evaluate_position, evaluate_with_weights, find_best_move, get_all_moves, init, initSync, default. V5 evaluate_position returns 11 fields including position_complexity and coaching states (no plonk). Remaining coaching multipliers: Fatality 1.5×, Surge 1.4×, Obligation 1.3×.
+
+*Created: 2026-02-23T16:45:42.987Z*
+
+### [Nn6YseXEN8URKPuS9Ykhh5] (architecture)
+
+[PROJECT] PlonkState REMOVED from coaching system: User clarified "plonk" means timing/waiting for counterattack, not sloppy placement. The streak-of-non-clears heuristic (PlonkState::Stable/Drifting/Spiral based on consecutive non-clearing moves) was actively harmful — penalized intentional quad/tspin setup. Removed from state.rs (enum + fields + transition logic + serialization), analysis.rs (plonk_mul branch in coaching_dp_multiplier, test fixtures), wasm.rs (plonk_to_contract fn, MachineDiagnosticsJson plonk field, PlonkState import). Remaining multipliers: Fatality 1.5×, Surge 1.4×, Obligation 1.3×. Serialization format stays "v2|..." with 6 fields (fatality|obligation|surge|phase|ply).
+
+*Created: 2026-02-23T16:42:54.277Z*
+
+### [H4ny42uvNKTRSeJQywFocW] (project-config)
+
+[PROJECT] V5 Calibration Values (final): SIGMOID_K=0.15 (was 0.12), SIGMOID_C_BASE=-13.5 (was -15.0). compute_sigmoid_c uses ln(pps) for exponential skill separation: D-rank c≈-13.0, S-rank c≈-18.3, X+-rank c≈-24.9. Calibration results: X+ 92% None / 0% Blunder, S 68% None / 8% M+B, D 60% None / 20% M+B. classify_win_prob_drop thresholds unchanged: ≥0.22 Blunder, ≥0.12 Mistake, ≥0.05 Inaccuracy. coaching_dp_multiplier max-across-dims: Fatal=1.5, Active=1.4, MustCancel=1.3, Spiral=1.2.
+
+*Created: 2026-02-23T16:34:18.471Z*
+
+### [GdfpsMAcH3cREyNNczvrF6] (architecture)
+
+[PROJECT] V5 Presim Coaching Architecture: Frontend has TWO analysis paths — snapshotWorker.ts (production) passes all 13 coaching args (player stats, b2b, combo, lines_cleared, hold_used, pending_garbage) to evaluatePositionSafe, while analyzer.ts runAnalysis (legacy/main-thread) only passes 5 args (board, postBoard, piece, queue, hold). Only the worker path benefits from V5 coaching multipliers and forced root move. position_complexity is returned by WASM but NOT consumed by any frontend component yet — available for future UI integration.
+
+*Created: 2026-02-23T16:34:12.064Z*
+
+### [F799shvbkBZUMrYs4pxxAB] (error-solution)
+
+[PROJECT] Presim Coaching V5 Calibration Test: tests/presim_validation.rs (708 lines) contains 3 calibration tests for Task 9. Key compilation fixes: Board doesn't implement Copy (use .clone()), root_scores is Vec<(Move, f32)> not HashMap (use .iter().map(|(_, s)| *s)), GameState.b2b is u8 not bool (use 0 not false), find_best_move_with_scores returns Option<SearchResultFull> (needs .unwrap()). search_root_scores() uses SearchConfig::default() (beam_width=800, depth=14) which is slow but accurate for calibration.
+
+*Created: 2026-02-23T16:23:32.376Z*
+
+### [dzrG8MebPscPL2mfzkNmnz] (learned-pattern)
+
+[PROJECT] Task 9 Calibration Approach: WASM-based replay analysis is too slow (beam_width=800, depth=14 takes 100+ sec per replay in Node.js). Chose native Rust calibration test instead — create diverse board scenarios, run find_best_move_with_scores natively, classify severity at D/S/X+ tiers via classify_win_prob_drop. PlayerSkill default is S-rank (pps=1.57, app=0.48, dsp=0.20). compute_sigmoid_c values: D(pps=0.69)≈-18.9, S(pps=1.57)≈-20.3, X+(pps=3.27)≈-24.9. Task 9 acceptance: X+≥60% None ≤5% Blunder, D≥15% Mistake+Blunder, monotonic worsening X+→D.
+
+*Created: 2026-02-23T16:14:10.617Z*
+
+### [JAorjvAZaQj52nUWYCujpc] (project-config)
+
+[PROJECT] Calibration Corpus Infrastructure: 49 rank-labeled .ttrm replay files exist at mosaic-fusion-testing/src/test/fixtures/replays/bulk/ with filename prefixes encoding rank tiers (u__=U/X+, ss__=SS/X+, s__=S, s-__=S-, a+__=A+, a-__=A-, b+__=B+, b__=B). bulk-replay.test.ts reads all files, runs analyzeReplayFile() for all rounds × both players, collects severity distributions (none/inaccuracy/mistake/blunder counts + avgEvalLoss). Run via `npx vitest run src/test/bulk-replay.test.ts` from mosaic-fusion-testing/. Current WASM build includes all Wave 1+2 changes (SIGMOID_K=0.15, beam_width=800, depth=14, futility_delta=5.5, coaching multipliers, position complexity, root move forcing).
+
+*Created: 2026-02-23T16:06:06.408Z*
+
+### [wfBp6tqCxhgsgFwS2LQAJH] (architecture)
+
+[PROJECT] Responsibility Split for Calibration: Fusion (Rust) owns search/eval/scoring/sigmoid/severity classification — pure board-state math exposed via WASM. Mosaic (TS/Triangle) owns replay parsing, board reconstruction, simulation, display, and calling Fusion WASM with board states + player stats. For corpus calibration (Task 9), data collection runs through Mosaic's existing pipeline (harness.ts → evaluatePositionSafe → WASM). Rust-side constants (SIGMOID_K, classify_win_prob_drop thresholds, compute_sigmoid_c coefficients) are tuned based on Mosaic output distributions. Don't overthink — Mosaic already handles everything needed for extraction/simulation/display.
+
+*Created: 2026-02-23T16:03:59.767Z*
+
+### [joyANYSg449eNn6XmMywGs] (project-config)
+
+[PROJECT] WASM Build & Deploy Config: Build command is `wasm-pack build --target web --out-dir <path> --out-name fusion_wasm --features wasm --no-default-features`. Output goes to `mosaic-fusion-testing/src/lib/fusion/wasm/` (NOT static/pkg/ as plan originally stated). Crate name is `direct-cobra-copy` but `--out-name fusion_wasm` renames output. Frontend imports from `$lib/fusion/wasm/fusion_wasm` in 3 files: harness.ts, fusion/index.ts, fusion/config.ts. WASM exports: init, calculateAttack, evaluate_board, evaluate_with_weights, evaluate_position, find_best_move, get_all_moves, JsAttackConfig, JsBoard, JsMove. The `evaluate_move` export was removed in V4 cleanup — dangling import in index.ts was fixed by removing that re-export line.
+
+*Created: 2026-02-23T16:01:32.238Z*
+
+### [u1ZwjHfHCk2hZuVwZA969C] (architecture)
+
+[PROJECT] Replay Analysis Pipeline Architecture: The full replay→board→analysis pipeline lives in mosaic-fusion-testing (TypeScript), NOT in fusion-engine (Rust). Triangle.js (`src/lib/triangle/`) handles replay parsing and board state reconstruction via Engine class. The analysis flow is: parse .ttrm → Triangle Engine → captureSpawnContext/captureLockContext (lifecycle.ts) → detectBoardChange → buildCleanPostBoard → evaluatePositionSafe (calls WASM). The test harness at `src/test/harness.ts` has `analyzeReplay(ttrm, playerIndex, roundIndex)` that runs the full pipeline. Replay API at `src/lib/api/remote/replay.remote.ts` fetches replays via `api.replay`. The Rust fusion-engine only receives board states via WASM bridge (evaluate_position_wasm) — it never parses replays directly. For Task 9 corpus calibration, must either: (a) run the TS pipeline to generate board states, then feed to Rust tests, or (b) use synthetic boards in Rust that simulate rank-appropriate difficulty levels.
+
+*Created: 2026-02-23T15:56:53.200Z*
+
+### [gZs55Ypjv78goMC1L4b3ay] (learned-pattern)
+
+[PROJECT] Rogue subagent prevention: 6/6 delegation attempts failed across presim-v5 and fusion-mass-cleanup. gemini-3-flash produces '(No text output)' and crashes silently. gemini-3.1-pro-high goes rogue modifying 17+ source files. JJ snapshots dirty working copy on crash. Recovery: jj op restore <op-id>. Strategy: direct implementation by orchestrator only, no more delegation.
+
+*Created: 2026-02-23T15:35:28.167Z*
+
+### [ELeKi8QrBgVbbjzQNsZ9y9] (error-solution)
+
+[PROJECT] Flaky test test_attack_integration_tspin_scores_higher: Random seed search (8000 seeds, depth 1) finds candidate_pairs=0 after search param upgrades (futility_delta 3.0→5.5, beam_width 300→800). The wider beam and higher futility threshold change which moves survive pruning at depth 1. Fix: replace random seed approach with deterministic T-spin-ready board construction using board_from_bottom_rows + row_with_gap helpers already in presim_validation.rs.
+
+*Created: 2026-02-23T15:35:23.170Z*
+
+### [4LZTmybqJDw7gg1mMhb91V] (architecture)
+
+[PROJECT] Presim V5 Wave 2 Complete: Tasks 5 (root move forcing), 6 (coaching ΔP multipliers), 7 (SIGMOID_K 0.15), 8 (position complexity) all implemented. search.rs=841 lines, analysis.rs=726 lines, wasm.rs=607 lines, search_config.rs=92 lines. 132 lib tests pass, clippy clean. Key values: beam_width=800, depth=14, futility_delta=5.5, CABS start width=200, time_budget_ms=None.
+
+*Created: 2026-02-23T15:35:18.414Z*
+
+### [VofSpYygcgYgepkUEBZcmj] (architecture)
+
+[PROJECT] CURRENT EVAL PIPELINE STATE (2026-02-23 post-cleanup): evaluate_position_wasm (wasm.rs): pre_board + post_board + piece + frame_context → find_best_move_with_scores (depth-12, width 300, 200ms budget) → SearchResultFull { best: SearchResult, root_scores: Vec<(Move, f32)> sorted desc } → generate-and-compare to identify actual move → lookup in root_scores → eval_loss = best_search_score - actual_search_score → win_prob sigmoid with skill-adaptive c(pps,app,dsp) → classify_win_prob_drop (5/12/22% ΔP thresholds) → coaching state escalation via classify_major_first → MoveEvalResultJson. If actual move not found in root_scores: severity=none, eval_loss=0 (no static eval fallback). Sigmoid: k=0.12, c = -15.0 + -5.0×ln(pps) + -2.0×app + -8.0×dsp. eval.rs has 9 features: holes(-4.0), cell_coveredness(-0.5), height(-0.2), height_upper_half(-1.0), height_upper_quarter(-5.0), bumpiness(-0.3), bumpiness_sq(-0.1), row_transitions(-0.3), well_depth(+0.2). 272 lines total. Frontend: snapshotWorker.ts passes player stats + coaching context → ReplayViewer.svelte receives ANALYSIS_RESULT → phase z-scoring at ANALYSIS_COMPLETE → rebuildDisplayFlagsForPlayer → Slider.svelte renders severity-colored pins.
+
+*Created: 2026-02-23T07:21:22.801Z*
+
+### [9m5ah7r4TE3a99YD1156nr] (learned-pattern)
+
+[PROJECT] RESEARCH FINDINGS — COACHING ENGINE PATTERNS (2026-02-23): Key patterns from 10 research agents across chess/Go/poker coaching engines: (1) Lichess: CPLoss = search_score(best) - search_score(actual), Win% sigmoid 1/(1+10^(-cp/400)), classify by WIN PROBABILITY DROP ≥30%=Blunder, ≥20%=Mistake, ≥10%=Inaccuracy. (2) Chess.com: depth discrepancy for Brilliant/Great detection (shallow vs deep eval). (3) KataGo: phase-relative z-scoring — z=(loss-μ_phase)/σ_phase, z>2.0=Blunder. Directly applicable to Tetris: "massive misdrop before death correlates to causing factor." (4) Maia Chess: 9 models per 100-Elo band, behavioral cloning predicts what player WOULD play, move surprise = -log(P). Transfer to Tetris: 10×20 grid, ~34 placements/frame, train on TTRM replays grouped by TR band. (5) Lc0: policy (prior/intuition) vs MCTS (posterior/calculation) — high prior + low posterior = natural mistake. (6) MochBot/MochEngine2: "No eval, just presim" — trivial static eval, depth 12-20, deep search naturally discovers penalties. Luke is creator, fully closed source. (7) Cold Clear 2: CMA-ES-tuned linear eval, SOTA for competitive Tetris bots. (8) ML feasibility in WASM: tiny NN (50→64→64→1) ~5-15ms for 10K evals, tract crate for ONNX in wasm32. But consensus: linear eval + presim remains best for Tetris.
+
+*Created: 2026-02-23T07:21:12.333Z*
+
+### [f8JYWRYSzizehhx6DduhG3] (architecture)
+
+[PROJECT] RESEARCH SYNTHESIS — NEXT STEPS FOR PRESIM COACHING (2026-02-23): 10 research agents + 2 Gemini Deep Research reports + Oracle consultation synthesized into actionable next steps. COMPLETED: (A) Pipeline fixes — eval_loss=0 bug, severity calibration (70%→28% blunders→4%), auto-pause severity filtering, timeline pins. (B) Search-score quality scoring — find_best_move_with_scores returns SearchResultFull with per-root-move max leaf scores from beam. Quality delta = best_search_score - actual_search_score (FREE from single search pass since beam width 300 > ~34 placements). (C) Stat-adaptive sigmoid — c(pps,app,dsp) shifts inflection per player skill from TTRM aggregatestats. (D) Phase z-scoring in relabel.ts — reclassifies severity within opening/midgame/endgame phases. (E) Coaching state hardcodes fixed — lines_cleared/b2b/combo/hold_used/pending_garbage now passed from JS to WASM. REMAINING (ordered priority): (1) Verify quality metric uses full search score including attack — search.rs already integrates S2 attack in gen_and_eval_root/expand_node via calculate_attack, but confirm leaf scores propagate attack value into root_scores. (2) Sigmoid recalibration — current k=0.12, deep research recommends k=0.15 with skill-scaled c. Thresholds 5/12/22% may need tuning against replay corpus. (3) Coaching state multipliers — Fatality 1.5x, Surge 1.4x, Obligation 1.3x, Plonk 1.2x on ΔP before classification (from deep research V3). (4) Forced-root search for beam-pruned moves — 15ms secondary search (depth 6, width 50) when player's move not in root_scores. (5) Position complexity — variance of top 10 root scores indicates forced vs creative positions, adjust classification tolerance. (6) 7-bag queue extension — track bag state to predict 1-3 pieces beyond visible queue. (7) Maia-style behavioral cloning — deferred, requires training data pipeline on Colab.
+
+*Created: 2026-02-23T07:20:57.001Z*
+
+### [vHgVngSicMBg7FHLtesxp8] (architecture)
+
+[PROJECT] V4 CLEANUP COMPLETE (2026-02-23): Removed all V4 eval bloat that contradicted presim-first architecture. Changes: (1) eval.rs: Removed 6 zeroed V4 features (aggregate_height, height_variance, almost_complete_rows, t_slot, blockade_depth, col_transitions), their 5 helper functions, BoardFeatures struct, and extract_features(). File reduced 438→272 lines. Original 9 features kept intact (holes, cell_coveredness, height, height_upper_half, height_upper_quarter, bumpiness, bumpiness_sq, row_transitions, well_depth). (2) wasm.rs: Removed FeatureDeltasJson struct, extract_features import/calls, delta computation, feature_deltas field from MoveEvalResultJson. Fixed quality metric fallback bug — when actual move not in root_scores, severity="none" + eval_loss=0 instead of falling back to static eval (depth-1 vs depth-12 scale mismatch). (3) Frontend (types.ts, snapshotWorker.ts, ReplayViewer.svelte): Removed FeatureDeltas interface, CoachingInsight interface, DELTA_LABELS, generateCoachingInsights function, featureDeltas from MoveFlag, coaching insights HTML block. All changes uncommitted in JJ working copy.
+
+*Created: 2026-02-23T07:20:38.936Z*
+
+### [xpvhDrUcc8xEaMjaL16RSJ] (architecture)
+
+[PROJECT] EVAL ARCHITECTURE DECISIONS — IMMUTABLE (2026-02-23): User chose Option C (pure presim, search-score quality scoring). These decisions are FINAL and must not be drifted from:
+
+1. NO EVAL WEIGHT TUNING: MochBot philosophy — "no eval, just presim." Search depth IS the evaluation. Do NOT add eval features for tuning (CMA-ES, NNUE, etc.). The V4 eval features (aggregate_height, height_variance, almost_complete_rows, t_slots, blockade_depth, col_transitions) added with zeroed weights were a MISTAKE — they contradict presim-first architecture.
+
+2. QUALITY METRIC MUST USE FULL SEARCH SCORE: The search score from depth-12 beam search includes both board eval AND attack value (calculate_attack with S2 mechanics, 99.99% parity). Quality delta = best_search_score - actual_search_score. Do NOT use static eval (depth-1) for quality comparison.
+
+3. ATTACK AND LINE CLEARS MUST FACTOR INTO QUALITY: search.rs already integrates S2 attack mechanics (gen_and_eval_root, expand_node call calculate_attack with b2b/combo propagation). The quality scoring pipeline must surface this — a T-spin triple sacrifice that the search correctly values should NOT be flagged as a mistake.
+
+4. FEATURE DELTAS ARE NOT INSIGHTS: The extract_features → FeatureDeltasJson pipeline is debugging information, not coaching insights. Either remove from WASM hot path or don't compute at all. Do not present as coaching content.
+
+5. SEARCH SCORE = GROUND TRUTH: Leaf node search score at depth 12 is the quality metric. No secondary eval, no percentile ranking, no threshold tables. Win% sigmoid on search scores for classification.
+
+*Created: 2026-02-23T06:55:21.257Z*
+
+### [3vRo3JG7wu71Zu4ENpV5hh] (architecture)
+
+[PROJECT] MOCHBOT: Luke is the creator of MochBot. MochBot currently uses MochEngine 2. MochBot is fully closed source. Cold Clear 2, Zetris, and Misamino are all 4-5 years old and considered outdated by the user.
+
+*Created: 2026-02-23T04:39:28.862Z*
+
+### [8tQKCPVcqXGQZKnDy6D2ZE] (architecture)
+
+[PROJECT] EVAL ARCHITECTURE: User chose Option C (pure presim / search-score quality scoring with win% sigmoid). Budget is NOT a hard constraint for replay analysis — performance should not be sacrificed for arbitrary time limits. Increase budget as needed.
+
+*Created: 2026-02-23T01:24:57.642Z*
+
+### [UhhGhhQQXKYwx58HiZZhrn] (project-config)
+
+[PROJECT] ANTIGRAVITY MODEL CONFIG (2026-02-20): Correct upstream model names found in C:\Users\li859\.antigravity_tools\accounts\*.json (accessible via /mnt/c/Users/li859/.antigravity_tools/accounts/ in WSL). Gemini 3.1 Pro variants: `gemini-3.1-pro-high` and `gemini-3.1-pro-low`. No plain `gemini-3.1-pro` exists. Using `gemini-3.1-pro-high` everywhere. Config updated: opencode.json (compaction + model definition key), oh-my-opencode.jsonc (multimodal-looker, visual-engineering, deep, artistry), CONFIG_SNAPSHOT.md. Thinking level is baked into model name — no variant needed. Proxy needs Windows-side update before models will route (currently returns "not available on this version"). Other available upstream models: claude-opus-4-6-thinking, claude-sonnet-4-6, gemini-3-flash, gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-flash-thinking, gemini-3-pro-image.
+
+*Created: 2026-02-20T21:39:45.207Z*
+
+### [3PAixmofnadA46EcwnV38g] (architecture)
+
+[PROJECT] MOSAIC DEAD-CODE CLEANUP (2026-02-19): Deleted unused src/lib/analysis/sim.ts. Extracted temporal relabeling from ReplayViewer.svelte into src/lib/analysis/relabel.ts (ReplayViewer imports from $lib/analysis/relabel). Reduced export surface in workerProtocol.ts, mapping.ts, snapshotWorker.ts (internalized unused helpers). Fixed malformed signature in overlay.ts. Removed unused imports in bulk-replay.test.ts. Updated .gitignore for .ttrm exclusion. Committed as "cleanup: dead code removal, relabel extraction, and reduced export surface".
+
+*Created: 2026-02-20T04:28:22.277Z*
+
+### [97zGfKFHriHQtm2kRC9376] (architecture)
+
+[PROJECT] REPLAY_VALIDATION GOD-FILE SPLIT (2026-02-19): replay_validation.rs split into 3 modules: replay_validation.rs (289 lines, orchestration layer), replay_validation_labels.rs (42 lines, label classification logic), replay_validation_manifest.rs (96 lines, manifest handling). All 152 tests pass. Committed as "cleanup: dead code removal and replay_validation god-file split".
+
+*Created: 2026-02-20T04:28:17.249Z*
 
 ### [iSyJMMwWH9PfFkYbVb2oUq] (architecture)
 
-[PROJECT] UNSAFE ELIMINATION (2026-02-17): All std::mem::transmute calls in header.rs, movegen.rs, gen.rs replaced with safe piece_from_u8(), rotation_from_u8(), spin_from_u8() functions. Two MaybeUninit usages remain in movegen.rs:31 and :102 (MoveBuffer) - should be audited for soundness.
+[PROJECT] UNSAFE ELIMINATION STATUS (2026-02-19): Safe conversion functions rotation_from_u8() and spin_from_u8() added in wasm.rs. However, 15 transmute calls REMAIN: gen.rs (4: lines 32,72,230,275), header.rs (3: lines 168,173,180), movegen.rs (8: lines 104,131,175,493,539,578,681,789). 2 MaybeUninit in movegen.rs:23 and :96 (MoveBuffer). piece_from_u8 does not exist. ~20+ unsafe blocks remain across codebase. Should be audited for soundness.
 
 *Created: 2026-02-17T19:45:46.231Z*
 
@@ -209,13 +361,13 @@ jj new  # clean commit boundary
 
 ### [Wx24ye7zLovPsCe76Kgjef] (architecture)
 
-[PROJECT] FUSION V2 WASM DEPLOYMENT: wasm-pack builds to pkg/ with package name direct-cobra-copy. Deploy by copying direct_cobra_copy_bg.wasm + .js + .d.ts to mosaic-fusion-testing/src/lib/fusion/wasm/. App imports via fusion_wasm.js which internally loads direct_cobra_copy_bg.wasm. wasm-pack 0.14.0 changed --out-dir to --artifact-dir (requires nightly); use default pkg/ output instead.
+[PROJECT] FUSION V2 WASM DEPLOYMENT: wasm-pack builds to pkg/ with package name direct-cobra-copy. Files are RENAMED when deployed to mosaic: fusion_wasm.js + fusion_wasm_bg.wasm at src/lib/fusion/wasm/. App imports via fusion_wasm.js (NOT direct_cobra_copy names). wasm-pack 0.14.0 changed --out-dir to --artifact-dir (requires nightly); use default pkg/ output instead. wasm-opt = false in Cargo.toml metadata.
 
 *Created: 2026-02-17T19:45:35.493Z*
 
 ### [BH3HbFhwK22YNScYv91qC7] (architecture)
 
-[PROJECT] FUSION V2 CURRENT STATE (2026-02-17): 18 source files, 126 tests (112 unit + 14 integration), package name direct-cobra-copy, attack-aware beam search with evaluate_position() for board-comparison analysis. Eval thresholds: <5.0=None, <15.0=Inaccuracy, <30.0=Mistake, >=30.0=Blunder. All unsafe transmutes replaced with safe conversion functions. Stack-allocated SearchNode paths and RemainingPieces.
+[PROJECT] FUSION V2 CURRENT STATE (2026-02-19): 27 source files, 8,721 total lines, 152 tests. Package direct-cobra-copy. Attack-aware beam search with evaluate_position(). Eval uses CoachingState (Fatal/Critical/Safe) tiering. 15 transmute calls remain (see unsafe elimination memory). Stack-allocated SearchNode paths and RemainingPieces. SearchConfig: beam_width=300, depth=12, futility_delta=3.0, time_budget_ms(Option), use_tt(bool), extend_queue_7bag(bool), attack_config(AttackConfig). God-file split: replay_validation.rs(289) + replay_validation_labels.rs(42) + replay_validation_manifest.rs(96).
 
 *Created: 2026-02-17T19:45:31.489Z*
 
@@ -227,7 +379,7 @@ jj new  # clean commit boundary
 
 ### [ds9zN7xPydwkZfXYaDjzyM] (architecture)
 
-[PROJECT] ATTACK SCORING INTEGRATION (2026-02-17): Integrated real S2 attack mechanics into beam search scoring. Changes in src/search.rs: SearchNode now tracks b2b(i16), combo(i16), attack_total(f32) per node. SearchConfig got attack_scale(0.3 default) and attack_cap(10.0 default). Score = evaluate(board, weights) + attack_scale * min(attack_total, cap). gen_and_eval_root and expand_node compute spin type from Move.spin(), call calculate_attack() with proper b2b/combo propagation. Root nodes inherit b2b/combo from GameState. 112 tests pass (109 existing + 3 new attack tests). WASM deploy note: pkg/ outputs direct_cobra_copy_bg.wasm (crate name), must copy to mosaic-fusion-testing/src/lib/fusion/wasm/ with that exact filename since fusion_wasm.js references it at line 608.
+[PROJECT] ATTACK SCORING INTEGRATION (2026-02-19): SearchNode tracks b2b(u8), combo(u32), pending_garbage, coaching(CoachingState), root_move, root_hold_used, path. NO attack_total field on SearchNode. SearchConfig uses attack_config: AttackConfig::tetra_league() (not direct attack_scale/attack_cap fields). gen_and_eval_root and expand_node compute spin type from Move.spin(), call calculate_attack() with proper b2b/combo propagation. Root nodes inherit b2b/combo from GameState. 152 tests pass.
 
 *Created: 2026-02-17T16:16:10.319Z*
 
@@ -263,7 +415,7 @@ jj new  # clean commit boundary
 
 ### [hrVHtRwxwE2yxRGDCo7gjT] (architecture)
 
-[PROJECT] PRESIM IMPLEMENTATION COMPLETE (2026-02-16): All 7 presim optimization tasks implemented and verified. (1) Search defaults: beam_width 800→300, depth 6→12. (2) New transposition.rs: ZobristKeys (400 keys, deterministic splitmix64), TranspositionTable (64K entries, depth-preferred replacement), probe-before-eval. (3) Futility pruning: futility_delta=3.0 default, skips children >Δ below best. (4) Iterative widening (CABS): time_budget_ms config, widths 100→200→400→beam_width, Instant on native, iteration-count fallback on WASM. (5) New bag.rs: BagTracker (7-bag tracking), extend_queue (conservative predict when ≤2 remain). (6) Integration: search.rs uses TT (opt-in use_tt:false default) + bag (opt-in extend_queue_7bag:true default). wasm.rs uses time_budget_ms:Some(50). analysis.rs unchanged (..default() spread). (7) Final: 109 tests pass, 0 fail. Native build clean. WASM build clean. New files: src/transposition.rs, src/bag.rs. Modified: src/search.rs, src/wasm.rs, src/lib.rs.
+[PROJECT] PRESIM IMPLEMENTATION COMPLETE (2026-02-19): All 7 presim optimization tasks implemented and verified. 152 tests pass, 0 fail. (1) beam_width=300, depth=12. (2) TranspositionTable 64K entries (DEFAULT_TT_SIZE=65536), ZobristKeys 400 keys, depth-preferred replacement. (3) futility_delta=3.0 default. (4) CABS iterative widening: width starts 100, doubles to max_width. (5) BagTracker with extend_queue (predicts when remaining.len()<=2). (6) TT opt-in (use_tt default false), bag opt-in (extend_queue_7bag default true). (7) WASM time_budget_ms:Some(50). New files: src/transposition.rs, src/bag.rs.
 
 *Created: 2026-02-16T10:57:35.440Z*
 
@@ -715,18 +867,6 @@ COBRA MOVE EMISSION & DEDUP SEMANTICS (Non-T Pieces) — Authoritative Summary f
 
 *Created: 2026-02-10T06:02:35.881Z*
 
-### [ioknRHiYZF9U7LwhLabdqe] (architecture)
-
-[PROJECT] SRS+ REFERENCE DOCUMENT: Ingested from official sources. Authoritative for kick tables and rotation states. Y-axis convention note: all engines use Y-UP despite some external docs claiming Y-down.
-
-*Created: 2026-02-10T05:59:28.414Z*
-
-### [95QWjiWjAnXPrxHSqGqEjB] (learned-pattern)
-
-[PROJECT] MINDSET: Node count is not the end goal -- coaching engine prioritizes eval quality over raw NPS. Validated by V2 architecture: beam search with attack-aware scoring, board-comparison analysis (evaluate_position), and calibrated severity thresholds.
-
-*Created: 2026-02-10T05:50:11.296Z*
-
 ### [XG6hgmFuN8hHtgPaHqc4kH] (learned-pattern)
 
 [PROJECT] D7 PERFT VERIFICATION LIMITATIONS (2026-02-10): No independent D7 perft verification exists — Cobra's 2,705,999,255 is the ONLY published reference. Cold Clear, Zetris, shakkar23, ImpleLee — none publish perft D7 counts. Additionally, perft counts are dedup-strategy-dependent: two correct movegens can produce different counts if they deduplicate differently (e.g., 4-state I-piece vs 2-state collapsed). To verify movegen correctness across implementations, compare board-state sets at leaf nodes, not raw counts. D5 board-state comparison is the sweet spot (~28MB, <30s).
@@ -782,12 +922,6 @@ No independent tetris implementations with published perft depth 5/6/7 node coun
 [PROJECT] COBRA SOURCE EXTRACTION CORRECTIONS: All corrections from cobra C++ to Rust port have been applied. Port completed at commit 97240ec with D1-D7 perft parity. Historical reference only.
 
 *Created: 2026-02-09T23:35:17.179Z*
-
-### [RhdTfhGxbaPCmQB38EgLQs] (architecture)
-
-[PROJECT] USER RESEARCH REPORT: Ingested pre-V2 rewrite. Historical reference for coaching feature prioritization. User research predates the V2 ground-up rewrite but core insights about what players want from coaching remain valid.
-
-*Created: 2026-02-09T22:22:46.647Z*
 
 ### [trepMZvSb4ZeZcfo4fSQdA] (learned-pattern)
 

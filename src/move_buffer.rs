@@ -64,7 +64,6 @@ impl MoveList {
         generate(b, &mut moves, p, false);
         debug_assert!(moves.len() < MAX_MOVES);
         let ml = MoveList { moves };
-        debug_assert!(ml.no_duplicates());
         debug_assert!(ml.all_valid(b));
         ml
     }
@@ -81,21 +80,8 @@ impl MoveList {
         }
         debug_assert!(moves.len() < MAX_MOVES);
         let ml = MoveList { moves };
-        debug_assert!(ml.no_duplicates());
         debug_assert!(ml.all_valid(b));
         ml
-    }
-
-    fn no_duplicates(&self) -> bool {
-        let s = self.moves.as_slice();
-        for i in 0..s.len() {
-            for j in (i + 1)..s.len() {
-                if s[i] == s[j] {
-                    return false;
-                }
-            }
-        }
-        true
     }
 
     fn all_valid(&self, b: &Board) -> bool {

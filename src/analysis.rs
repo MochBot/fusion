@@ -5,8 +5,8 @@ use crate::calibration::{
 };
 use crate::eval::{evaluate, EvalWeights};
 use crate::header::Move;
-use crate::search::{find_best_move, SearchConfig};
-use crate::state::{CoachingState, FatalityState, GameState, ObligationState};
+use crate::search::{find_best_move_with_scores, SearchConfig};
+use crate::state::{CoachingState, FatalityState, GameState, ObligationState, SurgeState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
@@ -16,7 +16,7 @@ pub enum Severity {
     Blunder,
 }
 
-fn classify_eval_loss(eval_loss: f32, thresholds: BucketThresholds) -> Severity {
+pub fn classify_eval_loss(eval_loss: f32, thresholds: BucketThresholds) -> Severity {
     if eval_loss < thresholds.none_max {
         Severity::None
     } else if eval_loss < thresholds.inaccuracy_max {
@@ -45,7 +45,7 @@ fn max_severity(a: Severity, b: Severity) -> Severity {
     }
 }
 
-fn classify_major_first(
+pub fn classify_major_first(
     eval_loss: f32,
     thresholds: BucketThresholds,
     coaching_before: CoachingState,
@@ -92,9 +92,262 @@ pub struct MoveAnalysis {
     pub meter_value: f32,
 }
 
-fn normalize_meter(raw_eval: f32) -> f32 {
+pub fn normalize_meter(raw_eval: f32) -> f32 {
     let clamped = raw_eval.clamp(-15.0, 15.0);
     (clamped / 15.0) * 100.0
+}
+
+/// Player skill profile derived from TetraStats-style metrics.
+/// Used to shift the sigmoid inflection point so that severity
+/// classifications are relative to the player's skill tier.
+#[derive(Debug, Clone, Copy)]
+pub struct PlayerSkill {
+    /// Pieces per second (mechanical speed)
+    pub pps: f32,
+    /// Attack per piece (offensive efficiency)
+    pub app: f32,
+    /// Downstack per piece (defensive recovery)
+    pub dsp: f32,
+}
+
+impl Default for PlayerSkill {
+    fn default() -> Self {
+        // Roughly S-rank defaults (mid-skill)
+        Self {
+            pps: 1.57,
+            app: 0.48,
+            dsp: 0.20,
+        }
+    }
+}
+
+/// Sigmoid steepness — controls sharpness of win-probability transitions.
+/// Higher k = sharper transitions around the inflection point.
+pub const SIGMOID_K: f32 = 0.10;
+
+/// Base inflection point for the sigmoid (score where win_prob = 50%).
+/// Shifted by player skill via `compute_sigmoid_c`.
+const SIGMOID_C_BASE: f32 = -13.5;
+
+/// Compute skill-adaptive sigmoid inflection point.
+///
+/// Higher-skilled players maintain cleaner boards (higher eval scores),
+/// so their inflection point shifts deeper negative — they tolerate
+/// worse absolute positions before "losing". The formula:
+///
+///   c = BASE + α·ln(pps) + β·app + γ·dsp
+///
+/// - ln(pps): mechanical recovery speed (diminishing returns via log)
+/// - app: attack efficiency — high APP = cleaner boards, deeper tolerance
+/// - dsp: garbage clearing — recovers from negative eval faster
+///
+/// Calibrated against TetraStats rank data (D through X+):
+///   D (pps=0.69): c ≈ -13.5 + 1.30 + (-0.60) + (-0.50) ≈ -13.3
+///   S (pps=1.57): c ≈ -13.5 + (-1.58) + (-0.96) + (-1.00) ≈ -17.0
+///   X (pps=2.81): c ≈ -13.5 + (-3.62) + (-1.50) + (-1.40) ≈ -20.0
+///   X+(pps=3.27): c ≈ -13.5 + (-4.15) + (-1.50) + (-1.75) ≈ -20.9
+pub fn compute_sigmoid_c(skill: &PlayerSkill) -> f32 {
+    const ALPHA: f32 = -3.5; // ln(pps) coefficient (attenuated to reduce X+ false positives)
+    const BETA: f32 = -2.0;  // app coefficient
+    const GAMMA: f32 = -5.0; // dsp coefficient (reduced from -8.0 to prevent over-shifting)
+
+    SIGMOID_C_BASE + ALPHA * skill.pps.max(0.1).ln() + BETA * skill.app + GAMMA * skill.dsp
+}
+
+/// Convert a search score to win/survival probability via sigmoid.
+/// k controls steepness (higher = sharper transitions),
+/// c is the inflection point (score where probability = 50%).
+pub fn win_prob(search_score: f32, k: f32, c: f32) -> f32 {
+    1.0 / (1.0 + (-k * (search_score - c)).exp())
+}
+
+/// Classify severity by win-probability drop between best and actual move.
+///
+/// Thresholds calibrated for Tetris eval scale (wider than chess due to
+/// board-eval variance across placement quality):
+///   ≥25% drop = Blunder (catastrophic misplacement)
+///   ≥12% drop = Mistake (significant quality loss)
+///   ≥ 6% drop = Inaccuracy (suboptimal but recoverable)
+///
+/// Use `compute_sigmoid_c` to get skill-adaptive `c`, or pass
+/// `SIGMOID_K` / manual `c` for fixed-skill analysis.
+pub fn classify_win_prob_drop(best_score: f32, actual_score: f32, k: f32, c: f32) -> Severity {
+    let best_wp = win_prob(best_score, k, c);
+    let actual_wp = win_prob(actual_score, k, c);
+    let drop = (best_wp - actual_wp).max(0.0);
+
+    if drop >= 0.25 {
+        Severity::Blunder
+    } else if drop >= 0.12 {
+        Severity::Mistake
+    } else if drop >= 0.06 {
+        Severity::Inaccuracy
+    } else {
+        Severity::None
+    }
+}
+
+/// Coaching-state ΔP multiplier. Amplifies the win-probability drop
+/// based on the coaching state *after* the player's move.
+/// The worst (highest-multiplier) dimension wins.
+pub fn coaching_dp_multiplier(coaching_after: &CoachingState) -> f32 {
+    let fatality_mul: f32 = match coaching_after.fatality {
+        FatalityState::Fatal => 1.5,
+        FatalityState::Critical => 1.25,
+        FatalityState::Safe => 1.0,
+    };
+    let surge_mul = match coaching_after.surge {
+        SurgeState::Active => 1.4,
+        SurgeState::Building => 1.2,
+        SurgeState::Dormant => 1.0,
+    };
+    let obligation_mul = match coaching_after.obligation {
+        ObligationState::MustCancel => 1.3,
+        ObligationState::MustDownstack => 1.15,
+        ObligationState::None => 1.0,
+    };
+    // Take the maximum multiplier across all coaching dimensions
+    fatality_mul.max(surge_mul).max(obligation_mul)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum InsightTag {
+    AttackWindowMiss,
+    ChainBreak,
+    DownstackEfficiencyMiss,
+}
+
+impl InsightTag {
+    pub fn to_str(self) -> &'static str {
+        match self {
+            InsightTag::AttackWindowMiss => "attack_window_miss",
+            InsightTag::ChainBreak => "chain_break",
+            InsightTag::DownstackEfficiencyMiss => "downstack_efficiency_miss",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct InsightResult {
+    pub tag: InsightTag,
+    pub severity: f32,
+    pub delta: f32,
+}
+
+pub const CHAIN_SHAPE_MAX: f32 = 1.0;
+
+
+pub fn shape_chain_value(raw_chain: f32) -> f32 {
+    if raw_chain <= 0.0 {
+        return 0.0;
+    }
+
+    (1.0 - (-0.25 * raw_chain).exp()).clamp(0.0, CHAIN_SHAPE_MAX)
+}
+
+pub fn shape_context_modifier(raw_modifier: f32) -> f32 {
+    raw_modifier.clamp(-1.0, 1.0)
+}
+
+
+pub fn assemble_composite(
+    board: f32,
+    attack: f32,
+    chain: f32,
+    context: f32,
+    config: &SearchConfig,
+) -> f32 {
+    board * config.board_weight
+        + attack * config.attack_weight
+        + chain * config.chain_weight
+        + context * config.context_weight
+}
+
+/// Input for MVP insight detection — compares best node's composite channels
+/// against the player's actual move outcome.
+#[derive(Debug, Clone)]
+pub struct InsightDetectorInput {
+    /// Best node's per-channel scores from SearchResultFull
+    pub best_attack_score: f32,
+    pub best_chain_score: f32,
+    pub best_board_score: f32,
+    /// Player's actual move aggregate score from root_scores lookup
+    pub actual_score: Option<f32>,
+    /// Best move's aggregate composite score
+    pub best_score: f32,
+    /// Combo count AFTER the player's actual move (from frame context)
+    pub actual_combo_after: u32,
+    /// Lines cleared by the player's actual move
+    pub actual_lines_cleared: u8,
+    /// Board eval delta: eval_after - eval_before (positive = board improved)
+    /// Combo count BEFORE the player's actual move (0 = no active combo)
+    pub actual_combo_before: u32,
+    pub board_eval_delta: f32,
+}
+
+/// Minimum attack score on the best path to flag an attack window miss.
+const ATTACK_WINDOW_THRESHOLD: f32 = 3.0;
+/// Minimum eval loss to consider an attack window genuinely missed.
+const ATTACK_WINDOW_MIN_LOSS: f32 = 0.5;
+/// Minimum chain score on best path to consider combo continuation relevant.
+const CHAIN_RELEVANCE_THRESHOLD: f32 = 0.3;
+/// Minimum board score gap to flag a downstack efficiency miss.
+const DOWNSTACK_BOARD_GAP: f32 = 2.0;
+
+/// Run all MVP insight detectors and return any that fire.
+pub fn detect_insights(input: &InsightDetectorInput) -> Vec<InsightResult> {
+    let mut results = Vec::new();
+
+    let eval_loss = input
+        .actual_score
+        .map(|actual| (input.best_score - actual).max(0.0))
+        .unwrap_or(0.0);
+
+    // --- AttackWindowMiss ---
+    // Best path had a significant attack opportunity that the player's move missed.
+    if input.best_attack_score > ATTACK_WINDOW_THRESHOLD && eval_loss > ATTACK_WINDOW_MIN_LOSS {
+        let delta = input.best_attack_score;
+        let severity = (delta / 5.0).clamp(0.0, 1.0);
+        results.push(InsightResult {
+            tag: InsightTag::AttackWindowMiss,
+            severity,
+            delta,
+        });
+    }
+
+    // --- ChainBreak ---
+    // Best path maintained a combo (chain_score > threshold) but player broke it
+    // (combo dropped to 0 after their move). Only fires when the player had an
+    // active combo before their move (combo_before > 0) to avoid flagging moves
+    // where no combo was in progress.
+    if input.best_chain_score > CHAIN_RELEVANCE_THRESHOLD
+        && input.actual_combo_after == 0
+        && input.actual_combo_before > 0
+    {
+        let delta = input.best_chain_score;
+        let severity = (delta / CHAIN_SHAPE_MAX).clamp(0.0, 1.0);
+        results.push(InsightResult {
+            tag: InsightTag::ChainBreak,
+            severity,
+            delta,
+        });
+    }
+
+    // --- DownstackEfficiencyMiss ---
+    // Best path had a significantly better board score than what the player achieved.
+    // Only fires when the player's board actually got worse (negative delta) while
+    // best would have improved it.
+    let board_gap = input.best_board_score - input.board_eval_delta;
+    if board_gap > DOWNSTACK_BOARD_GAP && input.board_eval_delta < 0.0 {
+        let severity = (board_gap / 10.0).clamp(0.0, 1.0);
+        results.push(InsightResult {
+            tag: InsightTag::DownstackEfficiencyMiss,
+            severity,
+            delta: board_gap,
+        });
+    }
+
+    results
 }
 
 pub struct EvalMeter {
@@ -191,32 +444,74 @@ fn analyze_move_inner(
         spawn_envelope_blocked,
     );
 
-    let search_result = find_best_move(state, config, weights);
+    let search_result = find_best_move_with_scores(state, config, weights);
 
-    let (best_eval, best_move, best_hold_used, best_coaching_state) = match search_result {
-        Some(sr) => {
-            // compare immediate board quality (depth-1) not depth-N search score
-            let mut best_board = state.board.clone();
-            best_board.do_move(&sr.best_move);
-            let best_immediate_eval = evaluate(&best_board, weights);
-            (
-                best_immediate_eval,
-                sr.best_move,
-                sr.hold_used,
-                sr.coaching_state,
-            )
-        }
-        None => (eval_after, *actual_move, false, coaching_after),
-    };
+    let (best_eval, best_move, best_hold_used, best_coaching_state, eval_loss, severity) =
+        match search_result {
+            Some(full) => {
+                let best_search_score = full.best.score;
 
-    let eval_loss = (best_eval - eval_after).max(0.0);
-    let severity = classify_major_first(
-        eval_loss,
-        thresholds,
-        coaching_before,
-        coaching_after,
-        best_coaching_state,
-    );
+                // Look up player's actual move in root_scores (free quality scoring).
+                // root_scores contains max leaf-node score per root move from beam search.
+                let actual_search_score = full
+                    .root_scores
+                    .iter()
+                    .find(|(m, _)| m.raw() == actual_move.raw())
+                    .map(|(_, s)| *s);
+
+                let k = SIGMOID_K;
+                let c = compute_sigmoid_c(&PlayerSkill::default());
+
+                let (loss, sev) = match actual_search_score {
+                    Some(actual_s) => {
+                        let loss = (best_search_score - actual_s).max(0.0);
+                        // Task 6: Scale ΔP by coaching state multiplier BEFORE classification
+                        let dp_mul = coaching_dp_multiplier(&coaching_after);
+                        let amplified_actual = best_search_score - loss * dp_mul;
+                        let sev = classify_win_prob_drop(best_search_score, amplified_actual, k, c);
+                        let coaching_sev = classify_major_first(
+                            loss,
+                            thresholds,
+                            coaching_before,
+                            coaching_after,
+                            full.best.coaching_state,
+                        );
+                        (loss, max_severity(sev, coaching_sev))
+                    }
+                    None => {
+                        // Actual move not in root_scores — can't classify quality.
+                        // This can happen when forced move is dropped from beam or
+                        // frame context has a piece ordering mismatch.
+                        #[cfg(debug_assertions)]
+                        eprintln!(
+                            "[analysis] actual move (piece={:?}, raw={}) not found in root_scores ({} entries)",
+                            actual_move.piece(),
+                            actual_move.raw(),
+                            full.root_scores.len(),
+                        );
+                        (0.0, Severity::None)
+                    }
+                };
+
+                (
+                    best_search_score,
+                    full.best.best_move,
+                    full.best.hold_used,
+                    full.best.coaching_state,
+                    loss,
+                    sev,
+                )
+            }
+            None => (
+                eval_after,
+                *actual_move,
+                false,
+                coaching_after,
+                0.0,
+                Severity::None,
+            ),
+        };
+
     let meter_value = normalize_meter(eval_after);
 
     MoveAnalysis {
@@ -280,10 +575,10 @@ mod tests {
     use crate::calibration::{
         generate_profile_from_players_manifest, CalibrationProfile, CALIBRATION_VERSION_V1,
     };
-    use crate::eval::evaluate;
     use crate::header::Piece;
     use crate::movegen::{generate, MoveBuffer};
-    use crate::state::{PhaseState, PlonkState, SurgeState};
+    use crate::search::find_best_move;
+    use crate::state::{PhaseState, SurgeState};
 
     fn find_engine_best(state: &GameState) -> (Move, bool) {
         let config = SearchConfig {
@@ -303,8 +598,6 @@ mod tests {
             obligation,
             surge: SurgeState::Dormant,
             phase: PhaseState::Midgame,
-            plonk: PlonkState::Stable,
-            plonk_streak: 0,
             ply: 12,
         }
     }
@@ -343,31 +636,23 @@ mod tests {
             ..SearchConfig::default()
         };
 
-        let sr = find_best_move(&state, &config, &weights).unwrap_or_else(|| panic!("no moves"));
+        let full = find_best_move_with_scores(&state, &config, &weights)
+            .unwrap_or_else(|| panic!("no moves"));
 
-        let mut moves = MoveBuffer::new();
-        generate(&state.board, &mut moves, state.current, false);
-
-        let mut worst_move = sr.best_move;
-        let mut worst_score = f32::INFINITY;
-        for m in moves.as_slice() {
-            let mut b = state.board.clone();
-            b.do_move(m);
-            let score = evaluate(&b, &weights);
-            if score < worst_score {
-                worst_score = score;
-                worst_move = *m;
+        // Pick the worst move that IS in root_scores (not pruned from beam)
+        if full.root_scores.len() >= 2 {
+            let worst = full.root_scores.last().unwrap();
+            let worst_move = worst.0;
+            if worst_move.raw() != full.best.best_move.raw() {
+                let mut b = state.board.clone();
+                let lines_cleared = b.do_move(&worst_move) as u8;
+                let analysis = evaluate_move(&state, &worst_move, lines_cleared, &weights, &config);
+                assert!(
+                    analysis.eval_loss > 0.0,
+                    "worst move in root_scores should have positive eval loss, got {}",
+                    analysis.eval_loss
+                );
             }
-        }
-
-        if worst_move.raw() != sr.best_move.raw() {
-            let mut b = state.board.clone();
-            let lines = b.do_move(&worst_move) as u8;
-            let analysis = evaluate_move(&state, &worst_move, lines, &weights, &config);
-            assert!(
-                analysis.eval_loss > 0.0,
-                "worst move should have positive eval loss"
-            );
         }
     }
 
@@ -390,29 +675,23 @@ mod tests {
             ..SearchConfig::default()
         };
 
-        let sr = find_best_move(&state, &config, &weights)
+        let full = find_best_move_with_scores(&state, &config, &weights)
             .unwrap_or_else(|| panic!("no moves on test board"));
 
-        let mut moves = MoveBuffer::new();
-        generate(&state.board, &mut moves, state.current, false);
-
-        let mut worst_move = sr.best_move;
-        let mut worst_score = f32::INFINITY;
-        for m in moves.as_slice() {
-            let mut b = state.board.clone();
-            b.do_move(m);
-            let score = evaluate(&b, &weights);
-            if score < worst_score {
-                worst_score = score;
-                worst_move = *m;
+        // Pick the worst move that IS in root_scores (not pruned from beam)
+        if full.root_scores.len() >= 2 {
+            let worst = full.root_scores.last().unwrap();
+            let worst_move = worst.0;
+            if worst_move.raw() != full.best.best_move.raw() {
+                let mut b = state.board.clone();
+                let lines_cleared = b.do_move(&worst_move) as u8;
+                let analysis = evaluate_move(&state, &worst_move, lines_cleared, &weights, &config);
+                assert!(
+                    analysis.eval_loss > 0.0,
+                    "worst move in root_scores should have positive eval loss, got {}",
+                    analysis.eval_loss
+                );
             }
-        }
-
-        if worst_move.raw() != sr.best_move.raw() {
-            let mut b = state.board.clone();
-            let lines = b.do_move(&worst_move) as u8;
-            let analysis = evaluate_move(&state, &worst_move, lines, &weights, &config);
-            assert!(analysis.eval_loss > 0.0);
         }
     }
 
@@ -580,5 +859,65 @@ mod tests {
 
         assert_eq!(severity_b, Severity::Inaccuracy);
         assert_eq!(severity_u, Severity::Mistake);
+    }
+
+    #[test]
+    fn test_shape_chain_value_zero_input_returns_zero() {
+        assert_eq!(shape_chain_value(0.0), 0.0);
+        assert_eq!(shape_chain_value(-3.0), 0.0);
+    }
+
+    #[test]
+    fn test_shape_chain_value_is_monotonic_increasing() {
+        let low = shape_chain_value(1.0);
+        let mid = shape_chain_value(4.0);
+        let high = shape_chain_value(10.0);
+
+        assert!(low < mid, "expected low < mid, got {} >= {}", low, mid);
+        assert!(mid < high, "expected mid < high, got {} >= {}", mid, high);
+    }
+
+    #[test]
+    fn test_shape_chain_value_is_bounded() {
+        let shaped = shape_chain_value(1_000_000.0);
+        assert!(
+            (0.0..=CHAIN_SHAPE_MAX).contains(&shaped),
+            "shape_chain_value should be bounded in [0, {}], got {}",
+            CHAIN_SHAPE_MAX,
+            shaped
+        );
+    }
+
+    #[test]
+    fn test_shape_context_modifier_zero_passthrough() {
+        assert_eq!(shape_context_modifier(0.0), 0.0);
+        assert_eq!(shape_context_modifier(0.75), 0.75);
+    }
+
+    #[test]
+    fn test_shape_context_modifier_clamps_upper_bound() {
+        assert_eq!(shape_context_modifier(10.0), 1.0);
+        assert_eq!(shape_context_modifier(1.0), 1.0);
+    }
+
+    #[test]
+    fn test_shape_context_modifier_clamps_lower_bound() {
+        assert_eq!(shape_context_modifier(-10.0), -1.0);
+        assert_eq!(shape_context_modifier(-1.0), -1.0);
+    }
+
+    #[test]
+    fn test_assemble_composite_applies_coefficients() {
+        let config = SearchConfig::default();
+        let board = 2.0;
+        let attack = 3.0;
+        let chain = 4.0;
+        let context = -1.0;
+        let composite = assemble_composite(board, attack, chain, context, &config);
+        let expected = board * config.board_weight
+            + attack * config.attack_weight
+            + chain * config.chain_weight
+            + context * config.context_weight;
+        assert_eq!(composite, expected);
     }
 }

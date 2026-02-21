@@ -35,21 +35,62 @@ pub enum PhaseState {
     Endgame,
 }
 
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PlonkState {
-    Stable,
-    Drifting,
-    Spiral,
+pub enum ClearType {
+    None,
+    Single,
+    Double,
+    Triple,
+    Quad,
+    Penta,
 }
 
+impl ClearType {
+    pub fn from_lines(lines: u8) -> Self {
+        match lines {
+            0 => ClearType::None,
+            1 => ClearType::Single,
+            2 => ClearType::Double,
+            3 => ClearType::Triple,
+            4 => ClearType::Quad,
+            _ => ClearType::Penta,
+        }
+    }
+
+    pub fn to_str(self) -> &'static str {
+        match self {
+            ClearType::None => "none",
+            ClearType::Single => "single",
+            ClearType::Double => "double",
+            ClearType::Triple => "triple",
+            ClearType::Quad => "quad",
+            ClearType::Penta => "penta",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ClearEvent {
+    pub clear_type: ClearType,
+    pub spin_type: SpinType,
+    pub lines_cleared: u8,
+    pub attack_sent: f32,
+    pub b2b_before: u8,
+    pub b2b_after: u8,
+    pub combo_before: u32,
+    pub combo_after: u32,
+    pub is_surge_release: bool,
+    pub is_garbage_clear: bool,
+    pub is_perfect_clear: bool,
+    pub piece: Piece,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CoachingState {
     pub fatality: FatalityState,
     pub obligation: ObligationState,
     pub surge: SurgeState,
     pub phase: PhaseState,
-    pub plonk: PlonkState,
-    pub plonk_streak: u8,
     pub ply: u32,
 }
 
@@ -72,8 +113,6 @@ impl Default for CoachingState {
             obligation: ObligationState::None,
             surge: SurgeState::Dormant,
             phase: PhaseState::Opener,
-            plonk: PlonkState::Stable,
-            plonk_streak: 0,
             ply: 0,
         }
     }
@@ -118,49 +157,33 @@ impl CoachingState {
             PhaseState::Endgame
         };
 
-        let plonk_streak = if obs.lines_cleared == 0 {
-            self.plonk_streak.saturating_add(1)
-        } else {
-            0
-        };
-        let plonk = if plonk_streak >= 4 {
-            PlonkState::Spiral
-        } else if plonk_streak >= 2 || (obs.hold_used && obs.lines_cleared == 0) {
-            PlonkState::Drifting
-        } else {
-            PlonkState::Stable
-        };
-
         let _ = obs.resulting_combo;
         let _ = obs.pending_garbage;
+        let _ = obs.hold_used;
 
         Self {
             fatality,
             obligation,
             surge,
             phase,
-            plonk,
-            plonk_streak,
             ply: next_ply,
         }
     }
 
     pub fn to_deterministic_string(&self) -> String {
         format!(
-            "v1|{}|{}|{}|{}|{}|{}|{}",
+            "v2|{}|{}|{}|{}|{}",
             fatality_to_u8(self.fatality),
             obligation_to_u8(self.obligation),
             surge_to_u8(self.surge),
             phase_to_u8(self.phase),
-            plonk_to_u8(self.plonk),
-            self.plonk_streak,
             self.ply,
         )
     }
 
     pub fn from_deterministic_string(encoded: &str) -> Option<Self> {
         let parts = encoded.split('|').collect::<Vec<_>>();
-        if parts.len() != 8 || parts[0] != "v1" {
+        if parts.len() != 6 || parts[0] != "v2" {
             return None;
         }
 
@@ -169,9 +192,7 @@ impl CoachingState {
             obligation: obligation_from_u8(parts[2].parse().ok()?)?,
             surge: surge_from_u8(parts[3].parse().ok()?)?,
             phase: phase_from_u8(parts[4].parse().ok()?)?,
-            plonk: plonk_from_u8(parts[5].parse().ok()?)?,
-            plonk_streak: parts[6].parse().ok()?,
-            ply: parts[7].parse().ok()?,
+            ply: parts[5].parse().ok()?,
         })
     }
 }
@@ -208,14 +229,6 @@ fn phase_to_u8(v: PhaseState) -> u8 {
     }
 }
 
-fn plonk_to_u8(v: PlonkState) -> u8 {
-    match v {
-        PlonkState::Stable => 0,
-        PlonkState::Drifting => 1,
-        PlonkState::Spiral => 2,
-    }
-}
-
 fn fatality_from_u8(v: u8) -> Option<FatalityState> {
     match v {
         0 => Some(FatalityState::Safe),
@@ -248,15 +261,6 @@ fn phase_from_u8(v: u8) -> Option<PhaseState> {
         0 => Some(PhaseState::Opener),
         1 => Some(PhaseState::Midgame),
         2 => Some(PhaseState::Endgame),
-        _ => None,
-    }
-}
-
-fn plonk_from_u8(v: u8) -> Option<PlonkState> {
-    match v {
-        0 => Some(PlonkState::Stable),
-        1 => Some(PlonkState::Drifting),
-        2 => Some(PlonkState::Spiral),
         _ => None,
     }
 }
@@ -334,7 +338,7 @@ impl GameState {
         lines_cleared: u8,
     ) -> (u8, u32) {
         if lines_cleared == 0 {
-            return (0, 0);
+            return (current_b2b, 0);
         }
 
         let next_b2b = if m.spin() != SpinType::NoSpin || lines_cleared == 4 {
@@ -425,8 +429,6 @@ mod tests {
             obligation: ObligationState::MustDownstack,
             surge: SurgeState::Building,
             phase: PhaseState::Midgame,
-            plonk: PlonkState::Drifting,
-            plonk_streak: 3,
             ply: 14,
         };
 
@@ -524,7 +526,17 @@ mod tests {
 
         let m_flat = Move::new(Piece::I, Rotation::North, 4, 0, false);
         let (b2b_after_zero, combo_after_zero) = GameState::next_chain_values(3, 4, &m_flat, 0);
-        assert_eq!(b2b_after_zero, 0);
-        assert_eq!(combo_after_zero, 0);
+        assert_eq!(b2b_after_zero, 3, "b2b must be preserved when no lines cleared");
+        assert_eq!(combo_after_zero, 0, "combo resets when no lines cleared");
+
+        // Non-difficult line clear (e.g., single/double/triple without spin) resets b2b
+        let (b2b_after_single, combo_after_single) = GameState::next_chain_values(3, 4, &m_flat, 1);
+        assert_eq!(b2b_after_single, 0, "b2b resets on non-difficult line clear");
+        assert_eq!(combo_after_single, 5, "combo increments on any line clear");
+
+        // Quad preserves/increments b2b
+        let (b2b_after_quad, combo_after_quad) = GameState::next_chain_values(3, 4, &m_flat, 4);
+        assert_eq!(b2b_after_quad, 4, "b2b increments on quad");
+        assert_eq!(combo_after_quad, 5, "combo increments on quad");
     }
 }

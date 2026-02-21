@@ -1,23 +1,83 @@
 # Supermemory Export
 
-**Exported:** 2026-02-20T03:54:48.293Z
+**Exported:** 2026-02-24T18:36:41.946Z
 **Scope:** user
 
 ---
 
-## User Memories (35)
+## User Memories (43)
+
+### [pRyfEoH9QJMhfHwkBa7Me6] (preference)
+
+[USER] JJ recovery preference reaffirmed (2026-02-24): user wants recovery assumptions to be JJ-native and explicit—agents should not claim work is lost until JJ operation history has been checked. Preferred protocol is `jj op log` plus `jj op restore <op-id>` (and op-scoped file extraction when needed), with language that reflects JJ's persistence model instead of git-style loss assumptions. This should be treated as an execution guardrail in planning and status updates.
+
+*Created: 2026-02-24T07:41:44.260Z*
+
+### [mo3JNrqCZHccfr3rZkECf2] (preference)
+
+[USER] Planning preference (2026-02-24): user wants iterative back-and-forth plan refinement instead of a one-shot finalization, especially for V6 coaching signal design. They prefer starting with fewer, high-quality primitives and improving through repeated discussion cycles, rather than introducing many detectors at once. This preference complements their existing signal-over-prose priority and should shape plan granularity decisions.
+
+*Created: 2026-02-24T06:49:32.247Z*
+
+### [D3KXo6JQrVLcWavpkEDzWo] (preference)
+
+[USER] Preference reaffirmed in V6 planning (2026-02-23): prioritize signal quality and actionable detection outputs before prose. The user prefers machine-readable insight tags/metrics first and considers natural-language explanation optional/deferred because they can interpret the signals themselves. Scope planning should therefore allocate effort to detector accuracy, calibration, and verification ahead of narrative generation.
+
+*Created: 2026-02-24T04:53:20.047Z*
+
+### [e6YW6Yu7MTC9dvcj18zxo8] (error-solution)
+
+[USER] error-solution: opencode-scheduler@1.3.0 has a Linux-only bug in cronToSystemdCalendars() at dist/index.js line 12985. When cron day-of-week is * (wildcard), it generates invalid OnCalendar syntax `* *-*-* HH:MM:00` — systemd rejects the leading `* ` prefix. Fix: when dowValue === "*", omit the prefix entirely so output is `*-*-* HH:MM:00`. Mac (launchd) and Windows (Task Scheduler) paths are unaffected. Plugin source at ~/.bun/install/cache/opencode-scheduler@1.3.0@@@1/dist/index.js.
+
+*Created: 2026-02-23T15:36:34.374Z*
+
+### [ky58NYAGU6vx8cqAA2RCjN] (project-config)
+
+[USER] project-config: Tavily API key is stored in ~/.env as TAVILY_API_KEY and loaded by opencode MCP config via {env:TAVILY_API_KEY}. Key was rotated on 2026-02-23, and OpenCode restart is required because MCP servers read env at startup. Student plan budget is 4000 credits per month, so free tools should be preferred before Tavily spend.
+
+*Created: 2026-02-23T15:20:00.424Z*
+
+### [ZD3GJXuUx4MAg6VLcuP9BQ] (preference)
+
+[USER] Routing: All Gemini models routed through Anthropic protocol (/v1) via @ai-sdk/anthropic — NOT through /v1beta Google protocol (which returns 400 errors). Antigravity Manager proxies this.
+
+*Created: 2026-02-23T09:52:56.455Z*
+
+### [aZLpaM4E6iFnTMiXKkKe5x] (learned-pattern)
+
+[USER] OpenCode Plugin Management: NEVER manually run `npm install` or `bun install` in ~/.config/opencode/. OpenCode manages plugin installation automatically from the `plugin` array in opencode.json. Manual package manager invocations create a package.json/bun.lock that conflicts with OpenCode's own dependency resolution, causing plugins to fail loading (e.g., OMO showing as "dist" with zero features). Fix: delete any manually-created package.json, package-lock.json, bun.lock, and node_modules/ from ~/.config/opencode/ — OpenCode will reinstall everything cleanly on restart.
+
+*Created: 2026-02-23T06:11:56.310Z*
+
+### [gL6h62441c1et12DExpViv] (learned-pattern)
+
+[USER] BASELINE CONTEXT SIZE: When a fresh conversation loads with 6 MCPs active (augment-context-engine, sourcegraph, tavily, context7, agent-browser, playwright), the starting context is ~51k tokens before any user work begins. This is the baseline overhead from system prompt + MCP tool definitions + supermemory injection + JJ primer + ultrawork mode + AGENTS.md.
+
+*Created: 2026-02-23T04:47:08.725Z*
+
+### [7HB79Dwwk71qbHxNGvFUoG] (preference)
+
+[USER] Environment preference: Antigravity-Manager build/test verification should be run in Windows-native environment; Linux/WSL system dependency failures are not authoritative for this tool.
+
+*Created: 2026-02-20T22:35:57.896Z*
+
+### [Cknv4AQB9JDkJRsQ5SHs5t] (preference)
+
+[USER] Paths: When commands require path-dependent steps, user wants absolute paths provided in instructions.
+
+*Created: 2026-02-20T21:52:00.556Z*
+
+### [NbmWDsneWQaktEdSAjwzRr] (learned-pattern)
+
+[USER] Learned Mistakes: (1) Never declare "root cause found" before running tests/build — say "Hypothesis: X" and verify with evidence before claiming fixed. (2) Background/no-reply notifications (opencode-pty, etc.) must always propagate originating agent/model in session.prompt({ noReply: true }) — omitting causes stored message with default model, flipping UI to base Sisyphus.
+
+*Created: 2026-02-20T04:10:03.966Z*
 
 ### [EanW2c6YBkRfcRQDwPBRuX] (preference)
 
 [USER] Workflow: Before broad aggressive dead-code refactors, create a commit snapshot of current work first.
 
 *Created: 2026-02-19T23:02:55.791Z*
-
-### [15rHoXBsWXxiQ4NoUEupKG] (learned-pattern)
-
-[USER] PTY/background notification anti-switch rule: MISTAKE: Sending no-reply notifications without explicit agent/model (or using promptAsync) can still create a stored user message with default agent/model, which flips UI/model to base Sisyphus. CORRECT: For background/system notifications, use session.prompt with noReply:true and always propagate origin agent/model from the triggering context/message.
-
-*Created: 2026-02-18T23:36:43.274Z*
 
 ### [J96byhsVc9zDDVmq1anm4v] (preference)
 
@@ -91,15 +151,9 @@
 
 *Created: 2026-02-13T11:22:12.634Z*
 
-### [qdw4WCt4vMMEXLog5oLhZw] (learned-pattern)
-
-[USER] Sourcegraph Replaces Tavily for GitHub: Any GitHub code search goes to Sourcegraph MCP (free, regex, symbol lookup, language filters, no rate limits). Tavily searching GitHub is wasteful — it scrapes rendered HTML for 1-2 credits when Sourcegraph searches actual code for free. Route: "How do other repos implement X?" → Sourcegraph. "Find GitHub examples of pattern Y" → Sourcegraph. NOT Tavily.
-
-*Created: 2026-02-13T01:38:46.844Z*
-
 ### [1yxkkEsCWj3XkiYE2Nf2pQ] (learned-pattern)
 
-[USER] Search Tool Division of Labor: Local tools (grep/ast-grep/augment) → Context7 (library docs, FREE) → Sourcegraph (GitHub code search, FREE) → Tavily search (web content, 1 credit) → Tavily extract (specific URLs, 0.2 credit/URL) → Tavily crawl (rare, 3-5 credits). Always exhaust free tools before spending Tavily credits.
+[USER] Search Tool Division of Labor: Local tools (grep/ast-grep/augment) first, then Context7 for library docs (free), then Sourcegraph for GitHub/code search (free, regex/symbol/language filters, no Tavily needed for GitHub code), then Tavily search for general web content (1 credit), Tavily extract for specific URLs (0.2 credit/URL), and Tavily crawl only when needed (3-5 credits). Always exhaust free tools before spending Tavily credits. For GitHub implementation searches specifically, Sourcegraph is the default and Tavily should be avoided.
 
 *Created: 2026-02-13T01:38:35.870Z*
 
@@ -174,12 +228,6 @@
 [USER] Supermemory curation preferences: keep user/global memories only if they apply across all projects; move project-specific items to project scope rooted at ~/.config/opencode; remove overlapping entries and sensitive data; prefer redacted summaries for sensitive topics; delete obsolete plugin info while preserving useful best practices/patterns.
 
 *Created: 2026-02-08T18:54:44.908Z*
-
-### [9VayG6aBSjEHbshqMJmmsM] (learned-pattern)
-
-MISTAKE: Declaring "root cause found" or "issue resolved" before running tests/build | CORRECT: "Hypothesis: X causes Y. Applying fix, will verify with [test/build/lsp]." Then verify. Then report with evidence. | CONTEXT: All debugging, all agents, all tasks.
-
-*Created: 2026-02-07T22:23:13.777Z*
 
 ### [d9q4Z7jvJK2k548eMfgoPg] (preference)
 

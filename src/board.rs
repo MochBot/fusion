@@ -176,6 +176,10 @@ impl Board {
     }
 
     /// Max occupied row index + 1 (= height)
+    pub fn is_empty(&self) -> bool {
+        self.rows.iter().all(|&r| r == 0)
+    }
+
     pub fn height(&self) -> u32 {
         for y in (0..BOARD_HEIGHT).rev() {
             if self.rows[y] != 0 {

@@ -6,6 +6,7 @@ use crate::header::*;
 
 #[derive(Clone, Debug)]
 pub struct EvalWeights {
+    // -- existing board-shape features --
     pub holes: f32,
     pub cell_coveredness: f32,
     pub height: f32,
@@ -33,17 +34,13 @@ impl Default for EvalWeights {
     }
 }
 
-/// column heights (0-based, number of filled cells in column from bottom)
+#[inline]
 fn column_heights(board: &Board) -> [usize; COL_NB] {
     let mut heights = [0usize; COL_NB];
     for (x, h) in heights.iter_mut().enumerate() {
-        // scan from top down to find highest occupied cell
-        for y in (0..40usize).rev() {
-            if board.occupied(x as i32, y as i32) {
-                *h = y + 1;
-                break;
-            }
-        }
+        // Use leading_zeros on cached column bitboard: O(1) per column vs O(40) scan
+        let col = board.cols[x];
+        *h = if col == 0 { 0 } else { (64 - col.leading_zeros()) as usize };
     }
     heights
 }
@@ -51,6 +48,7 @@ fn column_heights(board: &Board) -> [usize; COL_NB] {
 /// count holes and covered cells per column
 /// hole = empty cell below column top
 /// covered = filled cells above the topmost hole (capped at 6)
+#[inline]
 fn holes_and_covered(board: &Board, heights: &[usize; COL_NB]) -> (i32, i32) {
     let mut holes = 0i32;
     let mut covered = 0i32;
@@ -88,6 +86,7 @@ fn holes_and_covered(board: &Board, heights: &[usize; COL_NB]) -> (i32, i32) {
 
 /// bumpiness — sum of |h[i]-h[i+1]| and (h[i]-h[i+1])^2
 /// skips the well column (deepest col with both neighbors taller)
+#[inline]
 fn bumpiness(heights: &[usize; COL_NB], well_col: Option<usize>) -> (i32, i32) {
     let mut bump = 0i32;
     let mut bump_sq = 0i32;
@@ -109,6 +108,7 @@ fn bumpiness(heights: &[usize; COL_NB], well_col: Option<usize>) -> (i32, i32) {
 
 /// row transitions — count bit transitions in each occupied row
 /// XOR adjacent cells, count 1-bits
+#[inline]
 fn row_transitions(board: &Board, max_height: usize) -> i32 {
     let mut total = 0i32;
     for y in 0..max_height {
@@ -134,6 +134,7 @@ fn row_transitions(board: &Board, max_height: usize) -> i32 {
     total
 }
 
+#[inline]
 /// find the deepest well column (both neighbors taller)
 /// returns (well_col, well_depth)
 fn find_well(heights: &[usize; COL_NB]) -> (Option<usize>, i32) {
@@ -168,7 +169,7 @@ pub fn evaluate(board: &Board, weights: &EvalWeights) -> f32 {
     let (holes, covered) = holes_and_covered(board, &heights);
     let (well_col, well_depth) = find_well(&heights);
     let (bump, bump_sq) = bumpiness(&heights, well_col);
-    let transitions = row_transitions(board, max_h);
+    let r_transitions = row_transitions(board, max_h);
 
     let mut score = 0.0f32;
 
@@ -185,7 +186,7 @@ pub fn evaluate(board: &Board, weights: &EvalWeights) -> f32 {
 
     score += weights.bumpiness * bump as f32;
     score += weights.bumpiness_sq * bump_sq as f32;
-    score += weights.row_transitions * transitions as f32;
+    score += weights.row_transitions * r_transitions as f32;
 
     score += weights.well_depth * well_depth as f32;
 

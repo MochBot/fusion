@@ -1,11 +1,14 @@
 use crate::board::Board;
 use crate::eval::{evaluate, EvalWeights};
-use crate::header::Piece;
+use crate::header::{Piece, Move};
 use crate::move_buffer::MoveBuffer;
 use crate::movegen::generate;
-use crate::state::{GameState, TransitionObservation};
-use crate::transposition::{TranspositionTable, ZobristKeys};
 use crate::search_config::{SearchExpansionContext, SearchNode};
+use crate::state::{ClearEvent, ClearType, GameState, TransitionObservation};
+use crate::transposition::{TranspositionTable, ZobristKeys};
+use crate::attack::{calculate_attack_full, AttackContext};
+use crate::analysis::{shape_chain_value, shape_context_modifier, assemble_composite};
+use smallvec::{smallvec, SmallVec};
 
 pub(crate) fn gen_and_eval_root(
     state: &GameState,
@@ -16,7 +19,7 @@ pub(crate) fn gen_and_eval_root(
     nodes: &mut Vec<SearchNode>,
 ) {
     let mut moves = MoveBuffer::new();
-    generate(&state.board, &mut moves, piece, false);
+    generate(&state.board, &mut moves, piece, true);
 
     for m in moves.as_slice() {
         let mut result_board = state.board.clone();
@@ -37,17 +40,66 @@ pub(crate) fn gen_and_eval_root(
             spawn_envelope_blocked,
         });
 
-        let score = evaluate_with_tt(
+        let board_eval = evaluate_with_tt(
             &result_board,
             ctx.weights,
             ctx.remaining_depth,
             ctx.zobrist_keys,
             ctx.tt,
         );
+        // Detect B2B chain break for surge release
+        let b2b_broken_from = if state.b2b >= 4 && next_b2b == 0 && lines_cleared > 0 {
+            Some(state.b2b)
+        } else {
+            None
+        };
+        let clears_garbage = state.pending_garbage > 0 && lines_cleared > 0;
+        let is_perfect_clear = result_board.is_empty();
+        let attack_val = calculate_attack_full(&AttackContext {
+            lines: lines_cleared,
+            spin: m.spin(),
+            b2b: next_b2b,
+            combo: next_combo as u8,
+            config: &ctx.config.attack_config,
+            is_perfect_clear,
+            b2b_broken_from,
+            clears_garbage,
+        });
+        let clear_event = if lines_cleared > 0 {
+            Some(ClearEvent {
+                clear_type: ClearType::from_lines(lines_cleared),
+                spin_type: m.spin(),
+                lines_cleared,
+                attack_sent: attack_val,
+                b2b_before: state.b2b,
+                b2b_after: next_b2b,
+                combo_before: state.combo,
+                combo_after: next_combo,
+                is_surge_release: b2b_broken_from.is_some(),
+                is_garbage_clear: clears_garbage,
+                is_perfect_clear,
+                piece,
+            })
+        } else {
+            None
+        };
+        let path_clear_events = match clear_event {
+            Some(event) => smallvec![event],
+            None => SmallVec::new(),
+        };
+        let chain_val = shape_chain_value(next_combo as f32);
+        let context_mod = shape_context_modifier(next_combo as f32 - state.combo as f32);
+        let composite_score = assemble_composite(
+            board_eval,
+            attack_val,
+            chain_val,
+            context_mod,
+            ctx.config,
+        );
 
         nodes.push(SearchNode {
             board: result_board,
-            score,
+            score: composite_score,
             hold: new_hold,
             b2b: next_b2b,
             combo: next_combo,
@@ -55,7 +107,15 @@ pub(crate) fn gen_and_eval_root(
             coaching,
             root_move: *m,
             root_hold_used: hold_used,
-            path: vec![*m],
+            path: smallvec![*m],
+            board_score: board_eval,
+            attack_score: attack_val,
+            chain_score: chain_val,
+            context_score: context_mod,
+            path_attack: attack_val,
+            path_chain: chain_val,
+            path_context: context_mod,
+            path_clear_events,
         });
     }
 }
@@ -69,7 +129,7 @@ pub(crate) fn expand_node(
     out: &mut Vec<SearchNode>,
 ) {
     let mut moves = MoveBuffer::new();
-    generate(&parent.board, &mut moves, piece, false);
+    generate(&parent.board, &mut moves, piece, true);
 
     for m in moves.as_slice() {
         let mut result_board = parent.board.clone();
@@ -90,20 +150,74 @@ pub(crate) fn expand_node(
             spawn_envelope_blocked,
         });
 
-        let score = evaluate_with_tt(
+        let board_eval = evaluate_with_tt(
             &result_board,
             ctx.weights,
             ctx.remaining_depth,
             ctx.zobrist_keys,
             ctx.tt,
         );
+        // Detect B2B chain break for surge release
+        let b2b_broken_from = if parent.b2b >= 4 && next_b2b == 0 && lines_cleared > 0 {
+            Some(parent.b2b)
+        } else {
+            None
+        };
+        let clears_garbage = parent.pending_garbage > 0 && lines_cleared > 0;
+        let is_perfect_clear = result_board.is_empty();
+        let attack_val = calculate_attack_full(&AttackContext {
+            lines: lines_cleared,
+            spin: m.spin(),
+            b2b: next_b2b,
+            combo: next_combo as u8,
+            config: &ctx.config.attack_config,
+            is_perfect_clear,
+            b2b_broken_from,
+            clears_garbage,
+        });
+        let clear_event = if lines_cleared > 0 {
+            Some(ClearEvent {
+                clear_type: ClearType::from_lines(lines_cleared),
+                spin_type: m.spin(),
+                lines_cleared,
+                attack_sent: attack_val,
+                b2b_before: parent.b2b,
+                b2b_after: next_b2b,
+                combo_before: parent.combo,
+                combo_after: next_combo,
+                is_surge_release: b2b_broken_from.is_some(),
+                is_garbage_clear: clears_garbage,
+                is_perfect_clear,
+                piece,
+            })
+        } else {
+            None
+        };
+        let mut path_clear_events = parent.path_clear_events.clone();
+        if let Some(event) = clear_event {
+            path_clear_events.push(event);
+        }
+        let chain_val = shape_chain_value(next_combo as f32);
+        let context_mod = shape_context_modifier(next_combo as f32 - parent.combo as f32);
+        let cum_attack = parent.path_attack + attack_val;
+        let cum_chain = parent.path_chain + chain_val;
+        // Normalize by sqrt(depth) to keep scale consistent with instantaneous weights
+        // while rewarding paths that accumulate attack/chain value over time
+        let depth_factor = (parent.path.len() as f32 + 1.0).sqrt();
+        let composite_score = assemble_composite(
+            board_eval,
+            cum_attack / depth_factor,
+            cum_chain / depth_factor,
+            context_mod,
+            ctx.config,
+        );
 
-        let mut path = parent.path.clone();
+        let mut path: SmallVec<[Move; 16]> = parent.path.clone();
         path.push(*m);
 
         out.push(SearchNode {
             board: result_board,
-            score,
+            score: composite_score,
             hold: new_hold,
             b2b: next_b2b,
             combo: next_combo,
@@ -112,6 +226,14 @@ pub(crate) fn expand_node(
             root_move: parent.root_move,
             root_hold_used: parent.root_hold_used,
             path,
+            board_score: board_eval,
+            attack_score: attack_val,
+            chain_score: chain_val,
+            context_score: context_mod,
+            path_attack: parent.path_attack + attack_val,
+            path_chain: parent.path_chain + chain_val,
+            path_context: parent.path_context + context_mod,
+            path_clear_events,
         });
     }
 }

@@ -44,10 +44,10 @@ pub struct ReplayGateEvaluation {
     pub failures: Vec<String>,
 }
 
-#[path = "replay_validation_manifest.rs"]
-mod manifest;
 #[path = "replay_validation_labels.rs"]
 mod labels;
+#[path = "replay_validation_manifest.rs"]
+mod manifest;
 
 use labels::{
     fnv1a64, obligation_met_label, obligation_required_label, ratio_or_zero, severe_pred_label,

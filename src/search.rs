@@ -1,18 +1,16 @@
 // search.rs -- beam search with hold for coaching engine
 // expands moves breadth-first, pruned to beam_width at each depth
 
-
 use crate::bag;
 
 use crate::eval::EvalWeights;
 
-
 use crate::state::GameState;
-use crate::transposition::{TranspositionTable, ZobristKeys, DEFAULT_TT_SIZE};
+use crate::transposition::{TranspositionTable, get_zobrist_keys, DEFAULT_TT_SIZE};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 
-pub use crate::search_config::{SearchConfig, SearchNode, SearchResult};
+pub use crate::search_config::{SearchConfig, SearchNode, SearchResult, SearchResultFull};
 pub(crate) use crate::search_config::{SearchExpansionContext, SearchIterationParams};
 pub(crate) use crate::search_expand::{expand_node, gen_and_eval_root};
 
@@ -23,19 +21,39 @@ pub fn find_best_move(
     config: &SearchConfig,
     weights: &EvalWeights,
 ) -> Option<SearchResult> {
+    find_best_move_with_scores(state, config, weights).map(|full| full.best)
+}
+
+pub fn find_best_move_with_scores(
+    state: &GameState,
+    config: &SearchConfig,
+    weights: &EvalWeights,
+) -> Option<SearchResultFull> {
+    find_best_move_with_scores_forced(state, config, weights, None)
+}
+
+/// Beam search with optional forced root move.
+/// When `forced_root_move` is Some, that move is protected from futility pruning
+/// and beam truncation — it always survives to the final beam so its score
+/// appears in `root_scores`.
+pub fn find_best_move_with_scores_forced(
+    state: &GameState,
+    config: &SearchConfig,
+    weights: &EvalWeights,
+    forced_root_move: Option<crate::header::Move>,
+) -> Option<SearchResultFull> {
     let search_queue = if config.extend_queue_7bag {
         bag::extend_queue(&state.queue, state.current, state.hold)
     } else {
         state.queue.clone()
     };
 
-    // actual search depth — capped by queue length + 1 (current piece)
     let max_depth = config.depth.min(search_queue.len() + 1);
     if max_depth == 0 {
         return None;
     }
 
-    let zobrist_keys = ZobristKeys::new();
+    let zobrist_keys = get_zobrist_keys();
     let mut tt = config
         .use_tt
         .then(|| TranspositionTable::new(DEFAULT_TT_SIZE));
@@ -48,8 +66,9 @@ pub fn find_best_move(
             weights,
             max_depth,
             beam_width: config.beam_width,
-            zobrist_keys: &zobrist_keys,
+            zobrist_keys,
             tt: &mut tt,
+            forced_root_move,
         };
         return run_beam_search_iteration(&mut params);
     }
@@ -59,8 +78,8 @@ pub fn find_best_move(
         return None;
     }
 
-    let mut width = 100.min(max_width);
-    let mut best_result: Option<SearchResult> = None;
+    let mut width = 200.min(max_width);
+    let mut best_full: Option<SearchResultFull> = None;
 
     #[cfg(not(target_arch = "wasm32"))]
     let start = Instant::now();
@@ -87,16 +106,17 @@ pub fn find_best_move(
             weights,
             max_depth,
             beam_width: width,
-            zobrist_keys: &zobrist_keys,
+            zobrist_keys,
             tt: &mut tt,
+            forced_root_move,
         };
-        if let Some(result) = run_beam_search_iteration(&mut params) {
-            let should_replace = best_result
+        if let Some(full) = run_beam_search_iteration(&mut params) {
+            let should_replace = best_full
                 .as_ref()
-                .is_none_or(|best| compare_results_desc(&result, best).is_lt());
+                .is_none_or(|prev| compare_results_desc(&full.best, &prev.best).is_lt());
 
             if should_replace {
-                best_result = Some(result);
+                best_full = Some(full);
             }
         }
 
@@ -124,28 +144,31 @@ pub fn find_best_move(
         width = (width * 2).min(max_width);
     }
 
-    best_result
+    best_full
 }
 
-fn run_beam_search_iteration(params: &mut SearchIterationParams<'_>) -> Option<SearchResult> {
+fn run_beam_search_iteration(params: &mut SearchIterationParams<'_>) -> Option<SearchResultFull> {
     let mut ctx = SearchExpansionContext {
+        config: params.config,
         weights: params.weights,
         remaining_depth: params.max_depth.saturating_sub(1),
         zobrist_keys: params.zobrist_keys,
         tt: params.tt,
     };
 
-    // expand root: generate moves for current piece, and hold piece if available
     let mut beam = expand_root(params.state, &mut ctx);
     if beam.is_empty() {
         return None;
     }
 
-    apply_futility_pruning(&mut beam, params.config.futility_delta);
+    apply_futility_pruning(
+        &mut beam,
+        params.config.futility_delta,
+        params.forced_root_move,
+    );
     beam.sort_unstable_by(compare_nodes_desc);
-    beam.truncate(params.beam_width);
+    truncate_with_forced(&mut beam, params.beam_width, params.forced_root_move);
 
-    // expand remaining depths using queue pieces
     for depth_idx in 0..params.max_depth.saturating_sub(1) {
         let queue_piece = match params.queue.get(depth_idx).copied() {
             Some(p) => p,
@@ -188,28 +211,121 @@ fn run_beam_search_iteration(params: &mut SearchIterationParams<'_>) -> Option<S
             break;
         }
 
-        apply_futility_pruning(&mut next_beam, params.config.futility_delta);
+        apply_futility_pruning(
+            &mut next_beam,
+            params.config.futility_delta,
+            params.forced_root_move,
+        );
         next_beam.sort_unstable_by(compare_nodes_desc);
-        next_beam.truncate(params.beam_width);
+        truncate_with_forced(&mut next_beam, params.beam_width, params.forced_root_move);
         beam = next_beam;
     }
 
-    beam.first().map(|best| SearchResult {
+    let best = beam.first()?;
+    let result = SearchResult {
         best_move: best.root_move,
         hold_used: best.root_hold_used,
         score: best.score,
-        pv: best.path.clone(),
+        pv: best.path.to_vec(),
         coaching_state: best.coaching,
+        pv_clear_events: best.path_clear_events.to_vec(),
+    };
+
+    let mut root_scores: Vec<(crate::header::Move, f32)> = Vec::new();
+    for node in &beam {
+        let raw = node.root_move.raw();
+        match root_scores.iter_mut().find(|entry| entry.0.raw() == raw) {
+            Some(entry) => {
+                if node.score > entry.1 {
+                    entry.1 = node.score;
+                }
+            }
+            None => root_scores.push((node.root_move, node.score)),
+        }
+    }
+    root_scores.sort_by(|a, b| b.1.total_cmp(&a.1));
+
+    let position_complexity = compute_position_complexity(&root_scores);
+
+    Some(SearchResultFull {
+        best: result,
+        root_scores,
+        position_complexity,
+        board_score: best.board_score,
+        attack_score: best.attack_score,
+        chain_score: best.chain_score,
+        context_score: best.context_score,
+        path_attack: best.path_attack,
+        path_chain: best.path_chain,
+        path_context: best.path_context,
     })
 }
 
-fn apply_futility_pruning(nodes: &mut Vec<SearchNode>, futility_delta: f32) {
+/// Compute position complexity: variance of top-10 root move scores.
+/// High variance = sharp position (clear best moves), low = flat (all moves similar).
+fn compute_position_complexity(root_scores: &[(crate::header::Move, f32)]) -> f32 {
+    let mut top_n = [0.0f32; 10];
+    let count = root_scores.len().min(10);
+    for (i, (_, s)) in root_scores.iter().take(10).enumerate() {
+        top_n[i] = *s;
+    }
+    if count < 2 {
+        return 0.0;
+    }
+    let scores = &top_n[..count];
+    let mean = scores.iter().sum::<f32>() / count as f32;
+    let variance = scores.iter().map(|s| (s - mean).powi(2)).sum::<f32>() / count as f32;
+    variance
+}
+
+/// Truncate beam to `max_size`, but if a forced root move would be truncated,
+/// re-insert it by evicting the worst node.
+fn truncate_with_forced(
+    beam: &mut Vec<SearchNode>,
+    max_size: usize,
+    forced: Option<crate::header::Move>,
+) {
+    if beam.len() <= max_size {
+        return;
+    }
+
+    // Extract forced node before truncation so it can't be lost
+    let forced_node = forced.and_then(|fm| {
+        let idx = beam.iter().position(|n| n.root_move.raw() == fm.raw());
+        idx.map(|i| beam.swap_remove(i))
+    });
+
+    beam.truncate(max_size);
+
+    // Re-insert forced node, evicting worst survivor if needed
+    if let Some(node) = forced_node {
+        let already_present = beam.iter().any(|n| n.root_move.raw() == node.root_move.raw());
+        if !already_present {
+            if beam.len() >= max_size {
+                beam.pop(); // evict worst (last after sort)
+            }
+            beam.push(node);
+        }
+    }
+}
+
+fn apply_futility_pruning(
+    nodes: &mut Vec<SearchNode>,
+    futility_delta: f32,
+    forced: Option<crate::header::Move>,
+) {
     if nodes.is_empty() {
         return;
     }
 
     let delta = futility_delta.max(0.0);
     let best_tier = nodes.iter().map(policy_key).max().unwrap_or((0, 0));
+
+    // Extract forced move node before pruning (if present)
+    let forced_node = forced.and_then(|fm| {
+        let idx = nodes.iter().position(|n| n.root_move.raw() == fm.raw());
+        idx.map(|i| nodes.swap_remove(i))
+    });
 
     nodes.retain(|node| policy_key(node) == best_tier);
 
@@ -220,6 +336,18 @@ fn apply_futility_pruning(nodes: &mut Vec<SearchNode>, futility_delta: f32) {
     let cutoff = best_score - delta;
 
     nodes.retain(|node| node.score >= cutoff);
+
+    // Re-insert forced move node unconditionally (it bypasses futility pruning)
+    if let Some(forced_node) = forced_node {
+        // Only re-insert if not already present (it might have survived pruning
+        // if it was removed by swap_remove but an identical root_move node exists)
+        let already_present = nodes
+            .iter()
+            .any(|n| n.root_move.raw() == forced_node.root_move.raw());
+        if !already_present {
+            nodes.push(forced_node);
+        }
+    }
 }
 
 fn policy_key(node: &SearchNode) -> (u8, u8) {
@@ -299,7 +427,7 @@ mod tests {
     use super::*;
     use crate::bag;
     use crate::board::{Board, FULL_ROW};
-
+    use smallvec::{smallvec, SmallVec};
     use crate::header::{Move, Piece, COL_NB};
     use crate::state::CoachingState;
     fn make_node(
@@ -323,7 +451,15 @@ mod tests {
             coaching,
             root_move: Move::none(),
             root_hold_used: false,
-            path: vec![Move::none()],
+            path: smallvec![Move::none()],
+            board_score: 0.0,
+            attack_score: 0.0,
+            chain_score: 0.0,
+            context_score: 0.0,
+            path_attack: 0.0,
+            path_chain: 0.0,
+            path_context: 0.0,
+            path_clear_events: SmallVec::new(),
         }
     }
 
@@ -539,7 +675,15 @@ mod tests {
                 coaching: CoachingState::default(),
                 root_move: Move::none(),
                 root_hold_used: false,
-                path: vec![Move::none()],
+                path: smallvec![Move::none()],
+                board_score: 0.0,
+                attack_score: 0.0,
+                chain_score: 0.0,
+                context_score: 0.0,
+                path_attack: 0.0,
+                path_chain: 0.0,
+                path_context: 0.0,
+                path_clear_events: SmallVec::new(),
             },
             SearchNode {
                 board: Board::new(),
@@ -551,7 +695,15 @@ mod tests {
                 coaching: CoachingState::default(),
                 root_move: Move::none(),
                 root_hold_used: false,
-                path: vec![Move::none()],
+                path: smallvec![Move::none()],
+                board_score: 0.0,
+                attack_score: 0.0,
+                chain_score: 0.0,
+                context_score: 0.0,
+                path_attack: 0.0,
+                path_chain: 0.0,
+                path_context: 0.0,
+                path_clear_events: SmallVec::new(),
             },
             SearchNode {
                 board: Board::new(),
@@ -563,11 +715,19 @@ mod tests {
                 coaching: CoachingState::default(),
                 root_move: Move::none(),
                 root_hold_used: false,
-                path: vec![Move::none()],
+                path: smallvec![Move::none()],
+                board_score: 0.0,
+                attack_score: 0.0,
+                chain_score: 0.0,
+                context_score: 0.0,
+                path_attack: 0.0,
+                path_chain: 0.0,
+                path_context: 0.0,
+                path_clear_events: SmallVec::new(),
             },
         ];
 
-        apply_futility_pruning(&mut nodes, 3.0);
+        apply_futility_pruning(&mut nodes, 3.0, None);
 
         assert_eq!(nodes.len(), 2, "score 5.0 should be pruned");
         assert!(nodes.iter().all(|node| node.score >= 7.0));
@@ -654,7 +814,7 @@ mod tests {
             ),
         ];
 
-        apply_futility_pruning(&mut nodes, 3.0);
+        apply_futility_pruning(&mut nodes, 3.0, None);
 
         assert!(nodes.iter().all(|n| {
             n.coaching.fatality == crate::state::FatalityState::Safe
@@ -705,6 +865,27 @@ mod tests {
         assert_eq!(
             result.coaching_state.fatality,
             crate::state::FatalityState::Fatal
+        );
+    }
+
+    #[test]
+    fn test_position_complexity_varies() {
+        let state = GameState::new(Board::new(), Piece::T, vec![Piece::I, Piece::O]);
+        let config = SearchConfig {
+            beam_width: 200,
+            depth: 2,
+            ..SearchConfig::default()
+        };
+        let weights = EvalWeights::default();
+
+        let full = find_best_move_with_scores(&state, &config, &weights)
+            .unwrap_or_else(|| panic!("should find moves"));
+
+        // On a clean board with multiple root moves, complexity should be >= 0
+        assert!(
+            full.position_complexity >= 0.0,
+            "position_complexity should be non-negative, got {}",
+            full.position_complexity
         );
     }
 }

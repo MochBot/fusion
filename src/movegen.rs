@@ -8,9 +8,7 @@ use crate::gen::{
 };
 use crate::header::*;
 
-
 pub use crate::move_buffer::{MoveBuffer, MoveList};
-
 
 // compile-time piece from const generic index — must match Piece enum discriminants
 #[inline(always)]
@@ -803,7 +801,6 @@ pub fn generate(b: &Board, moves: &mut MoveBuffer, p: Piece, force: bool) {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

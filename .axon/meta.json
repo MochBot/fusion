@@ -1,0 +1,16 @@
+{
+  "version": "0.2.4",
+  "name": "fusion-engine",
+  "path": "/home/li859/projects/mosaic-fusion-engine-coaching/fusion-engine",
+  "stats": {
+    "files": 12,
+    "symbols": 171,
+    "relationships": 528,
+    "clusters": 14,
+    "flows": 4,
+    "dead_code": 52,
+    "coupled_pairs": 0,
+    "embeddings": 183
+  },
+  "last_indexed_at": "2026-03-04T00:18:54.341098+00:00"
+}
