@@ -14,9 +14,9 @@ impl ZobristKeys {
         let mut rng = SplitMix64::new(ZOBRIST_SEED);
         let mut keys = [[0u64; BOARD_HEIGHT]; COL_NB];
 
-        for x in 0..COL_NB {
-            for y in 0..BOARD_HEIGHT {
-                keys[x][y] = rng.next_u64();
+        for row in keys.iter_mut().take(COL_NB) {
+            for key in row.iter_mut().take(BOARD_HEIGHT) {
+                *key = rng.next_u64();
             }
         }
 

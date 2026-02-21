@@ -183,29 +183,21 @@ fn get_input_inner(
                 let rt = rotate(d, r);
                 let off = canonical_offset(p, r) - canonical_offset(p, rt);
 
-                // collect kicks into a fixed buffer to unify [5] and [6] arrays
                 let mut kick_buf = [Coordinates::new(0, 0); 6];
-                let kick_count;
-
-                if d == Direction::Flip {
+                let kick_count = if d == Direction::Flip {
                     let ki = kick_180_index(p);
                     let arr = &KICKS_180[ki][r as usize];
                     let n = if !ACTIVE_RULES.srs_plus { 2 } else { arr.len() };
-                    for i in 0..n {
-                        kick_buf[i] = arr[i];
-                    }
-                    kick_count = n;
+                    kick_buf[..n].copy_from_slice(&arr[..n]);
+                    n
                 } else {
                     let ki = kick_index(p, ACTIVE_RULES.srs_plus);
                     let arr = &KICKS[ki][d as usize][r as usize];
-                    for i in 0..arr.len() {
-                        kick_buf[i] = arr[i];
-                    }
-                    kick_count = arr.len();
-                }
+                    kick_buf[..arr.len()].copy_from_slice(arr);
+                    arr.len()
+                };
 
-                for k in 0..kick_count {
-                    let kick = kick_buf[k];
+                for (k, &kick) in kick_buf.iter().enumerate().take(kick_count) {
                     let x1 = m.x as i32 + kick.x as i32 + off.x as i32;
                     let y1 = y as i32 + kick.y as i32 + off.y as i32;
 
@@ -235,9 +227,7 @@ fn get_input_inner(
                         for &(dx, dy) in &[(-1i32, -1i32), (1, -1), (-1, 1), (1, 1)] {
                             let cx = tx + dx;
                             let cy = ty + dy;
-                            if cx < 0 || cx >= COL_NB as i32 || cy < 0 {
-                                corners += 1;
-                            } else if board.occupied(cx, cy) {
+                            if cx < 0 || cx >= COL_NB as i32 || cy < 0 || board.occupied(cx, cy) {
                                 corners += 1;
                             }
                         }
@@ -253,9 +243,8 @@ fn get_input_inner(
                             for &(dx, dy) in &face {
                                 let fx = tx + dx;
                                 let fy = ty + dy;
-                                if fx < 0 || fx >= COL_NB as i32 || fy < 0 {
-                                    face_filled += 1;
-                                } else if board.occupied(fx, fy) {
+                                if fx < 0 || fx >= COL_NB as i32 || fy < 0 || board.occupied(fx, fy)
+                                {
                                     face_filled += 1;
                                 }
                             }
@@ -296,7 +285,7 @@ fn get_input_inner(
                 continue;
             }
             let x1u = x1 as usize;
-            if !in_bounds(p, r, x1 as i32) {
+            if !in_bounds(p, r, x1) {
                 continue;
             }
             let rc = canonical_r(p, r);

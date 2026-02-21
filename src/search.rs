@@ -824,7 +824,7 @@ mod tests {
 
     #[test]
     fn test_compare_prefers_survival_before_raw_score() {
-        let mut nodes = &mut [
+        let nodes = &mut [
             make_node(
                 999.0,
                 crate::state::FatalityState::Critical,
