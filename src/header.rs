@@ -192,6 +192,17 @@ impl Move {
         Self { data }
     }
 
+    /// Allspin mini: stores actual piece (not TSPIN sentinel) + spin_bit=1.
+    /// spin() returns (0 + 1) = 1 = Mini.  piece() returns the real piece.
+    pub const fn new_allspin_mini(p: Piece, r: Rotation, x: i32, y: i32) -> Self {
+        let data = (y as u16 & 0x3F)
+            | ((x as u16 & 0xF) << 6)
+            | (((p as u16) & 0x7) << 10)
+            | (((r as u16) & 0x3) << 13)
+            | (1u16 << 15); // spin_bit = 1
+        Self { data }
+    }
+
     pub const fn none() -> Self {
         Self { data: 0 }
     }

@@ -1,0 +1,4 @@
+schema_version=phase0-v1
+training_piece_order=i,j,l,o,s,t,z
+runtime_external_piece_order=i,o,t,s,z,j,l
+scalar_order=combo,b2b,lines,garbage_pending,bag_number

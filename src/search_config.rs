@@ -2,6 +2,7 @@ use crate::attack::AttackConfig;
 use crate::board::Board;
 use crate::eval::EvalWeights;
 use crate::header::{Move, Piece};
+use crate::policy_value_runtime::{PolicyValueRuntime, PolicyValueRuntimeContext};
 use crate::state::{ClearEvent, CoachingState, GameState};
 use crate::transposition::{TranspositionTable, ZobristKeys};
 use smallvec::SmallVec;
@@ -26,6 +27,21 @@ pub struct SearchConfig {
     /// Multiplier for the core board evaluation term. The primary weight for structural
     /// cleanliness and height management.
     pub board_weight: f32,
+    /// Cap for sqrt(depth) normalization of cumulative attack/chain terms.
+    /// Prevents deep paths from over-discounting accumulated offensive value.
+    /// sqrt(6) ≈ 2.45 means depths 1-6 get increasing normalization, depths 7+
+    /// are treated as depth-6 for scoring purposes.
+    pub max_depth_factor: f32,
+    /// Maximum additional depths to extend "loud" nodes (mid-combo, mid-B2B,
+    /// active setup) past the normal depth boundary. Prevents horizon effect
+    /// where investment moves get evaluated before their payoff resolves.
+    pub quiescence_max_extensions: usize,
+    /// Fraction of beam_width allocated to quiescence extension beam.
+    /// Keeps quiescence cost bounded: 0.15 = top 15% of loud nodes extended.
+    pub quiescence_beam_fraction: f32,
+    pub policy_bonus_weight: f32,
+    pub heuristic_fallback_weight: f32,
+    pub policy_guided_expansion_cap: usize,
 }
 
 impl Default for SearchConfig {
@@ -38,10 +54,16 @@ impl Default for SearchConfig {
             use_tt: false,
             extend_queue_7bag: true,
             attack_config: AttackConfig::tetra_league(),
-            attack_weight: 0.25,
+            attack_weight: 0.50,
             chain_weight: 0.15,
             context_weight: 0.10,
             board_weight: 1.0,
+            max_depth_factor: 2.45,
+            quiescence_max_extensions: 3,
+            quiescence_beam_fraction: 0.15,
+            policy_bonus_weight: 0.10,
+            heuristic_fallback_weight: 0.0,
+            policy_guided_expansion_cap: 32,
         }
     }
 }
@@ -86,23 +108,28 @@ pub struct SearchResultFull {
     pub path_chain: f32,
     /// Cumulative context value along the best search path.
     pub path_context: f32,
+    pub policy_score: f32,
+    pub value_score: f32,
+    pub fallback_used: bool,
 }
 
 /// Shared context for node expansion functions (`gen_and_eval_root`, `expand_node`).
 /// Groups evaluation weights, attack config, depth tracking, and transposition table refs.
 pub(crate) struct SearchExpansionContext<'a> {
     pub config: &'a SearchConfig,
+    pub current_beam_width: usize,
     pub weights: &'a EvalWeights,
     pub remaining_depth: usize,
     pub zobrist_keys: &'a ZobristKeys,
     pub tt: &'a mut Option<TranspositionTable>,
+    pub policy_value: Option<&'a PolicyValueRuntime>,
+    pub runtime_context: Option<&'a PolicyValueRuntimeContext>,
 }
 
 /// Parameters for a single beam search iteration.
 /// Groups game state, queue, configuration, and search infrastructure.
 pub(crate) struct SearchIterationParams<'a> {
     pub state: &'a GameState,
-    pub queue: &'a [Piece],
     pub config: &'a SearchConfig,
     pub weights: &'a EvalWeights,
     pub max_depth: usize,
@@ -110,16 +137,23 @@ pub(crate) struct SearchIterationParams<'a> {
     pub zobrist_keys: &'a ZobristKeys,
     pub tt: &'a mut Option<TranspositionTable>,
     pub forced_root_move: Option<Move>,
+    pub policy_value: Option<&'a PolicyValueRuntime>,
+    pub runtime_context: Option<&'a PolicyValueRuntimeContext>,
 }
 
 #[derive(Clone)]
 pub struct SearchNode {
     pub board: Board,
+    pub current: Option<Piece>,
+    pub queue: SmallVec<[Piece; 16]>,
     pub score: f32,
     pub hold: Option<Piece>,
     pub b2b: u8,
     pub combo: u32,
     pub pending_garbage: u8,
+    pub lines_total: u32,
+    pub bag_number: u32,
+    pub pieces_into_bag: u8,
     pub coaching: CoachingState,
     pub root_move: Move,
     pub root_hold_used: bool,
@@ -138,6 +172,19 @@ pub struct SearchNode {
     pub path_chain: f32,
     /// Cumulative context value along the search path.
     pub path_context: f32,
+    pub policy_score: f32,
+    pub value_score: f32,
+    pub fallback_used: bool,
     /// Per-move clear event history along the search path (capacity >= typical clears per depth).
     pub path_clear_events: SmallVec<[ClearEvent; 4]>,
+}
+
+impl SearchNode {
+    /// A node is "loud" if it has unresolved tactical activity that makes
+    /// leaf evaluation unreliable — analogous to chess quiescence search
+    /// refusing to evaluate mid-capture positions.
+    #[inline]
+    pub fn is_loud(&self) -> bool {
+        self.combo > 0 || self.b2b > 0 || !self.path_clear_events.is_empty()
+    }
 }

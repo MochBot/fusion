@@ -7,3 +7,23 @@
 # Local script caches
 __pycache__/
 *.pyc
+
+# AI tooling
+.axon/
+.opencode/
+.sisyphus/
+AGENTS.md
+
+# Python venvs
+.venv*/
+
+# Model binaries (stored on Modal volumes, not in VCS)
+models/*.onnx
+models/*.ckpt
+models/*/
+
+# Environment
+.env
+.env.*
+!.env.example
+!.env.test

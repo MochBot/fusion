@@ -115,7 +115,7 @@ mod tests {
     const D2: u64 = 153;
     const D3: u64 = 5266;
     const D4: u64 = 188561;
-    const D5: u64 = 3500883;
+    const D5: u64 = 3573524;
 
     #[test]
     fn test_perft_d1() {

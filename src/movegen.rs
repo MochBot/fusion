@@ -226,10 +226,16 @@ fn generate_inner<const P: usize, const CHECK_SPIN: bool>(
                         let mut m = ((current << y1) >> threshold) & !cm.get(x1u, rc);
                         current ^= (m << threshold) >> y1;
 
+                        m &= !searched[x1u][r1 as usize];
+                        if m == 0 {
+                            continue;
+                        }
+
                         if CHECK_SPIN {
+                            let r1i = r1 as usize;
                             if let Some(smap) = spin_map {
                                 let spins = m & smap[x1u][0];
-                                let r1i = r1 as usize;
+                                spin_set[x1u][r1i][SpinType::NoSpin as usize] &= !spins;
                                 spin_set[x1u][r1i][SpinType::NoSpin as usize] |= m ^ spins;
                                 if spins != 0 {
                                     if i >= 4 {
@@ -241,14 +247,21 @@ fn generate_inner<const P: usize, const CHECK_SPIN: bool>(
                                             spins & smap[x1u][1 + r1i];
                                     }
                                 }
+                            } else {
+                                let blocked_left = if x1u > 0 { cm.get(x1u - 1, rc) } else { !0u64 };
+                                let blocked_right = if x1u < COL_NB - 1 { cm.get(x1u + 1, rc) } else { !0u64 };
+                                let same_col = cm.get(x1u, rc);
+                                let blocked_up = same_col >> 1;
+                                let blocked_down = (same_col << 1) | 1;
+                                let stuck = m & blocked_left & blocked_right & blocked_down & blocked_up;
+                                spin_set[x1u][r1i][SpinType::NoSpin as usize] &= !stuck;
+                                spin_set[x1u][r1i][SpinType::Mini as usize] |= stuck;
+                                spin_set[x1u][r1i][SpinType::NoSpin as usize] |= m ^ stuck;
                             }
                         }
 
-                        m &= !searched[x1u][r1 as usize];
-                        if m != 0 {
-                            to_search[x1u][r1 as usize] |= m;
-                            *remaining |= remaining_index(x1, r1);
-                        }
+                        to_search[x1u][r1 as usize] |= m;
+                        *remaining |= remaining_index(x1, r1);
                     }
                 };
 
@@ -297,25 +310,52 @@ fn generate_inner<const P: usize, const CHECK_SPIN: bool>(
     }
 
     if CHECK_SPIN {
-        let all_rotations = [
-            Rotation::North,
-            Rotation::East,
-            Rotation::South,
-            Rotation::West,
-        ];
         for x in 0..COL_NB {
-            for &r in &all_rotations {
-                let ri = r as usize;
+            for ri in 0..canonical_sz {
+                let r = Rotation::from_u8(ri as u8);
                 if move_set[x][ri] == 0 {
                     continue;
                 }
-                for &s in &[SpinType::NoSpin, SpinType::Mini, SpinType::Full] {
-                    let mut current = move_set[x][ri] & spin_set[x][ri][s as usize];
-                    while current != 0 {
-                        let fullspin = s == SpinType::Full;
-                        moves.push(Move::new_tspin(r, x as i32, ctz(current) as i32, fullspin));
-                        current &= current - 1;
+                let legal = move_set[x][ri];
+                let raw_full = legal & spin_set[x][ri][SpinType::Full as usize];
+                let raw_mini = legal & spin_set[x][ri][SpinType::Mini as usize];
+                let raw_nospin = legal & spin_set[x][ri][SpinType::NoSpin as usize];
+
+                let (mut full, mut mini, mut nospin) = if P == { Piece::T as usize } {
+                    let full = raw_full;
+                    let mini = raw_mini & !full;
+                    let nospin = raw_nospin & !mini & !full;
+                    (full, mini, nospin)
+                } else {
+                    let mini = raw_mini;
+                    let nospin = raw_nospin & !mini;
+                    (0, mini, nospin)
+                };
+
+                while full != 0 {
+                    let y = ctz(full) as i32;
+                    if P == { Piece::T as usize } {
+                        moves.push(Move::new_tspin(r, x as i32, y, true));
+                    } else {
+                        moves.push(Move::new_allspin_mini(p, r, x as i32, y));
                     }
+                    full &= full - 1;
+                }
+
+                while mini != 0 {
+                    let y = ctz(mini) as i32;
+                    if P == { Piece::T as usize } {
+                        moves.push(Move::new_tspin(r, x as i32, y, false));
+                    } else {
+                        moves.push(Move::new_allspin_mini(p, r, x as i32, y));
+                    }
+                    mini &= mini - 1;
+                }
+
+                while nospin != 0 {
+                    let y = ctz(nospin) as i32;
+                    moves.push(Move::new(p, r, x as i32, y, false));
+                    nospin &= nospin - 1;
                 }
             }
         }
@@ -369,10 +409,16 @@ fn do_rotate_180<const P: usize, const CHECK_SPIN: bool>(ctx: &mut RotateContext
         let mut m = ((current << y1) >> threshold) & !ctx.cm.get(x1u, rc);
         current ^= (m << threshold) >> y1;
 
+        m &= !ctx.searched[x1u][r1 as usize];
+        if m == 0 {
+            continue;
+        }
+
         if CHECK_SPIN {
+            let r1i = r1 as usize;
             if let Some(smap) = ctx.spin_map {
                 let spins = m & smap[x1u][0];
-                let r1i = r1 as usize;
+                ctx.spin_set[x1u][r1i][SpinType::NoSpin as usize] &= !spins;
                 ctx.spin_set[x1u][r1i][SpinType::NoSpin as usize] |= m ^ spins;
                 if spins != 0 {
                     if i >= 4 {
@@ -384,14 +430,21 @@ fn do_rotate_180<const P: usize, const CHECK_SPIN: bool>(ctx: &mut RotateContext
                             spins & smap[x1u][1 + r1i];
                     }
                 }
+            } else {
+                let blocked_left = if x1u > 0 { ctx.cm.get(x1u - 1, rc) } else { !0u64 };
+                let blocked_right = if x1u < COL_NB - 1 { ctx.cm.get(x1u + 1, rc) } else { !0u64 };
+                let same_col = ctx.cm.get(x1u, rc);
+                let blocked_up = same_col >> 1;
+                let blocked_down = (same_col << 1) | 1;
+                let stuck = m & blocked_left & blocked_right & blocked_down & blocked_up;
+                ctx.spin_set[x1u][r1i][SpinType::NoSpin as usize] &= !stuck;
+                ctx.spin_set[x1u][r1i][SpinType::Mini as usize] |= stuck;
+                ctx.spin_set[x1u][r1i][SpinType::NoSpin as usize] |= m ^ stuck;
             }
         }
 
-        m &= !ctx.searched[x1u][r1 as usize];
-        if m != 0 {
-            ctx.to_search[x1u][r1 as usize] |= m;
-            *ctx.remaining |= remaining_index(x1, r1);
-        }
+        ctx.to_search[x1u][r1 as usize] |= m;
+        *ctx.remaining |= remaining_index(x1, r1);
     }
 }
 
@@ -700,7 +753,8 @@ pub fn generate(b: &Board, moves: &mut MoveBuffer, p: Piece, force: bool) {
     let slow = h as i32 > ACTIVE_RULES.spawn_row - 3;
     let low = !slow && h <= 13;
 
-    if low && (p != Piece::T || !ACTIVE_RULES.enable_tspin) {
+    let allspin_eligible = p != Piece::T && p != Piece::O && ACTIVE_RULES.enable_allspin;
+    if low && (p != Piece::T || !ACTIVE_RULES.enable_tspin) && !allspin_eligible {
         match p {
             Piece::I => generate16::<{ Piece::I as usize }>(&cols, moves),
             Piece::O => generate16::<{ Piece::O as usize }>(&cols, moves),
@@ -775,27 +829,50 @@ pub fn generate(b: &Board, moves: &mut MoveBuffer, p: Piece, force: bool) {
         }
         _ => {
             let cm = CollisionMap::new(&cols, p);
-            match p {
-                Piece::I => {
-                    generate_inner::<{ Piece::I as usize }, false>(&cm, moves, slow, force, None)
+            if allspin_eligible {
+                match p {
+                    Piece::I => {
+                        generate_inner::<{ Piece::I as usize }, true>(&cm, moves, slow, force, None)
+                    }
+                    Piece::L => {
+                        generate_inner::<{ Piece::L as usize }, true>(&cm, moves, slow, force, None)
+                    }
+                    Piece::J => {
+                        generate_inner::<{ Piece::J as usize }, true>(&cm, moves, slow, force, None)
+                    }
+                    Piece::S => {
+                        generate_inner::<{ Piece::S as usize }, true>(&cm, moves, slow, force, None)
+                    }
+                    Piece::Z => {
+                        generate_inner::<{ Piece::Z as usize }, true>(&cm, moves, slow, force, None)
+                    }
+                    _ => {
+                        generate_inner::<{ Piece::T as usize }, false>(&cm, moves, slow, force, None)
+                    }
                 }
-                Piece::O => {
-                    generate_inner::<{ Piece::O as usize }, false>(&cm, moves, slow, force, None)
-                }
-                Piece::L => {
-                    generate_inner::<{ Piece::L as usize }, false>(&cm, moves, slow, force, None)
-                }
-                Piece::J => {
-                    generate_inner::<{ Piece::J as usize }, false>(&cm, moves, slow, force, None)
-                }
-                Piece::S => {
-                    generate_inner::<{ Piece::S as usize }, false>(&cm, moves, slow, force, None)
-                }
-                Piece::Z => {
-                    generate_inner::<{ Piece::Z as usize }, false>(&cm, moves, slow, force, None)
-                }
-                Piece::T => {
-                    generate_inner::<{ Piece::T as usize }, false>(&cm, moves, slow, force, None)
+            } else {
+                match p {
+                    Piece::I => {
+                        generate_inner::<{ Piece::I as usize }, false>(&cm, moves, slow, force, None)
+                    }
+                    Piece::O => {
+                        generate_inner::<{ Piece::O as usize }, false>(&cm, moves, slow, force, None)
+                    }
+                    Piece::L => {
+                        generate_inner::<{ Piece::L as usize }, false>(&cm, moves, slow, force, None)
+                    }
+                    Piece::J => {
+                        generate_inner::<{ Piece::J as usize }, false>(&cm, moves, slow, force, None)
+                    }
+                    Piece::S => {
+                        generate_inner::<{ Piece::S as usize }, false>(&cm, moves, slow, force, None)
+                    }
+                    Piece::Z => {
+                        generate_inner::<{ Piece::Z as usize }, false>(&cm, moves, slow, force, None)
+                    }
+                    Piece::T => {
+                        generate_inner::<{ Piece::T as usize }, false>(&cm, moves, slow, force, None)
+                    }
                 }
             }
         }

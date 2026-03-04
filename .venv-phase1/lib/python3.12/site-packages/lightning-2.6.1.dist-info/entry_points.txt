@@ -1,0 +1,2 @@
+[console_scripts]
+fabric = lightning.fabric.cli:_main

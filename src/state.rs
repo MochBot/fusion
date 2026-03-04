@@ -275,6 +275,9 @@ pub struct GameState {
     pub b2b: u8, // surge level (0 = no B2B chain)
     pub combo: u32,
     pub pending_garbage: u8,
+    pub lines_total: u32,
+    pub bag_number: u32,
+    pub pieces_into_bag: u8,
     pub coaching: CoachingState,
 }
 
@@ -288,6 +291,9 @@ impl GameState {
             b2b: 0,
             combo: 0,
             pending_garbage: 0,
+            lines_total: 0,
+            bag_number: 0,
+            pieces_into_bag: 0,
             coaching: CoachingState::default(),
         }
     }
@@ -384,9 +390,15 @@ impl GameState {
         let (next_b2b, next_combo) =
             Self::next_chain_values(self.b2b, self.combo, m, lines_cleared);
         let imminent_garbage = self.pending_garbage.saturating_sub(lines_cleared);
+        let next_pieces_into_bag = (self.pieces_into_bag + 1) % 7;
         self.b2b = next_b2b;
         self.combo = next_combo;
         self.pending_garbage = imminent_garbage;
+        self.lines_total = self.lines_total.saturating_add(lines_cleared as u32);
+        if self.pieces_into_bag == 6 {
+            self.bag_number = self.bag_number.saturating_add(1);
+        }
+        self.pieces_into_bag = next_pieces_into_bag;
         self.coaching = self.coaching.transition(TransitionObservation {
             resulting_height,
             resulting_b2b: next_b2b,
@@ -419,6 +431,9 @@ mod tests {
         assert_eq!(state.b2b, 0);
         assert_eq!(state.combo, 0);
         assert_eq!(state.pending_garbage, 0);
+        assert_eq!(state.lines_total, 0);
+        assert_eq!(state.bag_number, 0);
+        assert_eq!(state.pieces_into_bag, 0);
         assert_eq!(state.coaching, CoachingState::default());
     }
 

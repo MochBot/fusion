@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+training_data*.bin
+training_data*.bin.*
+*.u64

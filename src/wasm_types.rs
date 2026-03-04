@@ -181,6 +181,8 @@ pub(crate) struct MoveEvalResultJson {
     pub insight_tags: Vec<String>,
     pub recommended_path: Vec<MoveResultJson>,
     pub best_path_attack_summary: PathAttackSummaryJson,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actual_move: Option<MoveResultJson>,
 }
 
 #[derive(serde::Serialize)]
@@ -199,19 +201,22 @@ pub(crate) struct CoachingStepJson {
 pub(crate) struct ReplayFrameContextJson {
     pub queue: Option<Vec<u8>>,
     pub hold: Option<u8>,
+    pub opponent_board: Option<Vec<u16>>,
     pub player_pps: Option<f32>,
     pub player_app: Option<f32>,
     pub player_dsp: Option<f32>,
     // Coaching state fields — actual per-move values from replay engine
     pub lines_cleared: Option<u8>,
+    pub lines_total: Option<u32>,
     pub b2b: Option<i32>,
     pub combo: Option<i32>,
     pub combo_before: Option<i32>,
     pub hold_used: Option<bool>,
     pub pending_garbage: Option<u32>,
     pub imminent_garbage: Option<u32>,
+    pub bag_number: Option<u32>,
+    pub pieces_into_bag: Option<u8>,
 }
-
 
 // ---------------------------------------------------------------------------
 // Attack tracking types for WASM serialization
@@ -235,6 +240,7 @@ pub(crate) struct ClearEventJson {
     pub b2b_after: u8,
     pub combo_before: u32,
     pub combo_after: u32,
+    pub is_surge_release: bool,
     pub is_garbage_clear: bool,
     pub is_perfect_clear: bool,
     pub piece: u8,
@@ -303,5 +309,66 @@ pub(crate) fn build_path_attack_summary(events: &[ClearEvent]) -> PathAttackSumm
         garbage_clear_count,
         spin_count,
         clear_events: events.iter().map(clear_event_to_json).collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture_values(key: &str) -> Vec<String> {
+        let fixture = include_str!("../training/tests/fixtures/phase0_contract_fixture.txt");
+        fixture
+            .lines()
+            .find_map(|line| line.split_once('=').filter(|(k, _)| *k == key))
+            .map(|(_, values)| values.split(',').map(|value| value.to_string()).collect())
+            .unwrap_or_else(|| panic!("missing fixture key: {key}"))
+    }
+
+    #[test]
+    fn external_piece_roundtrip_stays_stable() {
+        let expected_names = fixture_values("runtime_external_piece_order");
+        let expected = [
+            Piece::I,
+            Piece::O,
+            Piece::T,
+            Piece::S,
+            Piece::Z,
+            Piece::J,
+            Piece::L,
+        ];
+        assert_eq!(expected_names, vec!["i", "o", "t", "s", "z", "j", "l"]);
+        for (external, expected_piece) in expected.iter().enumerate() {
+            let piece = piece_from_external(external as u8).expect("piece should decode");
+            assert_eq!(piece, *expected_piece);
+            assert_eq!(piece_to_external(piece), external as u8);
+        }
+    }
+
+    #[test]
+    fn replay_frame_context_accepts_phase0_progression_fields() {
+        let json = js_sys::JSON::parse(
+            r#"{
+                \"queue\": [0,1,2],
+                \"hold\": 5,
+                \"opponent_board\": [1,2,3],
+                \"lines_cleared\": 2,
+                \"lines_total\": 14,
+                \"b2b\": 3,
+                \"combo\": 1,
+                \"combo_before\": 0,
+                \"hold_used\": true,
+                \"pending_garbage\": 4,
+                \"imminent_garbage\": 2,
+                \"bag_number\": 6,
+                \"pieces_into_bag\": 5
+            }"#,
+        )
+        .expect("valid JSON");
+        let ctx: ReplayFrameContextJson = from_js(json).expect("should deserialize");
+        assert_eq!(ctx.lines_total, Some(14));
+        assert_eq!(ctx.bag_number, Some(6));
+        assert_eq!(ctx.pieces_into_bag, Some(5));
+        assert_eq!(ctx.opponent_board.as_ref().map(Vec::len), Some(3));
     }
 }

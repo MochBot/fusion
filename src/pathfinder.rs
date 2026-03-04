@@ -97,7 +97,9 @@ fn get_input_inner(
 ) -> Inputs {
     let cols = board.compute_cols();
     let cm = CollisionMap::new(&cols, p);
-    let can_spin = p == Piece::T && ACTIVE_RULES.enable_tspin;
+    let is_t = p == Piece::T && ACTIVE_RULES.enable_tspin;
+    let is_allspin = p != Piece::T && p != Piece::O && ACTIVE_RULES.enable_allspin;
+    let can_spin = is_t || is_allspin;
     let spin_nb = if can_spin { SPIN_NB } else { 1 };
 
     // searched[spin][col][rot] bitboard
@@ -226,10 +228,10 @@ fn get_input_inner(
                         continue;
                     }
 
-                    // T-spin detection
+                    // Spin detection
                     let mut s = SpinType::NoSpin;
-                    if can_spin {
-                        // 3-corner check
+                    if is_t {
+                        // T-piece: 3-corner check
                         let ty = y1;
                         let tx = x1;
                         let mut corners = 0u32;
@@ -262,6 +264,16 @@ fn get_input_inner(
                             } else {
                                 SpinType::Mini
                             };
+                        }
+                    } else if is_allspin {
+                        // Non-T allspin: 4-direction immobility check
+                        let rt_c = canonical_r(p, rt);
+                        let blocked_left = x1u == 0 || cm.get(x1u - 1, rt_c) & bb(y1) != 0;
+                        let blocked_right = x1u >= COL_NB - 1 || cm.get(x1u + 1, rt_c) & bb(y1) != 0;
+                        let blocked_down = y1 <= 0 || cm.get(x1u, rt_c) & bb(y1 - 1) != 0;
+                        let blocked_up = y1 >= ROW_NB as i32 - 1 || cm.get(x1u, rt_c) & bb(y1 + 1) != 0;
+                        if blocked_left && blocked_right && blocked_down && blocked_up {
+                            s = SpinType::Mini;
                         }
                     }
 

@@ -1,0 +1,297 @@
+use std::env;
+use std::fs::{self, File};
+use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::path::{Path, PathBuf};
+
+use direct_cobra_copy::board::{Board, BOARD_HEIGHT};
+use direct_cobra_copy::eval::EvalWeights;
+use direct_cobra_copy::header::{Piece, COL_NB};
+use direct_cobra_copy::search::find_best_move_with_scores;
+use direct_cobra_copy::search_config::SearchConfig;
+use direct_cobra_copy::state::GameState;
+use serde::{Deserialize, Serialize};
+
+const PHASE1_SCHEMA_VERSION: &str = "phase1-v1";
+const GENERATION_MODE: &str = "search_oracle";
+const ORACLE_PROFILE: &str = "stronger_offline_oracle";
+const POLICY_TEMPERATURE: f32 = 1.0;
+const ORACLE_BEAM_WIDTH: usize = 2000;
+const ORACLE_DEPTH: usize = 18;
+const ORACLE_USE_TT: bool = true;
+
+#[derive(Debug, Deserialize)]
+struct PolicyValueOracleRequest {
+    schema_version: String,
+    replay_id: String,
+    round_id: u32,
+    player_id: u8,
+    frame_id: u32,
+    group_id: String,
+    player_board_rows: Vec<u16>,
+    opponent_board_rows: Vec<u16>,
+    current_piece: String,
+    hold_piece: Option<String>,
+    queue: Vec<String>,
+    combo: u32,
+    b2b: u8,
+    lines: u32,
+    pending_garbage: u8,
+    bag_number: u32,
+}
+
+#[derive(Debug, Serialize)]
+struct PolicyValueTarget {
+    schema_version: String,
+    replay_id: String,
+    round_id: u32,
+    player_id: u8,
+    frame_id: u32,
+    group_id: String,
+    best_move_raw: u16,
+    best_value: f32,
+    position_complexity: f32,
+    root_scores: Vec<(u16, f32)>,
+    policy_probs: Vec<f32>,
+}
+
+#[derive(Debug, Serialize)]
+struct PolicyValueMetadata {
+    schema_version: String,
+    generation_mode: String,
+    policy_temperature: f32,
+    sample_count: usize,
+    move_id_contract: String,
+    oracle_profile: String,
+    oracle_beam_width: usize,
+    oracle_depth: usize,
+    oracle_use_tt: bool,
+}
+
+fn stronger_offline_oracle_config() -> SearchConfig {
+    SearchConfig {
+        beam_width: ORACLE_BEAM_WIDTH,
+        depth: ORACLE_DEPTH,
+        use_tt: ORACLE_USE_TT,
+        quiescence_max_extensions: 5,
+        quiescence_beam_fraction: 0.20,
+        ..SearchConfig::default()
+    }
+}
+
+fn parse_training_piece(name: &str) -> Result<Piece, String> {
+    match name {
+        "i" => Ok(Piece::I),
+        "j" => Ok(Piece::J),
+        "l" => Ok(Piece::L),
+        "o" => Ok(Piece::O),
+        "s" => Ok(Piece::S),
+        "t" => Ok(Piece::T),
+        "z" => Ok(Piece::Z),
+        _ => Err(format!("unknown training piece: {name}")),
+    }
+}
+
+fn board_from_rows(rows: &[u16]) -> Result<Board, String> {
+    if rows.len() > BOARD_HEIGHT {
+        return Err(format!("too many board rows: {}", rows.len()));
+    }
+    let mut board = Board::new();
+    for (y, row) in rows.iter().enumerate() {
+        board.rows[y] = *row;
+    }
+    for x in 0..COL_NB {
+        let mut col = 0u64;
+        for (y, row) in board.rows.iter().enumerate() {
+            if ((row >> x) & 1) != 0 {
+                col |= 1u64 << y;
+            }
+        }
+        board.cols[x] = col;
+    }
+    Ok(board)
+}
+
+fn game_state_from_request(request: &PolicyValueOracleRequest) -> Result<GameState, String> {
+    if request.schema_version != PHASE1_SCHEMA_VERSION {
+        return Err(format!("unexpected schema version: {}", request.schema_version));
+    }
+    let board = board_from_rows(&request.player_board_rows)?;
+    let current = parse_training_piece(&request.current_piece)?;
+    let queue = request
+        .queue
+        .iter()
+        .map(|piece| parse_training_piece(piece))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut state = GameState::new(board, current, queue);
+    state.hold = match &request.hold_piece {
+        Some(piece) => Some(parse_training_piece(piece)?),
+        None => None,
+    };
+    state.combo = request.combo;
+    state.b2b = request.b2b;
+    state.pending_garbage = request.pending_garbage;
+    Ok(state)
+}
+
+fn softmax(scores: &[f32], temperature: f32) -> Result<Vec<f32>, String> {
+    if scores.is_empty() {
+        return Err("cannot softmax empty score list".to_string());
+    }
+    if temperature <= 0.0 {
+        return Err(format!("temperature must be positive, got {temperature}"));
+    }
+    let scaled: Vec<f32> = scores.iter().map(|score| score / temperature).collect();
+    let max_score = scaled
+        .iter()
+        .copied()
+        .fold(f32::NEG_INFINITY, f32::max);
+    let exps: Vec<f32> = scaled.iter().map(|score| (*score - max_score).exp()).collect();
+    let total: f32 = exps.iter().sum();
+    if total <= 0.0 {
+        return Err("softmax total must be positive".to_string());
+    }
+    Ok(exps.into_iter().map(|value| value / total).collect())
+}
+
+fn build_target(request: PolicyValueOracleRequest) -> Result<PolicyValueTarget, String> {
+    let _ = request.lines;
+    let _ = request.bag_number;
+    let _ = request.opponent_board_rows.len();
+    let state = game_state_from_request(&request)?;
+    let result = find_best_move_with_scores(&state, &stronger_offline_oracle_config(), &EvalWeights::default())
+        .ok_or_else(|| format!("search produced no result for {}:{}", request.replay_id, request.frame_id))?;
+
+    let root_scores: Vec<(u16, f32)> = result
+        .root_scores
+        .iter()
+        .map(|(mv, score)| (mv.raw(), *score))
+        .collect();
+    if root_scores.is_empty() {
+        return Err(format!("search returned empty root_scores for {}:{}", request.replay_id, request.frame_id));
+    }
+    let policy_probs = softmax(
+        &root_scores.iter().map(|(_, score)| *score).collect::<Vec<_>>(),
+        POLICY_TEMPERATURE,
+    )?;
+    Ok(PolicyValueTarget {
+        schema_version: PHASE1_SCHEMA_VERSION.to_string(),
+        replay_id: request.replay_id,
+        round_id: request.round_id,
+        player_id: request.player_id,
+        frame_id: request.frame_id,
+        group_id: request.group_id,
+        best_move_raw: result.best.best_move.raw(),
+        best_value: result.best.score,
+        position_complexity: result.position_complexity,
+        root_scores,
+        policy_probs,
+    })
+}
+
+fn metadata(sample_count: usize) -> PolicyValueMetadata {
+    PolicyValueMetadata {
+        schema_version: PHASE1_SCHEMA_VERSION.to_string(),
+        generation_mode: GENERATION_MODE.to_string(),
+        policy_temperature: POLICY_TEMPERATURE,
+        sample_count,
+        move_id_contract: "Move.raw".to_string(),
+        oracle_profile: ORACLE_PROFILE.to_string(),
+        oracle_beam_width: ORACLE_BEAM_WIDTH,
+        oracle_depth: ORACLE_DEPTH,
+        oracle_use_tt: ORACLE_USE_TT,
+    }
+}
+
+fn default_output_path(input_path: &Path) -> PathBuf {
+    let input = input_path.to_string_lossy();
+    if let Some(prefix) = input.strip_suffix(".policy_value.requests.jsonl") {
+        PathBuf::from(format!("{prefix}.policy_value.jsonl"))
+    } else {
+        PathBuf::from(format!("{}.policy_value.jsonl", input))
+    }
+}
+
+fn metadata_output_path(output_path: &Path) -> PathBuf {
+    let output = output_path.to_string_lossy();
+    if let Some(prefix) = output.strip_suffix(".policy_value.jsonl") {
+        PathBuf::from(format!("{prefix}.policy_value.metadata.json"))
+    } else {
+        PathBuf::from(format!("{}.policy_value.metadata.json", output))
+    }
+}
+
+fn run() -> Result<(), String> {
+    let args: Vec<String> = env::args().collect();
+    if args.len() < 2 {
+        return Err("usage: cargo run --bin generate_policy_value_labels -- <requests.jsonl> [output.jsonl]".to_string());
+    }
+
+    let input_path = PathBuf::from(&args[1]);
+    let output_path = if args.len() >= 3 {
+        PathBuf::from(&args[2])
+    } else {
+        default_output_path(&input_path)
+    };
+    let metadata_path = metadata_output_path(&output_path);
+
+    let input = File::open(&input_path).map_err(|err| format!("open {}: {err}", input_path.display()))?;
+    if let Some(parent) = output_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| format!("mkdir {}: {err}", parent.display()))?;
+    }
+    let mut writer = BufWriter::new(
+        File::create(&output_path).map_err(|err| format!("create {}: {err}", output_path.display()))?,
+    );
+
+    let mut count = 0usize;
+    for line in BufReader::new(input).lines() {
+        let line = line.map_err(|err| format!("read line: {err}"))?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let request: PolicyValueOracleRequest =
+            serde_json::from_str(&line).map_err(|err| format!("parse request json: {err}"))?;
+        let target = build_target(request)?;
+        serde_json::to_writer(&mut writer, &target).map_err(|err| format!("write target json: {err}"))?;
+        writer.write_all(b"\n").map_err(|err| format!("write newline: {err}"))?;
+        count += 1;
+    }
+    writer.flush().map_err(|err| format!("flush {}: {err}", output_path.display()))?;
+
+    let metadata_file = File::create(&metadata_path)
+        .map_err(|err| format!("create {}: {err}", metadata_path.display()))?;
+    serde_json::to_writer_pretty(metadata_file, &metadata(count))
+        .map_err(|err| format!("write metadata {}: {err}", metadata_path.display()))?;
+
+    println!("generated_labels={count}");
+    println!("output_path={}", output_path.display());
+    println!("metadata_path={}", metadata_path.display());
+    Ok(())
+}
+
+fn main() {
+    if let Err(err) = run() {
+        eprintln!("error: {err}");
+        std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn softmax_sums_to_one() {
+        let probs = softmax(&[1.0, 2.0, 3.0], 1.0).expect("softmax should work");
+        let total: f32 = probs.iter().sum();
+        assert!((total - 1.0).abs() < 1e-6);
+        assert!(probs[2] > probs[1]);
+        assert!(probs[1] > probs[0]);
+    }
+
+    #[test]
+    fn parse_training_piece_uses_phase1_piece_names() {
+        assert_eq!(parse_training_piece("i").expect("piece"), Piece::I);
+        assert_eq!(parse_training_piece("j").expect("piece"), Piece::J);
+        assert!(parse_training_piece("q").is_err());
+    }
+}

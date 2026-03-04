@@ -11,6 +11,7 @@ pub mod move_buffer;
 pub mod movegen;
 pub mod pathfinder;
 pub mod perft;
+pub mod policy_value_runtime;
 pub mod replay_validation;
 pub mod ruleset;
 pub mod search;

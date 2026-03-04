@@ -1,0 +1,14 @@
+{
+  "candidate_capacity": 64,
+  "format": "onnx",
+  "model_path": "pvc-real-r03-player.onnx",
+  "move_feature_dim": 14,
+  "move_id_contract": "Move.raw",
+  "player_aux_context_dim": 56,
+  "policy_head_type": "player_context_ranking",
+  "policy_output": "policy_logits",
+  "schema_version": "phase2-runtime-v2",
+  "shared_input_contract": "policy-value-shared-core-v2",
+  "state_feature_dim": 854,
+  "value_output": "value"
+}

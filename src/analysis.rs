@@ -148,7 +148,7 @@ const SIGMOID_C_BASE: f32 = -13.5;
 ///   X+(pps=3.27): c ≈ -13.5 + (-4.15) + (-1.50) + (-1.75) ≈ -20.9
 pub fn compute_sigmoid_c(skill: &PlayerSkill) -> f32 {
     const ALPHA: f32 = -3.5; // ln(pps) coefficient (attenuated to reduce X+ false positives)
-    const BETA: f32 = -2.0;  // app coefficient
+    const BETA: f32 = -2.0; // app coefficient
     const GAMMA: f32 = -5.0; // dsp coefficient (reduced from -8.0 to prevent over-shifting)
 
     SIGMOID_C_BASE + ALPHA * skill.pps.max(0.1).ln() + BETA * skill.app + GAMMA * skill.dsp
@@ -169,9 +169,31 @@ pub fn win_prob(search_score: f32, k: f32, c: f32) -> f32 {
 ///   ≥12% drop = Mistake (significant quality loss)
 ///   ≥ 6% drop = Inaccuracy (suboptimal but recoverable)
 ///
+/// **Dual-metric fallback (KataGo-inspired):** When both scores are deep
+/// in the sigmoid tail (both < c−TAIL_MARGIN or both > c+TAIL_MARGIN),
+/// the sigmoid is flat and WP drop ≈ 0 regardless of actual quality
+/// difference. In this region, we fall back to raw score delta
+/// classification, which is linear and still discriminative.
+///
 /// Use `compute_sigmoid_c` to get skill-adaptive `c`, or pass
 /// `SIGMOID_K` / manual `c` for fixed-skill analysis.
 pub fn classify_win_prob_drop(best_score: f32, actual_score: f32, k: f32, c: f32) -> Severity {
+    // Tail detection: both scores in sigmoid flat zone where WP drop
+    // is uninformative (both far below or far above inflection point c).
+    const TAIL_MARGIN: f32 = 20.0;
+    let in_lower_tail = best_score < c - TAIL_MARGIN && actual_score < c - TAIL_MARGIN;
+    let in_upper_tail = best_score > c + TAIL_MARGIN && actual_score > c + TAIL_MARGIN;
+
+    if in_lower_tail || in_upper_tail {
+        // Raw score delta — linear metric where sigmoid is flat.
+        // Thresholds wider than WP-drop because raw scores have larger
+        // variance. In tail regions, score gaps of 1-2 are placement-order
+        // noise yielding the same practical outcome.
+        let raw_delta = (best_score - actual_score).max(0.0);
+        return classify_raw_delta(raw_delta);
+    }
+
+    // Standard WP-drop classification
     let best_wp = win_prob(best_score, k, c);
     let actual_wp = win_prob(actual_score, k, c);
     let drop = (best_wp - actual_wp).max(0.0);
@@ -181,6 +203,22 @@ pub fn classify_win_prob_drop(best_score: f32, actual_score: f32, k: f32, c: f32
     } else if drop >= 0.12 {
         Severity::Mistake
     } else if drop >= 0.06 {
+        Severity::Inaccuracy
+    } else {
+        Severity::None
+    }
+}
+
+/// Raw score delta classification for sigmoid tail regions.
+/// Thresholds wider than WP-drop because raw scores have larger variance
+/// and small gaps (1-2 points) in garbage/near-death states are often
+/// placement-order noise with identical practical outcome.
+fn classify_raw_delta(delta: f32) -> Severity {
+    if delta >= 8.0 {
+        Severity::Blunder
+    } else if delta >= 4.0 {
+        Severity::Mistake
+    } else if delta >= 2.0 {
         Severity::Inaccuracy
     } else {
         Severity::None
@@ -236,7 +274,6 @@ pub struct InsightResult {
 
 pub const CHAIN_SHAPE_MAX: f32 = 1.0;
 
-
 pub fn shape_chain_value(raw_chain: f32) -> f32 {
     if raw_chain <= 0.0 {
         return 0.0;
@@ -248,7 +285,6 @@ pub fn shape_chain_value(raw_chain: f32) -> f32 {
 pub fn shape_context_modifier(raw_modifier: f32) -> f32 {
     raw_modifier.clamp(-1.0, 1.0)
 }
-
 
 pub fn assemble_composite(
     board: f32,
@@ -919,5 +955,81 @@ mod tests {
             + chain * config.chain_weight
             + context * config.context_weight;
         assert_eq!(composite, expected);
+    }
+
+    #[test]
+    fn test_dual_metric_lower_tail_blunder() {
+        let c = -13.5;
+        let best = c - 30.0; // -43.5, deep in lower tail
+        let actual = best - 10.0; // delta=10 >= 8 → Blunder
+        assert_eq!(
+            classify_win_prob_drop(best, actual, SIGMOID_K, c),
+            Severity::Blunder
+        );
+    }
+
+    #[test]
+    fn test_dual_metric_lower_tail_mistake() {
+        let c = -13.5;
+        let best = c - 25.0;
+        let actual = best - 5.0; // delta=5 >= 4 → Mistake
+        assert_eq!(
+            classify_win_prob_drop(best, actual, SIGMOID_K, c),
+            Severity::Mistake
+        );
+    }
+
+    #[test]
+    fn test_dual_metric_lower_tail_inaccuracy() {
+        let c = -13.5;
+        let best = c - 25.0;
+        let actual = best - 3.0; // delta=3 >= 2 → Inaccuracy
+        assert_eq!(
+            classify_win_prob_drop(best, actual, SIGMOID_K, c),
+            Severity::Inaccuracy
+        );
+    }
+
+    #[test]
+    fn test_dual_metric_lower_tail_none() {
+        let c = -13.5;
+        let best = c - 25.0;
+        let actual = best - 1.0; // delta=1 < 2 → None
+        assert_eq!(
+            classify_win_prob_drop(best, actual, SIGMOID_K, c),
+            Severity::None
+        );
+    }
+
+    #[test]
+    fn test_dual_metric_upper_tail_blunder() {
+        let c = -13.5;
+        let best = c + 30.0; // 16.5, deep in upper tail
+        let actual = best - 9.0; // 7.5, still > c+20=6.5, both in upper tail. delta=9 >= 8 → Blunder
+        assert_eq!(
+            classify_win_prob_drop(best, actual, SIGMOID_K, c),
+            Severity::Blunder
+        );
+    }
+
+    #[test]
+    fn test_dual_metric_not_triggered_near_inflection() {
+        let c = -13.5;
+        let best = c + 5.0; // -8.5, within TAIL_MARGIN of c
+        let actual = best - 10.0; // -18.5, also within margin
+        let sev = classify_win_prob_drop(best, actual, SIGMOID_K, c);
+        // Near inflection, WP-drop classification should fire (not raw delta)
+        // A 10-point gap near inflection produces a large WP drop
+        assert_ne!(sev, Severity::None);
+    }
+
+    #[test]
+    fn test_dual_metric_mixed_regions_uses_wp() {
+        let c = -13.5;
+        let best = c + 5.0; // near inflection
+        let actual = c - 25.0; // deep in tail
+                               // One score near inflection, one in tail → NOT both in tail → uses WP-drop
+        let sev = classify_win_prob_drop(best, actual, SIGMOID_K, c);
+        assert_eq!(sev, Severity::Blunder); // massive WP drop crossing inflection
     }
 }

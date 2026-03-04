@@ -16,6 +16,9 @@ pub struct EvalWeights {
     pub bumpiness_sq: f32,
     pub row_transitions: f32,
     pub well_depth: f32,
+    // -- structural pattern bonuses --
+    pub tsd_overhang: f32,
+    pub four_wide_well: f32,
 }
 
 impl Default for EvalWeights {
@@ -30,6 +33,8 @@ impl Default for EvalWeights {
             bumpiness_sq: -0.1,
             row_transitions: -0.3,
             well_depth: 0.2,
+            tsd_overhang: 6.0,
+            four_wide_well: 1.5,
         }
     }
 }
@@ -40,7 +45,11 @@ fn column_heights(board: &Board) -> [usize; COL_NB] {
     for (x, h) in heights.iter_mut().enumerate() {
         // Use leading_zeros on cached column bitboard: O(1) per column vs O(40) scan
         let col = board.cols[x];
-        *h = if col == 0 { 0 } else { (64 - col.leading_zeros()) as usize };
+        *h = if col == 0 {
+            0
+        } else {
+            (64 - col.leading_zeros()) as usize
+        };
     }
     heights
 }
@@ -162,6 +171,100 @@ fn find_well(heights: &[usize; COL_NB]) -> (Option<usize>, i32) {
     (best_col, best_depth)
 }
 
+/// Detect T-spin double overhang setups.
+///
+/// A TSD requires a T-shaped cavity: an overhang cell (filled) with empty
+/// space below it, flanked by a wall on one side. We scan for the minimal
+/// geometric signature:
+///
+///   col c:   filled at h, empty at h-1  (overhang)
+///   col c±1: filled at h-1 AND h        (wall providing the T-slot)
+///   col c:   empty at h-2 OR h-2 < 0    (cavity below overhang)
+///
+/// Returns count of detected TSD-ready overhangs (0, 1, or rarely 2).
+#[inline]
+fn count_tsd_overhangs(board: &Board, heights: &[usize; COL_NB]) -> i32 {
+    let mut count = 0i32;
+
+    for c in 0..COL_NB {
+        let h = heights[c];
+        if h < 2 {
+            continue;
+        }
+
+        // Overhang: filled at top, empty directly below
+        let has_overhang =
+            board.occupied(c as i32, h as i32 - 1) && !board.occupied(c as i32, h as i32 - 2);
+
+        if !has_overhang {
+            continue;
+        }
+
+        // Check for wall on either side providing the T-slot
+        let wall_left = c > 0
+            && heights[c - 1] >= h
+            && board.occupied(c as i32 - 1, h as i32 - 1)
+            && board.occupied(c as i32 - 1, h as i32 - 2);
+
+        let wall_right = c < COL_NB - 1
+            && heights[c + 1] >= h
+            && board.occupied(c as i32 + 1, h as i32 - 1)
+            && board.occupied(c as i32 + 1, h as i32 - 2);
+
+        // Need cavity on the opposite side of the wall
+        if wall_left {
+            let open_right = c < COL_NB - 1 && !board.occupied(c as i32 + 1, h as i32 - 2);
+            let open_right = open_right || c == COL_NB - 1;
+            if open_right {
+                count += 1;
+            }
+        }
+        if wall_right {
+            let open_left = c > 0 && !board.occupied(c as i32 - 1, h as i32 - 2);
+            let open_left = open_left || c == 0;
+            if open_left {
+                count += 1;
+            }
+        }
+    }
+
+    count.min(2)
+}
+
+/// Detect 4-wide combo well on either board edge.
+///
+/// A 4-wide well exists when 4 consecutive edge columns (0-3 or 6-9) are
+/// all significantly lower than the average of the remaining 6 columns.
+/// The depth score scales with how much lower the well columns are.
+///
+/// Returns a continuous score (0.0 if no 4-wide detected).
+#[inline]
+fn four_wide_well_score(heights: &[usize; COL_NB]) -> f32 {
+    let left_well_avg: f32 = (heights[0] + heights[1] + heights[2] + heights[3]) as f32 / 4.0;
+    let left_rest_avg: f32 =
+        (heights[4] + heights[5] + heights[6] + heights[7] + heights[8] + heights[9]) as f32 / 6.0;
+
+    let right_well_avg: f32 = (heights[6] + heights[7] + heights[8] + heights[9]) as f32 / 4.0;
+    let right_rest_avg: f32 =
+        (heights[0] + heights[1] + heights[2] + heights[3] + heights[4] + heights[5]) as f32 / 6.0;
+
+    // Minimum depth difference to qualify as a 4-wide setup
+    const MIN_DEPTH_DIFF: f32 = 3.0;
+
+    let left_diff = left_rest_avg - left_well_avg;
+    let right_diff = right_rest_avg - right_well_avg;
+
+    let mut score = 0.0f32;
+    if left_diff >= MIN_DEPTH_DIFF {
+        score = score.max(left_diff - MIN_DEPTH_DIFF + 1.0);
+    }
+    if right_diff >= MIN_DEPTH_DIFF {
+        score = score.max(right_diff - MIN_DEPTH_DIFF + 1.0);
+    }
+
+    score
+}
+
 pub fn evaluate(board: &Board, weights: &EvalWeights) -> f32 {
     let heights = column_heights(board);
     let max_h = heights.iter().copied().max().unwrap_or(0);
@@ -189,6 +292,12 @@ pub fn evaluate(board: &Board, weights: &EvalWeights) -> f32 {
     score += weights.row_transitions * r_transitions as f32;
 
     score += weights.well_depth * well_depth as f32;
+
+    let tsd_count = count_tsd_overhangs(board, &heights);
+    score += weights.tsd_overhang * tsd_count as f32;
+
+    let four_wide = four_wide_well_score(&heights);
+    score += weights.four_wide_well * four_wide;
 
     score
 }

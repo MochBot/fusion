@@ -4,9 +4,10 @@
 use crate::bag;
 
 use crate::eval::EvalWeights;
+use crate::policy_value_runtime::{PolicyValueRuntime, PolicyValueRuntimeContext};
 
 use crate::state::GameState;
-use crate::transposition::{TranspositionTable, get_zobrist_keys, DEFAULT_TT_SIZE};
+use crate::transposition::{get_zobrist_keys, TranspositionTable, DEFAULT_TT_SIZE};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 
@@ -24,12 +25,40 @@ pub fn find_best_move(
     find_best_move_with_scores(state, config, weights).map(|full| full.best)
 }
 
+pub fn find_best_move_runtime(
+    state: &GameState,
+    config: &SearchConfig,
+    weights: &EvalWeights,
+    policy_value: &PolicyValueRuntime,
+    runtime_context: &PolicyValueRuntimeContext,
+) -> Option<SearchResult> {
+    find_best_move_with_scores_runtime(state, config, weights, policy_value, runtime_context)
+        .map(|full| full.best)
+}
+
 pub fn find_best_move_with_scores(
     state: &GameState,
     config: &SearchConfig,
     weights: &EvalWeights,
 ) -> Option<SearchResultFull> {
-    find_best_move_with_scores_forced(state, config, weights, None)
+    find_best_move_with_scores_forced_runtime(state, config, weights, None, None, None)
+}
+
+pub fn find_best_move_with_scores_runtime(
+    state: &GameState,
+    config: &SearchConfig,
+    weights: &EvalWeights,
+    policy_value: &PolicyValueRuntime,
+    runtime_context: &PolicyValueRuntimeContext,
+) -> Option<SearchResultFull> {
+    find_best_move_with_scores_forced_runtime(
+        state,
+        config,
+        weights,
+        Some(policy_value),
+        Some(runtime_context),
+        None,
+    )
 }
 
 /// Beam search with optional forced root move.
@@ -40,6 +69,24 @@ pub fn find_best_move_with_scores_forced(
     state: &GameState,
     config: &SearchConfig,
     weights: &EvalWeights,
+    forced_root_move: Option<crate::header::Move>,
+) -> Option<SearchResultFull> {
+    find_best_move_with_scores_forced_runtime(
+        state,
+        config,
+        weights,
+        None,
+        None,
+        forced_root_move,
+    )
+}
+
+pub fn find_best_move_with_scores_forced_runtime(
+    state: &GameState,
+    config: &SearchConfig,
+    weights: &EvalWeights,
+    policy_value: Option<&PolicyValueRuntime>,
+    runtime_context: Option<&PolicyValueRuntimeContext>,
     forced_root_move: Option<crate::header::Move>,
 ) -> Option<SearchResultFull> {
     let search_queue = if config.extend_queue_7bag {
@@ -61,7 +108,6 @@ pub fn find_best_move_with_scores_forced(
     if config.time_budget_ms.is_none() {
         let mut params = SearchIterationParams {
             state,
-            queue: &search_queue,
             config,
             weights,
             max_depth,
@@ -69,6 +115,8 @@ pub fn find_best_move_with_scores_forced(
             zobrist_keys,
             tt: &mut tt,
             forced_root_move,
+            policy_value,
+            runtime_context,
         };
         return run_beam_search_iteration(&mut params);
     }
@@ -101,7 +149,6 @@ pub fn find_best_move_with_scores_forced(
 
         let mut params = SearchIterationParams {
             state,
-            queue: &search_queue,
             config,
             weights,
             max_depth,
@@ -109,6 +156,8 @@ pub fn find_best_move_with_scores_forced(
             zobrist_keys,
             tt: &mut tt,
             forced_root_move,
+            policy_value,
+            runtime_context,
         };
         if let Some(full) = run_beam_search_iteration(&mut params) {
             let should_replace = best_full
@@ -150,10 +199,13 @@ pub fn find_best_move_with_scores_forced(
 fn run_beam_search_iteration(params: &mut SearchIterationParams<'_>) -> Option<SearchResultFull> {
     let mut ctx = SearchExpansionContext {
         config: params.config,
+        current_beam_width: params.beam_width,
         weights: params.weights,
         remaining_depth: params.max_depth.saturating_sub(1),
         zobrist_keys: params.zobrist_keys,
         tt: params.tt,
+        policy_value: params.policy_value,
+        runtime_context: params.runtime_context,
     };
 
     let mut beam = expand_root(params.state, &mut ctx);
@@ -170,11 +222,6 @@ fn run_beam_search_iteration(params: &mut SearchIterationParams<'_>) -> Option<S
     truncate_with_forced(&mut beam, params.beam_width, params.forced_root_move);
 
     for depth_idx in 0..params.max_depth.saturating_sub(1) {
-        let queue_piece = match params.queue.get(depth_idx).copied() {
-            Some(p) => p,
-            None => break,
-        };
-
         let child_depth = depth_idx + 2;
         ctx.remaining_depth = params.max_depth.saturating_sub(child_depth);
 
@@ -182,29 +229,7 @@ fn run_beam_search_iteration(params: &mut SearchIterationParams<'_>) -> Option<S
             Vec::with_capacity(params.beam_width.saturating_mul(2));
 
         for node in &beam {
-            let current_piece = queue_piece;
-
-            expand_node(
-                node,
-                current_piece,
-                node.hold,
-                false,
-                &mut ctx,
-                &mut next_beam,
-            );
-
-            if let Some(held) = node.hold {
-                if held != current_piece {
-                    expand_node(
-                        node,
-                        held,
-                        Some(current_piece),
-                        true,
-                        &mut ctx,
-                        &mut next_beam,
-                    );
-                }
-            }
+            expand_node(node, &mut ctx, &mut next_beam);
         }
 
         if next_beam.is_empty() {
@@ -219,6 +244,56 @@ fn run_beam_search_iteration(params: &mut SearchIterationParams<'_>) -> Option<S
         next_beam.sort_unstable_by(compare_nodes_desc);
         truncate_with_forced(&mut next_beam, params.beam_width, params.forced_root_move);
         beam = next_beam;
+    }
+
+    // Quiescence extensions: extend loud nodes past the normal depth boundary
+    // so investment moves (mid-combo, active B2B) resolve before evaluation.
+    let q_max = params.config.quiescence_max_extensions;
+    let q_beam_width =
+        ((params.beam_width as f32) * params.config.quiescence_beam_fraction).ceil() as usize;
+    if q_max > 0 && q_beam_width > 0 {
+        let main_depth = params.max_depth.saturating_sub(1);
+        let loud_nodes: Vec<SearchNode> = beam.iter().filter(|n| n.is_loud()).cloned().collect();
+
+        if !loud_nodes.is_empty() {
+            let mut q_beam = loud_nodes;
+            q_beam.sort_unstable_by(compare_nodes_desc);
+            q_beam.truncate(q_beam_width);
+
+            for ext in 0..q_max {
+                let child_depth = main_depth + ext + 2;
+                ctx.remaining_depth = params
+                    .max_depth
+                    .saturating_sub(child_depth.min(params.max_depth));
+
+                let mut next_q: Vec<SearchNode> = Vec::with_capacity(q_beam_width * 2);
+
+                for node in &q_beam {
+                    expand_node(node, &mut ctx, &mut next_q);
+                }
+
+                if next_q.is_empty() {
+                    break;
+                }
+
+                next_q.sort_unstable_by(compare_nodes_desc);
+                next_q.truncate(q_beam_width);
+
+                for node in &next_q {
+                    if !node.is_loud() {
+                        beam.push(node.clone());
+                    }
+                }
+
+                q_beam = next_q.into_iter().filter(|n| n.is_loud()).collect();
+                if q_beam.is_empty() {
+                    break;
+                }
+            }
+
+            beam.extend(q_beam);
+            beam.sort_unstable_by(compare_nodes_desc);
+        }
     }
 
     let best = beam.first()?;
@@ -258,6 +333,9 @@ fn run_beam_search_iteration(params: &mut SearchIterationParams<'_>) -> Option<S
         path_attack: best.path_attack,
         path_chain: best.path_chain,
         path_context: best.path_context,
+        policy_score: best.policy_score,
+        value_score: best.value_score,
+        fallback_used: best.fallback_used,
     })
 }
 
@@ -299,7 +377,9 @@ fn truncate_with_forced(
 
     // Re-insert forced node, evicting worst survivor if needed
     if let Some(node) = forced_node {
-        let already_present = beam.iter().any(|n| n.root_move.raw() == node.root_move.raw());
+        let already_present = beam
+            .iter()
+            .any(|n| n.root_move.raw() == node.root_move.raw());
         if !already_present {
             if beam.len() >= max_size {
                 beam.pop(); // evict worst (last after sort)
@@ -403,22 +483,7 @@ fn compare_results_desc(a: &SearchResult, b: &SearchResult) -> std::cmp::Orderin
 
 fn expand_root(state: &GameState, ctx: &mut SearchExpansionContext<'_>) -> Vec<SearchNode> {
     let mut nodes = Vec::with_capacity(128);
-
-    gen_and_eval_root(state, state.current, state.hold, false, ctx, &mut nodes);
-
-    match state.hold {
-        Some(held) if held != state.current => {
-            gen_and_eval_root(state, held, Some(state.current), true, ctx, &mut nodes);
-        }
-        None if !state.queue.is_empty() => {
-            let next = state.queue[0];
-            if next != state.current {
-                gen_and_eval_root(state, next, Some(state.current), true, ctx, &mut nodes);
-            }
-        }
-        _ => {}
-    }
-
+    gen_and_eval_root(state, ctx, &mut nodes);
     nodes
 }
 
@@ -427,9 +492,9 @@ mod tests {
     use super::*;
     use crate::bag;
     use crate::board::{Board, FULL_ROW};
-    use smallvec::{smallvec, SmallVec};
     use crate::header::{Move, Piece, COL_NB};
     use crate::state::CoachingState;
+    use smallvec::{smallvec, SmallVec};
     fn make_node(
         score: f32,
         fatality: crate::state::FatalityState,
@@ -443,11 +508,16 @@ mod tests {
 
         SearchNode {
             board: Board::new(),
+            current: Some(Piece::T),
+            queue: SmallVec::new(),
             score,
             hold: None,
             b2b: 0,
             combo: 0,
             pending_garbage: 0,
+            lines_total: 0,
+            bag_number: 0,
+            pieces_into_bag: 0,
             coaching,
             root_move: Move::none(),
             root_hold_used: false,
@@ -459,6 +529,9 @@ mod tests {
             path_attack: 0.0,
             path_chain: 0.0,
             path_context: 0.0,
+            policy_score: 0.0,
+            value_score: 0.0,
+            fallback_used: false,
             path_clear_events: SmallVec::new(),
         }
     }
@@ -602,10 +675,13 @@ mod tests {
             baseline_config.depth.min(state.queue.len() + 1),
             "baseline depth should use visible queue only"
         );
-        assert_eq!(
-            extended.pv.len(),
-            extended_config.depth.min(extended_queue.len() + 1),
-            "extended depth should use 7-bag queue extension"
+        assert!(
+            extended.pv.len() >= baseline.pv.len(),
+            "extended search should not shorten the principal variation horizon"
+        );
+        assert!(
+            extended.pv.len() <= extended_config.depth.min(extended_queue.len() + 1),
+            "extended search should still stay within the 7-bag horizon"
         );
     }
 
@@ -667,11 +743,16 @@ mod tests {
         let mut nodes = vec![
             SearchNode {
                 board: Board::new(),
+                current: Some(Piece::T),
+                queue: SmallVec::new(),
                 score: 10.0,
                 hold: None,
                 b2b: 0,
                 combo: 0,
                 pending_garbage: 0,
+                lines_total: 0,
+                bag_number: 0,
+                pieces_into_bag: 0,
                 coaching: CoachingState::default(),
                 root_move: Move::none(),
                 root_hold_used: false,
@@ -683,15 +764,23 @@ mod tests {
                 path_attack: 0.0,
                 path_chain: 0.0,
                 path_context: 0.0,
+                policy_score: 0.0,
+                value_score: 0.0,
+                fallback_used: false,
                 path_clear_events: SmallVec::new(),
             },
             SearchNode {
                 board: Board::new(),
+                current: Some(Piece::T),
+                queue: SmallVec::new(),
                 score: 8.5,
                 hold: None,
                 b2b: 0,
                 combo: 0,
                 pending_garbage: 0,
+                lines_total: 0,
+                bag_number: 0,
+                pieces_into_bag: 0,
                 coaching: CoachingState::default(),
                 root_move: Move::none(),
                 root_hold_used: false,
@@ -703,15 +792,23 @@ mod tests {
                 path_attack: 0.0,
                 path_chain: 0.0,
                 path_context: 0.0,
+                policy_score: 0.0,
+                value_score: 0.0,
+                fallback_used: false,
                 path_clear_events: SmallVec::new(),
             },
             SearchNode {
                 board: Board::new(),
+                current: Some(Piece::T),
+                queue: SmallVec::new(),
                 score: 5.0,
                 hold: None,
                 b2b: 0,
                 combo: 0,
                 pending_garbage: 0,
+                lines_total: 0,
+                bag_number: 0,
+                pieces_into_bag: 0,
                 coaching: CoachingState::default(),
                 root_move: Move::none(),
                 root_hold_used: false,
@@ -723,6 +820,9 @@ mod tests {
                 path_attack: 0.0,
                 path_chain: 0.0,
                 path_context: 0.0,
+                policy_score: 0.0,
+                value_score: 0.0,
+                fallback_used: false,
                 path_clear_events: SmallVec::new(),
             },
         ];

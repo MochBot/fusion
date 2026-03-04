@@ -49,6 +49,20 @@ impl Board {
             || self.obstructed_coord(&(pc[2] + off))
     }
 
+    pub fn legal_lock_placement(&self, m: &Move) -> bool {
+        if !is_ok_move(m) || self.obstructed_move(m) {
+            return false;
+        }
+
+        let pc = m.cells();
+        let off = Coordinates::new(m.x(), m.y());
+        let cells = [off, pc[0] + off, pc[1] + off, pc[2] + off];
+
+        cells
+            .iter()
+            .any(|c| self.obstructed(c.x as i32, c.y as i32 - 1))
+    }
+
     /// Build a column bitboard on-the-fly from row data.
     /// Bit y of result is set iff cell (x, y) is occupied.
     pub fn col(&self, x: usize) -> Bitboard {
@@ -158,10 +172,7 @@ impl Board {
     }
 
     pub fn do_move(&mut self, m: &Move) -> i32 {
-        debug_assert!(is_ok_move(m));
-        debug_assert!(!self.obstructed_move(m));
-
-        if !is_ok_move(m) {
+        if !self.legal_lock_placement(m) {
             return 0;
         }
 
@@ -397,5 +408,31 @@ mod tests {
         assert_eq!(board.height(), 1);
         board.rows[10] = 1;
         assert_eq!(board.height(), 11);
+    }
+
+    #[test]
+    fn test_do_move_rejects_obstructed_overlap() {
+        let mut board = Board::new();
+        board.rows[0] = 0b0000010000;
+        board.rebuild_cols();
+
+        let m = Move::new(Piece::T, Rotation::North, 4, 0, false);
+        let before = board.rows;
+        let clears = board.do_move(&m);
+
+        assert_eq!(clears, 0);
+        assert_eq!(board.rows, before);
+    }
+
+    #[test]
+    fn test_do_move_rejects_floating_lock() {
+        let mut board = Board::new();
+        let m = Move::new(Piece::T, Rotation::North, 4, 10, false);
+
+        let before = board.rows;
+        let clears = board.do_move(&m);
+
+        assert_eq!(clears, 0);
+        assert_eq!(board.rows, before);
     }
 }

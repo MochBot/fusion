@@ -26,19 +26,26 @@ path = "src/bin/calibrate_skill_buckets.rs"
 name = "replay_validation_gate"
 path = "src/bin/replay_validation_gate.rs"
 
+[[bin]]
+name = "generate_policy_value_labels"
+path = "src/bin/generate_policy_value_labels.rs"
+
 [features]
 default = ["rayon"]
 rayon = ["dep:rayon"]
-wasm = ["dep:wasm-bindgen", "dep:serde", "dep:serde_json", "dep:js-sys", "dep:console_error_panic_hook"]
+wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:console_error_panic_hook"]
 
 [dependencies]
 rayon = { version = "1.10", optional = true }
 smallvec = "1.13"
 wasm-bindgen = { version = "=0.2.100", optional = true }
-serde = { version = "1", features = ["derive"], optional = true }
-serde_json = { version = "1", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1" }
 js-sys = { version = "0.3", optional = true }
 console_error_panic_hook = { version = "0.1", optional = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tract-onnx = "0.21"
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false
@@ -47,3 +54,5 @@ wasm-opt = false
 opt-level = 3
 lto = true
 codegen-units = 1
+panic = "abort"
+strip = "symbols"
