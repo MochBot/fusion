@@ -1,15 +1,14 @@
 /target/
-target/
-/.cargo-target-d7fix/
-**/*.rs.bk
-/crates/wasm/pkg/
-*.wasm
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-.DS_Store
-Thumbs.db
-/research/
-*.pdf
+
+# Replay files
+*.ttrm
+
+# Local script caches
+__pycache__/
+*.pyc
+
+# Environment
+.env
+.env.*
+!.env.example
+!.env.test
