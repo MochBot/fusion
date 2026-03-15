@@ -4,11 +4,11 @@ Rust/WASM analysis backend for TETR.IO Season 2 replays. Fusion complements Mosa
 
 ## Relationship to Mosaic and Triangle.js
 
-| Component | Responsibilities | Not Responsible For |
-| --- | --- | --- |
-| Triangle.js | Simulation: tick, queue, garbage, replay playback | Analysis, eval, search | 
-| Fusion (this repo) | Analysis: attack calc, board eval, search, misdrop detection | Simulation or game loop | 
-| Mosaic | UI/visualization, replay ingestion, orchestration | Engine internals | 
+| Component          | Responsibilities                                             | Not Responsible For     |
+| ------------------ | ------------------------------------------------------------ | ----------------------- |
+| Triangle.js        | Simulation: tick, queue, garbage, replay playback            | Analysis, eval, search  |
+| Fusion (this repo) | Analysis: attack calc, board eval, search, misdrop detection | Simulation or game loop |
+| Mosaic             | UI/visualization, replay ingestion, orchestration            | Engine internals        |
 
 Fusion is intentionally **analysis-only**. It is designed to be called from Mosaic alongside Triangle.js, not to replace it.
 
@@ -27,14 +27,14 @@ wasm-pack test --headless --chrome crates/wasm
 
 ## Workspace Layout
 
-| Crate | Purpose |
-| --- | --- |
-| `fusion-core` | Board, Piece, Move, GameState (bitfields) |
-| `fusion-engine` | Attack calc, B2B, combo, movement, SRS+ kicks |
-| `fusion-eval` | Heuristics (holes, height, wells, bumpiness) |
-| `fusion-search` | Beam search + lookahead |
+| Crate             | Purpose                                        |
+| ----------------- | ---------------------------------------------- |
+| `fusion-core`     | Board, Piece, Move, GameState (bitfields)      |
+| `fusion-engine`   | Attack calc, B2B, combo, movement, SRS+ kicks  |
+| `fusion-eval`     | Heuristics (holes, height, wells, bumpiness)   |
+| `fusion-search`   | Beam search + lookahead                        |
 | `fusion-analysis` | Misdrop detection + replay pipeline (advanced) |
-| `fusion-wasm` | JS/WASM bindings for browser use |
+| `fusion-wasm`     | JS/WASM bindings for browser use               |
 
 ## WASM API (Core)
 
@@ -65,6 +65,7 @@ const config = new JsAttackConfig(
 ```
 
 Combo table mapping:
+
 - `0` = Multiplier
 - `1` = Classic
 - `2` = Modern

@@ -3,6 +3,7 @@
 TETR.IO Season 2 replay analysis engine in Rust/WASM.
 
 See also:
+
 - `README.md`
 - `docs/INTEGRATION.md`
 - `docs/DEVELOPMENT.md`
@@ -22,14 +23,14 @@ fusion/
 
 ## Core Types (`fusion-core`)
 
-| Type | Purpose |
-|------|---------|
-| `Board` | 10x40 grid using `[u16; 40]` bitfield |
-| `Piece` | I, O, T, S, Z, J, L tetrominos |
-| `Rotation` | North, East, South, West |
-| `Move` | Placement with position, rotation, spin type |
-| `SpinType` | None, Mini, Full (All-Mini+ detection) |
-| `GameState` | Board + queue + hold + B2B + combo |
+| Type        | Purpose                                      |
+| ----------- | -------------------------------------------- |
+| `Board`     | 10x40 grid using `[u16; 40]` bitfield        |
+| `Piece`     | I, O, T, S, Z, J, L tetrominos               |
+| `Rotation`  | North, East, South, West                     |
+| `Move`      | Placement with position, rotation, spin type |
+| `SpinType`  | None, Mini, Full (All-Mini+ detection)       |
+| `GameState` | Board + queue + hold + B2B + combo           |
 
 ## Attack Calculation (`fusion-engine`)
 
@@ -68,17 +69,17 @@ let garbage = calculate_attack(
 
 ### S2 Formulas
 
-| Clear Type | Base Attack |
-|------------|-------------|
-| Single | 0 |
-| Double | 1 |
-| Triple | 2 |
-| Quad | 4 |
-| T-Spin Single | 2 |
-| T-Spin Double | 4 |
-| T-Spin Triple | 6 |
-| T-Spin Mini 0-1 | 0 |
-| T-Spin Mini 2 | 1 |
+| Clear Type      | Base Attack |
+| --------------- | ----------- |
+| Single          | 0           |
+| Double          | 1           |
+| Triple          | 2           |
+| Quad            | 4           |
+| T-Spin Single   | 2           |
+| T-Spin Double   | 4           |
+| T-Spin Triple   | 6           |
+| T-Spin Mini 0-1 | 0           |
+| T-Spin Mini 2   | 1           |
 
 **B2B Bonus**: Flat +1 when `b2b > 0` (S2 simple mode)
 **PC B2B Bonus**: Uses `pc_b2b` when `is_pc` and `b2b > 0`
@@ -109,6 +110,7 @@ if let Some(surge) = result.surge {
 ### Adding a New Spin Bonus
 
 1. Edit `crates/engine/src/attack.rs`:
+
 ```rust
 fn base_attack(lines: u8, spin: SpinType) -> f32 {
     match (lines, spin) {
@@ -124,6 +126,7 @@ fn base_attack(lines: u8, spin: SpinType) -> f32 {
 ### Adding a New Combo Table
 
 1. Edit `crates/engine/src/config.rs`:
+
 ```rust
 pub enum ComboTable {
     Multiplier,  // S2: base * (1 + 0.25 * combo)
@@ -139,6 +142,7 @@ pub enum ComboTable {
 ### Adding WASM Bindings
 
 1. Edit `crates/wasm/src/lib.rs`:
+
 ```rust
 #[wasm_bindgen]
 pub fn my_new_function(/* args */) -> JsValue {
@@ -151,18 +155,25 @@ pub fn my_new_function(/* args */) -> JsValue {
 ## WASM Usage (JavaScript)
 
 ```javascript
-import init, { 
-    JsAttackConfig, 
-    calculateAttack,
-    JsBoard,
-    findBestMove 
-} from 'fusion-wasm';
+import init, {
+  JsAttackConfig,
+  calculateAttack,
+  JsBoard,
+  findBestMove
+} from "fusion-wasm";
 
 await init();
 
 // Attack calculation
 // Use ruleset options in production
-const config = new JsAttackConfig(pcGarbage, pcB2B, b2bChaining, b2bChargingBase, comboTable, garbageMultiplier);
+const config = new JsAttackConfig(
+  pcGarbage,
+  pcB2B,
+  b2bChaining,
+  b2bChargingBase,
+  comboTable,
+  garbageMultiplier
+);
 const garbage = calculateAttack(4, 0, 1, 2, config, false);
 // 4 lines, no spin, b2b=1, combo=2, not PC
 
@@ -172,7 +183,7 @@ board.set(0, 0, true);
 const linesCleared = board.clearLines();
 
 // Move search
-const best = findBestMove(board, 2);  // T piece
+const best = findBestMove(board, 2); // T piece
 ```
 
 ## Test Verification

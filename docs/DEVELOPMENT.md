@@ -64,6 +64,7 @@ jj git push --bookmark <name>
 ## File Hygiene
 
 Do not commit generated artifacts:
+
 - `target/`
 - `crates/wasm/pkg/`
 

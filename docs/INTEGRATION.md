@@ -4,11 +4,11 @@ Fusion is an analysis backend. Triangle.js remains the simulation engine. Mosaic
 
 ## Responsibilities
 
-| Component | Owns | Does Not Own |
-| --- | --- | --- |
-| Triangle.js | tick(), queue, garbage, replay playback | analysis, search, eval |
-| Fusion WASM | attack calc, board eval, search, misdrop detection | simulation loop |
-| Mosaic | UI, replay ingestion, data flow | engine internals |
+| Component   | Owns                                               | Does Not Own           |
+| ----------- | -------------------------------------------------- | ---------------------- |
+| Triangle.js | tick(), queue, garbage, replay playback            | analysis, search, eval |
+| Fusion WASM | attack calc, board eval, search, misdrop detection | simulation loop        |
+| Mosaic      | UI, replay ingestion, data flow                    | engine internals       |
 
 ## Data Flow (Recommended)
 
@@ -20,7 +20,12 @@ Fusion is an analysis backend. Triangle.js remains the simulation engine. Mosaic
 ## Minimal Integration Steps
 
 ```ts
-import init, { JsAttackConfig, calculateAttack, evaluate_board, find_best_move } from 'fusion-wasm';
+import init, {
+  JsAttackConfig,
+  calculateAttack,
+  evaluate_board,
+  find_best_move
+} from "fusion-wasm";
 
 await init();
 
@@ -42,16 +47,17 @@ const best = find_best_move(board, piece);
 
 Use replay options to build config dynamically:
 
-| Option | Fusion Field |
-| --- | --- |
-| allclear_garbage | pcGarbage |
-| allclear_b2b | pcB2B |
-| b2bchaining | b2bChaining |
-| b2b_charging_base | b2bChargingBase |
-| combotable | comboTable |
+| Option            | Fusion Field      |
+| ----------------- | ----------------- |
+| allclear_garbage  | pcGarbage         |
+| allclear_b2b      | pcB2B             |
+| b2bchaining       | b2bChaining       |
+| b2b_charging_base | b2bChargingBase   |
+| combotable        | comboTable        |
 | garbagemultiplier | garbageMultiplier |
 
 Combo table mapping:
+
 - `0` = Multiplier
 - `1` = Classic
 - `2` = Modern
