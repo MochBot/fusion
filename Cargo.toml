@@ -30,6 +30,10 @@ path = "src/bin/replay_validation_gate.rs"
 name = "generate_policy_value_labels"
 path = "src/bin/generate_policy_value_labels.rs"
 
+[[bin]]
+name = "policy_value_runtime_parity_fixture"
+path = "src/bin/policy_value_runtime_parity_fixture.rs"
+
 [features]
 default = ["rayon"]
 rayon = ["dep:rayon"]
