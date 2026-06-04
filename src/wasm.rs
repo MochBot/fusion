@@ -1,14 +1,20 @@
 // wasm.rs -- WASM bridge for Mosaic SvelteKit frontend
-// Feature-gated behind `wasm` feature. Exposes Fusion v1-compatible API.
+// Feature-gated behind `wasm` feature. This IS the Fusion V2 engine (Cobra port,
+// TL Season-2 attack). The boundary only re-numbers piece IDs to the external /
+// Triangle order (I0 O1 T2 S3 Z4 J5 L6) that the JS layer uses; "v1" historically
+// named that ID convention, not the engine version.
 
 use wasm_bindgen::prelude::*;
 
 use crate::analysis::{self, coaching_dp_multiplier};
-use crate::attack::{self, calculate_attack_full, AttackConfig, AttackContext, ComboTable};
+use crate::attack::{
+    self, calculate_attack_full, calculate_attack_s2_tl_with_multiplier,
+    count_cleared_garbage_rows, AttackConfig, AttackContext, ComboTable,
+};
 use crate::eval::{self, evaluate, EvalWeights};
 use crate::header::*;
 use crate::move_buffer::MoveBuffer;
-use crate::movegen::generate;
+use crate::movegen::{generate, generate_playable};
 use crate::pathfinder;
 use crate::search::{find_best_move, find_best_move_with_scores_forced, SearchConfig};
 use crate::state::{ClearType, GameState, TransitionObservation};
@@ -142,12 +148,7 @@ pub fn evaluate_position_wasm(
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let p = piece_from_external(piece)?;
         let frame_context = from_js::<ReplayFrameContextJson>(frame);
-        let state = game_state_from_external_context(
-            pre_board_clone,
-            p,
-            frame_context.as_ref().and_then(|ctx| ctx.queue.as_deref()),
-            frame_context.as_ref().and_then(|ctx| ctx.hold),
-        );
+        let state = game_state_from_external_context(pre_board_clone, p, frame_context.as_ref());
 
         let weights = EvalWeights::default();
         let mut config = SearchConfig {
@@ -428,12 +429,7 @@ pub fn find_best_move_wasm(board: &JsBoard, piece: u8, frame: JsValue) -> JsValu
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let p = piece_from_external(piece)?;
         let frame_context = from_js::<ReplayFrameContextJson>(frame);
-        let state = game_state_from_external_context(
-            board_clone,
-            p,
-            frame_context.as_ref().and_then(|ctx| ctx.queue.as_deref()),
-            frame_context.as_ref().and_then(|ctx| ctx.hold),
-        );
+        let state = game_state_from_external_context(board_clone, p, frame_context.as_ref());
 
         let weights = EvalWeights::default();
         let mut config = SearchConfig {
@@ -469,7 +465,7 @@ pub fn get_all_moves_wasm(board: &JsBoard, piece: u8) -> JsValue {
     };
 
     let mut moves = crate::move_buffer::MoveBuffer::new();
-    crate::movegen::generate(&board.inner, &mut moves, p, false);
+    generate_playable(&board.inner, &mut moves, p, false);
 
     let all_moves: Vec<MoveResultJson> = moves
         .as_slice()
@@ -486,6 +482,840 @@ pub fn get_all_moves_wasm(board: &JsBoard, piece: u8) -> JsValue {
         .collect();
 
     to_js(&all_moves)
+}
+
+// ---------------------------------------------------------------------------
+// Batched expansion for offline search/labeling. One call returns, for every
+// legal placement of `piece` given the current signed Triangle chain state
+// (b2b, combo, pending_garbage), a fixed 46-float record =
+//   [attack, lines, b2b_after, combo_after, pending_after, spin, rows[0..40]].
+// Collapses ~34 per-candidate WASM calls into one copy.
+// ---------------------------------------------------------------------------
+
+pub(crate) const EXPAND_REC: usize = 46;
+
+#[wasm_bindgen(js_name = "expand_all")]
+pub fn expand_all_wasm(
+    board: &JsBoard,
+    piece: u8,
+    b2b: i32,
+    combo: i32,
+    pending_garbage: u32,
+) -> Vec<f64> {
+    expand_all_with_garbage_rows(board, piece, b2b, combo, pending_garbage, None, 1.0)
+}
+
+#[wasm_bindgen(js_name = "expand_all_g")]
+pub fn expand_all_g_wasm(
+    board: &JsBoard,
+    piece: u8,
+    b2b: i32,
+    combo: i32,
+    pending_garbage: u32,
+    garbage_rows: &[u64],
+) -> Vec<f64> {
+    expand_all_with_garbage_rows(
+        board,
+        piece,
+        b2b,
+        combo,
+        pending_garbage,
+        Some(garbage_rows),
+        1.0,
+    )
+}
+
+#[wasm_bindgen(js_name = "expand_all_gm")]
+pub fn expand_all_gm_wasm(
+    board: &JsBoard,
+    piece: u8,
+    b2b: i32,
+    combo: i32,
+    pending_garbage: u32,
+    garbage_rows: &[u64],
+    garbage_multiplier: f64,
+) -> Vec<f64> {
+    expand_all_with_garbage_rows(
+        board,
+        piece,
+        b2b,
+        combo,
+        pending_garbage,
+        Some(garbage_rows),
+        garbage_multiplier,
+    )
+}
+
+fn expand_all_with_garbage_rows(
+    board: &JsBoard,
+    piece: u8,
+    b2b: i32,
+    combo: i32,
+    pending_garbage: u32,
+    garbage_rows: Option<&[u64]>,
+    garbage_multiplier: f64,
+) -> Vec<f64> {
+    let p = match piece_from_external(piece) {
+        Some(p) => p,
+        None => return Vec::new(),
+    };
+    let mut moves = MoveBuffer::new();
+    generate_playable(&board.inner, &mut moves, p, false);
+
+    let mut out: Vec<f64> = Vec::with_capacity(moves.as_slice().len() * EXPAND_REC);
+    for m in moves.as_slice() {
+        let mut nb = board.inner.clone();
+        nb.place(m);
+        let cleared = nb.line_clears();
+        let lines = cleared.count_ones() as u8;
+        if cleared != 0 {
+            nb.clear_lines(cleared);
+        }
+        let spin = m.spin();
+        let next_pending = pending_garbage.saturating_sub(lines as u32);
+        let garbage_cleared = match garbage_rows {
+            Some(rows) => count_cleared_garbage_rows(cleared, rows),
+            None => {
+                if pending_garbage > 0 && lines > 0 {
+                    1
+                } else {
+                    0
+                }
+            }
+        };
+        let attack = calculate_attack_s2_tl_with_multiplier(
+            lines,
+            spin,
+            b2b,
+            combo,
+            nb.is_empty(),
+            garbage_cleared,
+            garbage_multiplier,
+        );
+
+        out.push(attack.attack as f64);
+        out.push(lines as f64);
+        out.push(attack.b2b_after as f64);
+        out.push(attack.combo_after as f64);
+        out.push(next_pending as f64);
+        out.push(spin as u8 as f64);
+        for y in 0..40 {
+            out.push(nb.rows[y] as f64);
+        }
+    }
+    out
+}
+
+fn compact_garbage_rows(garbage_rows: &[u64; 40], cleared: u64) -> [u64; 40] {
+    if cleared == 0 {
+        return *garbage_rows;
+    }
+
+    let mut compacted = [0u64; 40];
+    let mut write = 0usize;
+    for (read, &row) in garbage_rows.iter().enumerate() {
+        if cleared & (1u64 << read) == 0 {
+            compacted[write] = row;
+            write += 1;
+        }
+    }
+    compacted
+}
+
+// Batched frontier expansion for beam search: expands `n` boards (each 40 u64
+// rows + 40 u64 garbage rows + [b2b, combo, pending] i32 state) for one `piece`
+// in a single call. Output = n move-counts (f64) followed by concatenated
+// 46-float records in board order. Per-move math is identical to expand_all_g.
+#[wasm_bindgen(js_name = "expand_beam_g")]
+pub fn expand_beam_g_wasm(
+    boards: &[u64],
+    garbage_rows: &[u64],
+    states: &[i32],
+    piece: u8,
+    n: u32,
+) -> Vec<f64> {
+    expand_beam_gm_wasm(boards, garbage_rows, states, piece, n, 1.0)
+}
+
+#[wasm_bindgen(js_name = "expand_beam_gm")]
+pub fn expand_beam_gm_wasm(
+    boards: &[u64],
+    garbage_rows: &[u64],
+    states: &[i32],
+    piece: u8,
+    n: u32,
+    garbage_multiplier: f64,
+) -> Vec<f64> {
+    let n = n as usize;
+    if boards.len() < n.saturating_mul(40)
+        || garbage_rows.len() < n.saturating_mul(40)
+        || states.len() < n.saturating_mul(3)
+    {
+        return Vec::new();
+    }
+    let p = match piece_from_external(piece) {
+        Some(p) => p,
+        None => return Vec::new(),
+    };
+    let mut counts: Vec<f64> = Vec::with_capacity(n);
+    let mut recs: Vec<f64> = Vec::new();
+    for i in 0..n {
+        let off = i * 40;
+        let inner = crate::wasm_board::board_from_row_bitmasks(&boards[off..off + 40]);
+        let gslice = &garbage_rows[off..off + 40];
+        let b2b = states[i * 3];
+        let combo = states[i * 3 + 1];
+        let pending = states[i * 3 + 2].max(0) as u32;
+        let mut moves = MoveBuffer::new();
+        generate_playable(&inner, &mut moves, p, false);
+        let slice = moves.as_slice();
+        for m in slice {
+            let mut nb = inner.clone();
+            nb.place(m);
+            let cleared = nb.line_clears();
+            let lines = cleared.count_ones() as u8;
+            if cleared != 0 {
+                nb.clear_lines(cleared);
+            }
+            let spin = m.spin();
+            let next_pending = pending.saturating_sub(lines as u32);
+            let garbage_cleared = count_cleared_garbage_rows(cleared, gslice);
+            let attack = calculate_attack_s2_tl_with_multiplier(
+                lines,
+                spin,
+                b2b,
+                combo,
+                nb.is_empty(),
+                garbage_cleared,
+                garbage_multiplier,
+            );
+            recs.push(attack.attack as f64);
+            recs.push(lines as f64);
+            recs.push(attack.b2b_after as f64);
+            recs.push(attack.combo_after as f64);
+            recs.push(next_pending as f64);
+            recs.push(spin as u8 as f64);
+            for y in 0..40 {
+                recs.push(nb.rows[y] as f64);
+            }
+        }
+        counts.push(slice.len() as f64);
+    }
+    let mut out: Vec<f64> = Vec::with_capacity(n + recs.len());
+    out.extend(counts);
+    out.extend(recs);
+    out
+}
+
+// Full K-deep beam search in Rust, returning only the best achievable attack.
+// Replicates the offline TS beam exactly so labels are unchanged: stable
+// descending sort by integer accumulated attack, dedup by resulting board, keep
+// top `beam_width` survivors, with optional force-keep of the player's actual
+// line (`keep_line` = k*40 rows, empty to disable) so the value label is never
+// under-estimated. Boards are u32 row bitmasks (<=10 bits) to avoid BigInt on
+// the JS side; only one f64 crosses back per call.
+#[wasm_bindgen(js_name = "beam_best_g")]
+pub fn beam_best_g_wasm(
+    start_board: &[u32],
+    start_gmask: &[u32],
+    pieces: &[u8],
+    b2b: i32,
+    combo: i32,
+    pending: i32,
+    keep_line: &[u32],
+    beam_width: u32,
+) -> f64 {
+    beam_best_gm_wasm(
+        start_board,
+        start_gmask,
+        pieces,
+        b2b,
+        combo,
+        pending,
+        keep_line,
+        beam_width,
+        1.0,
+    )
+}
+
+// Beam-kernel perf helpers. The per-node garbage state is a u64 row-bitmask
+// (bit y = row y still holds >=1 garbage cell) instead of a [u64;40] cell mask:
+// a garbage row only loses cells via a full-row clear (which deletes the whole
+// row), so the per-row predicate is exactly preserved. This shrinks each beam
+// child from ~480B to ~168B, the dominant cost of beam expansion.
+#[derive(Default)]
+struct FxHasher64 {
+    h: u64,
+}
+impl std::hash::Hasher for FxHasher64 {
+    #[inline]
+    fn write(&mut self, mut bytes: &[u8]) {
+        const K: u64 = 0x51_7c_c1_b7_27_22_0a_95;
+        while bytes.len() >= 8 {
+            let v = u64::from_le_bytes(bytes[..8].try_into().unwrap());
+            self.h = (self.h.rotate_left(5) ^ v).wrapping_mul(K);
+            bytes = &bytes[8..];
+        }
+        if !bytes.is_empty() {
+            let mut b = [0u8; 8];
+            b[..bytes.len()].copy_from_slice(bytes);
+            self.h = (self.h.rotate_left(5) ^ u64::from_le_bytes(b)).wrapping_mul(K);
+        }
+    }
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.h
+    }
+}
+type FxRowSet =
+    std::collections::HashSet<[u16; 40], std::hash::BuildHasherDefault<FxHasher64>>;
+
+// Drop the bits of `gm` at cleared row positions and shift higher bits down,
+// matching how `clear_lines` compacts the board (software pext on a single u64).
+#[inline]
+fn compact_gm_bits(gm: u64, cleared: u64) -> u64 {
+    if cleared == 0 {
+        return gm;
+    }
+    let mut out = 0u64;
+    let mut w = 0u32;
+    let mut k = !cleared;
+    while k != 0 {
+        let y = k.trailing_zeros();
+        if gm & (1u64 << y) != 0 {
+            out |= 1u64 << w;
+        }
+        w += 1;
+        k &= k - 1;
+    }
+    out
+}
+
+// Bitmask of rows that still contain at least one cell (gm bits for emptied rows
+// must be dropped, mirroring the per-cell `gm[y] &= rows[y]` step).
+#[inline]
+fn nonempty_row_mask(board: &crate::board::Board) -> u64 {
+    let mut ne = 0u64;
+    for y in 0..40 {
+        if board.rows[y] != 0 {
+            ne |= 1u64 << y;
+        }
+    }
+    ne
+}
+
+#[inline]
+fn gm_bits_from_mask(start_gmask: &[u32]) -> u64 {
+    let mut bits = 0u64;
+    for y in 0..40 {
+        if start_gmask.get(y).copied().unwrap_or(0) != 0 {
+            bits |= 1u64 << y;
+        }
+    }
+    bits
+}
+
+#[wasm_bindgen(js_name = "beam_best_gm")]
+pub fn beam_best_gm_wasm(
+    start_board: &[u32],
+    start_gmask: &[u32],
+    pieces: &[u8],
+    b2b: i32,
+    combo: i32,
+    pending: i32,
+    keep_line: &[u32],
+    beam_width: u32,
+    garbage_multiplier: f64,
+) -> f64 {
+    struct BNode {
+        board: crate::board::Board,
+        gm: u64,
+        acc: i64,
+        b2b: i32,
+        combo: i32,
+        pending: i32,
+    }
+    struct Child {
+        board: crate::board::Board,
+        acc: i64,
+        b2b: i32,
+        combo: i32,
+        pending: i32,
+        gm: u64,
+    }
+    if start_board.len() < 40 || start_gmask.len() < 40 {
+        return 0.0;
+    }
+    let bw = beam_width as usize;
+    let k = pieces.len();
+    let use_keep = keep_line.len() >= k * 40;
+
+    let mut rows0 = [0u64; 40];
+    for y in 0..40 {
+        rows0[y] = start_board[y] as u64;
+    }
+    let mut beam: Vec<BNode> = vec![BNode {
+        board: crate::wasm_board::board_from_row_bitmasks(&rows0),
+        gm: gm_bits_from_mask(start_gmask),
+        acc: 0,
+        b2b,
+        combo,
+        pending,
+    }];
+
+    for t in 0..k {
+        let p = match piece_from_external(pieces[t]) {
+            Some(p) => p,
+            None => break,
+        };
+        let mut children: Vec<Child> = Vec::with_capacity(beam.len().saturating_mul(40));
+        for node in &beam {
+            let mut moves = MoveBuffer::new();
+            generate_playable(&node.board, &mut moves, p, false);
+            for m in moves.as_slice() {
+                let mut nb = node.board.clone();
+                nb.place(m);
+                let cleared = nb.line_clears();
+                let lines = cleared.count_ones() as u8;
+                if cleared != 0 {
+                    nb.clear_lines(cleared);
+                }
+                let spin = m.spin();
+                let garbage_cleared = (cleared & node.gm).count_ones() as u8;
+                let attack = calculate_attack_s2_tl_with_multiplier(
+                    lines,
+                    spin,
+                    node.b2b,
+                    node.combo,
+                    nb.is_empty(),
+                    garbage_cleared,
+                    garbage_multiplier,
+                );
+                let mut child_gm = compact_gm_bits(node.gm, cleared);
+                if child_gm != 0 {
+                    child_gm &= nonempty_row_mask(&nb);
+                }
+                children.push(Child {
+                    board: nb,
+                    acc: node.acc + attack.attack as i64,
+                    b2b: attack.b2b_after as i32,
+                    combo: attack.combo_after as i32,
+                    pending: (node.pending - lines as i32).max(0),
+                    gm: child_gm,
+                });
+            }
+        }
+        if children.is_empty() {
+            break;
+        }
+        let mut idx: Vec<usize> = (0..children.len()).collect();
+        idx.sort_by(|&a, &b| children[b].acc.cmp(&children[a].acc));
+        let keepb: Option<[u16; 40]> = if use_keep {
+            let mut kb = [0u16; 40];
+            for y in 0..40 {
+                kb[y] = keep_line[t * 40 + y] as u16;
+            }
+            Some(kb)
+        } else {
+            None
+        };
+        let mut seen: FxRowSet =
+            FxRowSet::with_capacity_and_hasher(children.len(), Default::default());
+        let mut pruned: Vec<BNode> = Vec::with_capacity(bw);
+        let mut kept = false;
+        for &ci in &idx {
+            let c = &children[ci];
+            let rows = c.board.rows;
+            if !seen.insert(rows) {
+                continue;
+            }
+            if Some(rows) == keepb {
+                kept = true;
+            }
+            pruned.push(BNode {
+                board: c.board.clone(),
+                gm: c.gm,
+                acc: c.acc,
+                b2b: c.b2b,
+                combo: c.combo,
+                pending: c.pending,
+            });
+            if pruned.len() >= bw {
+                break;
+            }
+        }
+        if let Some(kb) = keepb {
+            if !kept {
+                for &ci in &idx {
+                    let c = &children[ci];
+                    let rows = c.board.rows;
+                    if rows == kb {
+                        pruned.push(BNode {
+                            board: c.board.clone(),
+                            gm: c.gm,
+                            acc: c.acc,
+                            b2b: c.b2b,
+                            combo: c.combo,
+                            pending: c.pending,
+                        });
+                        break;
+                    }
+                }
+            }
+        }
+        beam = pruned;
+    }
+    let mut mx: i64 = 0;
+    for node in &beam {
+        if node.acc > mx {
+            mx = node.acc;
+        }
+    }
+    mx as f64
+}
+
+/// Insert `garbage` rows at the bottom of a row/gmask pair, shifting the
+/// existing stack up. `garbage[0]` is the bottom-most inserted row. Cells
+/// pushed above row 39 are dropped. Returns the new (rows, gmask). All cells
+/// of an inserted garbage row are flagged as garbage in the returned mask.
+fn apply_garbage_insert(
+    rows: &[u64; 40],
+    gm: &[u64; 40],
+    garbage: &[u64],
+) -> ([u64; 40], [u64; 40]) {
+    let n = garbage.len().min(40);
+    let mut nr = [0u64; 40];
+    let mut ng = [0u64; 40];
+    for y in n..40 {
+        nr[y] = rows[y - n];
+        ng[y] = gm[y - n];
+    }
+    for (y, &g) in garbage.iter().take(n).enumerate() {
+        let r = g & (crate::board::FULL_ROW as u64);
+        nr[y] = r;
+        ng[y] = r;
+    }
+    (nr, ng)
+}
+
+/// Garbage-injecting variant of `beam_best_gm`. After placing+clearing the
+/// piece at step t, inserts `garbage_counts[t]` garbage rows (taken from
+/// `garbage_rows[t*max_gi ..]`, bottom-most first) into every child board
+/// BEFORE the keep comparison, so the player's real (garbage-laden) line in
+/// `keep_line` stays reachable and `best >= playerAtk` holds on garbage
+/// windows. With all-zero `garbage_counts` it is identical to `beam_best_gm`.
+#[wasm_bindgen(js_name = "beam_best_gm_gi")]
+#[allow(clippy::too_many_arguments)]
+pub fn beam_best_gm_gi_wasm(
+    start_board: &[u32],
+    start_gmask: &[u32],
+    pieces: &[u8],
+    b2b: i32,
+    combo: i32,
+    pending: i32,
+    keep_line: &[u32],
+    beam_width: u32,
+    multipliers: &[f64],
+    garbage_rows: &[u32],
+    garbage_counts: &[u32],
+    max_gi: u32,
+) -> f64 {
+    struct BNode {
+        board: crate::board::Board,
+        gm: u64,
+        acc: i64,
+        b2b: i32,
+        combo: i32,
+        pending: i32,
+    }
+    struct Child {
+        board: crate::board::Board,
+        acc: i64,
+        b2b: i32,
+        combo: i32,
+        pending: i32,
+        gm: u64,
+    }
+    if start_board.len() < 40 || start_gmask.len() < 40 {
+        return 0.0;
+    }
+    let bw = beam_width as usize;
+    let k = pieces.len();
+    let use_keep = keep_line.len() >= k * 40;
+    let stride = max_gi as usize;
+
+    let mut rows0 = [0u64; 40];
+    for y in 0..40 {
+        rows0[y] = start_board[y] as u64;
+    }
+    let mut beam: Vec<BNode> = vec![BNode {
+        board: crate::wasm_board::board_from_row_bitmasks(&rows0),
+        gm: gm_bits_from_mask(start_gmask),
+        acc: 0,
+        b2b,
+        combo,
+        pending,
+    }];
+
+    for t in 0..k {
+        let p = match piece_from_external(pieces[t]) {
+            Some(p) => p,
+            None => break,
+        };
+        let mult = multipliers.get(t).copied().unwrap_or(1.0);
+        let gc = garbage_counts.get(t).copied().unwrap_or(0) as usize;
+        let gc = gc.min(stride);
+        let mut garbage = [0u64; 40];
+        for i in 0..gc {
+            garbage[i] = garbage_rows.get(t * stride + i).copied().unwrap_or(0) as u64;
+        }
+        // Bit i set iff inserted garbage row i actually has cells (marks it garbage).
+        let inserted_bits: u64 = {
+            let mut b = 0u64;
+            for i in 0..gc {
+                if garbage[i] & 0x3FF != 0 {
+                    b |= 1u64 << i;
+                }
+            }
+            b
+        };
+        let mut children: Vec<Child> = Vec::with_capacity(beam.len().saturating_mul(40));
+        for node in &beam {
+            let mut moves = MoveBuffer::new();
+            generate_playable(&node.board, &mut moves, p, false);
+            for m in moves.as_slice() {
+                let mut nb = node.board.clone();
+                nb.place(m);
+                let cleared = nb.line_clears();
+                let lines = cleared.count_ones() as u8;
+                if cleared != 0 {
+                    nb.clear_lines(cleared);
+                }
+                let spin = m.spin();
+                let garbage_cleared = (cleared & node.gm).count_ones() as u8;
+                let attack = calculate_attack_s2_tl_with_multiplier(
+                    lines,
+                    spin,
+                    node.b2b,
+                    node.combo,
+                    nb.is_empty(),
+                    garbage_cleared,
+                    mult,
+                );
+                let mut child_gm = compact_gm_bits(node.gm, cleared);
+                if child_gm != 0 {
+                    child_gm &= nonempty_row_mask(&nb);
+                }
+                let (cboard, cgm) = if gc > 0 {
+                    let mut nr = [0u64; 40];
+                    for y in gc..40 {
+                        nr[y] = nb.rows[y - gc] as u64;
+                    }
+                    for i in 0..gc {
+                        nr[i] = garbage[i] & 0x3FF;
+                    }
+                    let ngm = ((child_gm << gc) | inserted_bits) & ((1u64 << 40) - 1);
+                    (crate::wasm_board::board_from_row_bitmasks(&nr), ngm)
+                } else {
+                    (nb, child_gm)
+                };
+                children.push(Child {
+                    board: cboard,
+                    acc: node.acc + attack.attack as i64,
+                    b2b: attack.b2b_after as i32,
+                    combo: attack.combo_after as i32,
+                    pending: (node.pending - lines as i32).max(0),
+                    gm: cgm,
+                });
+            }
+        }
+        if children.is_empty() {
+            break;
+        }
+        let mut idx: Vec<usize> = (0..children.len()).collect();
+        idx.sort_by(|&a, &b| children[b].acc.cmp(&children[a].acc));
+        let keepb: Option<[u16; 40]> = if use_keep {
+            let mut kb = [0u16; 40];
+            for y in 0..40 {
+                kb[y] = keep_line[t * 40 + y] as u16;
+            }
+            Some(kb)
+        } else {
+            None
+        };
+        let mut seen: FxRowSet =
+            FxRowSet::with_capacity_and_hasher(children.len(), Default::default());
+        let mut pruned: Vec<BNode> = Vec::with_capacity(bw);
+        let mut kept = false;
+        for &ci in &idx {
+            let c = &children[ci];
+            let rows = c.board.rows;
+            if !seen.insert(rows) {
+                continue;
+            }
+            if Some(rows) == keepb {
+                kept = true;
+            }
+            pruned.push(BNode {
+                board: c.board.clone(),
+                gm: c.gm,
+                acc: c.acc,
+                b2b: c.b2b,
+                combo: c.combo,
+                pending: c.pending,
+            });
+            if pruned.len() >= bw {
+                break;
+            }
+        }
+        if let Some(kb) = keepb {
+            if !kept {
+                for &ci in &idx {
+                    let c = &children[ci];
+                    let rows = c.board.rows;
+                    if rows == kb {
+                        pruned.push(BNode {
+                            board: c.board.clone(),
+                            gm: c.gm,
+                            acc: c.acc,
+                            b2b: c.b2b,
+                            combo: c.combo,
+                            pending: c.pending,
+                        });
+                        break;
+                    }
+                }
+            }
+        }
+        beam = pruned;
+    }
+    let mut mx: i64 = 0;
+    for node in &beam {
+        if node.acc > mx {
+            mx = node.acc;
+        }
+    }
+    mx as f64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_expand_all_g_counts_cleared_garbage_rows() {
+        let mut rows = [0u64; 40];
+        let mut garbage_rows = [0u64; 40];
+        for y in 0..4 {
+            rows[y] = 0x03FF & !(1u64 << 9);
+            garbage_rows[y] = rows[y];
+        }
+
+        let board = JsBoard::from_rows(&rows);
+        let flat = expand_all_g_wasm(&board, 0, -1, -1, 0, &garbage_rows);
+
+        assert!(
+            flat.chunks_exact(EXPAND_REC)
+                .any(|rec| rec[0] == 5.0 && rec[1] == 4.0 && rec[4] == 0.0),
+            "expected a four-line I clear with exact garbage special bonus"
+        );
+    }
+
+    #[test]
+    fn test_expand_all_gm_applies_dynamic_multiplier() {
+        let mut rows = [0u64; 40];
+        let garbage_rows = [0u64; 40];
+        rows[0] = 0x03FF & !0b1111u64;
+
+        let board = JsBoard::from_rows(&rows);
+        let flat = expand_all_gm_wasm(&board, 0, -1, 4, 0, &garbage_rows, 1.027);
+
+        assert!(
+            flat.chunks_exact(EXPAND_REC)
+                .any(|rec| rec[0] == 2.0 && rec[1] == 1.0),
+            "expected dynamic multiplier to lift combo single from 1 to 2 attack"
+        );
+    }
+
+    #[test]
+    fn test_expand_beam_gm_rejects_short_inputs() {
+        assert!(expand_beam_gm_wasm(&[], &[], &[], 0, 1, 1.0).is_empty());
+    }
+
+    #[test]
+    fn test_beam_best_gm_rejects_short_inputs() {
+        assert_eq!(
+            beam_best_gm_wasm(&[], &[], &[0], -1, -1, 0, &[], 1, 1.0),
+            0.0
+        );
+    }
+
+    #[test]
+    fn test_apply_garbage_insert_shifts_up() {
+        let mut rows = [0u64; 40];
+        rows[0] = 0x0FF;
+        let gm = [0u64; 40];
+        let garbage = [0x3FBu64];
+        let (nr, ng) = apply_garbage_insert(&rows, &gm, &garbage);
+        assert_eq!(nr[0], 0x3FB, "inserted garbage row sits at the bottom");
+        assert_eq!(nr[1], 0x0FF, "original bottom row shifted up by one");
+        assert_eq!(ng[0], 0x3FB, "inserted row flagged as garbage");
+        assert_eq!(ng[1], 0, "shifted original row is not garbage");
+    }
+
+    #[test]
+    fn test_beam_best_gm_gi_parity_no_garbage() {
+        let mut rows = [0u64; 40];
+        for y in 0..4 {
+            rows[y] = 0x03FF & !(1u64 << 9);
+        }
+        let board: Vec<u32> = rows.iter().map(|&r| r as u32).collect();
+        let gmask = vec![0u32; 40];
+        let pieces = [0u8, 0u8];
+        let old = beam_best_gm_wasm(&board, &gmask, &pieces, -1, -1, 0, &[], 8, 1.0);
+        let counts = [0u32, 0u32];
+        let gi = beam_best_gm_gi_wasm(
+            &board, &gmask, &pieces, -1, -1, 0, &[], 8, &[1.0, 1.0], &[], &counts, 0,
+        );
+        assert!(old > 0.0, "precondition: old beam returns positive, got {old}");
+        assert_eq!(
+            old, gi,
+            "gi-beam with zero garbage must equal old beam ({old} vs {gi})"
+        );
+    }
+
+    #[test]
+    fn test_beam_best_gm_gi_garbage_clear_attack() {
+        let board = vec![0u32; 40];
+        let gmask = vec![0u32; 40];
+        let pieces = [0u8, 0u8];
+        let mut garbage_rows = vec![0u32; 2 * 4];
+        for cell in garbage_rows.iter_mut().take(4) {
+            *cell = 0x3FE;
+        }
+        let counts = [4u32, 0u32];
+        let acc = beam_best_gm_gi_wasm(
+            &board, &gmask, &pieces, -1, -1, 0, &[], 16, &[1.0, 1.0], &garbage_rows, &counts, 4,
+        );
+        assert!(
+            acc > 0.0,
+            "injecting 4 garbage rows then clearing them should yield positive attack, got {acc}"
+        );
+    }
+
+    #[test]
+    fn test_compact_garbage_rows_matches_line_clear_compaction() {
+        let mut gm = [0u64; 40];
+        gm[0] = 0x03FF;
+        gm[1] = 0x0200;
+        gm[2] = 0x0100;
+
+        let compacted = compact_garbage_rows(&gm, 1u64 << 0);
+
+        assert_eq!(compacted[0], 0x0200);
+        assert_eq!(compacted[1], 0x0100);
+        assert_eq!(compacted[2], 0);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -612,11 +1442,9 @@ pub fn simulate_coaching_sequence_wasm(board: &JsBoard, path: JsValue) -> JsValu
         const MIN_COACHING_STEPS: usize = 5;
         if steps.len() > MIN_COACHING_STEPS {
             let mut last_attack_idx = 0usize;
-            let mut cumulative_attack = 0.0f32;
             for (i, step) in steps.iter().enumerate() {
                 if let Some(ref ce) = step.clear_event {
                     if ce.attack_sent > 0.0 {
-                        cumulative_attack += ce.attack_sent;
                         last_attack_idx = i;
                     }
                 }
@@ -660,20 +1488,18 @@ pub fn extract_features_for_position_wasm(
 ) -> JsValue {
     let board_clone = board.inner.clone();
     let board_for_gen = board.inner.clone();
-    let opp_board = match &opponent_board_js {
-        Some(opp) => opp.inner.clone(),
-        None => crate::board::Board::new(),
-    };
-
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let p = piece_from_external(piece)?;
         let frame_context = from_js::<ReplayFrameContextJson>(frame);
-        let state = game_state_from_external_context(
-            board_clone,
-            p,
-            frame_context.as_ref().and_then(|ctx| ctx.queue.as_deref()),
-            frame_context.as_ref().and_then(|ctx| ctx.hold),
-        );
+        let opp_board = match &opponent_board_js {
+            Some(opp) => opp.inner.clone(),
+            None => board_from_external_rows(
+                frame_context
+                    .as_ref()
+                    .and_then(|ctx| ctx.opponent_board.as_deref()),
+            ),
+        };
+        let state = game_state_from_external_context(board_clone, p, frame_context.as_ref());
 
         let features = crate::policy_value_runtime::encode_state_features_flat(&state, &opp_board);
 

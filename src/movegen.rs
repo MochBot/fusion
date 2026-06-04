@@ -223,41 +223,44 @@ fn generate_inner<const P: usize, const CHECK_SPIN: bool>(
                         let threshold: i32 = 3;
                         let y1 = threshold + kick.y as i32 + off.y as i32;
 
-                        let mut m = ((current << y1) >> threshold) & !cm.get(x1u, rc);
-                        current ^= (m << threshold) >> y1;
+                        let reachable = ((current << y1) >> threshold) & !cm.get(x1u, rc);
+                        current ^= (reachable << threshold) >> y1;
 
-                        m &= !searched[x1u][r1 as usize];
-                        if m == 0 {
+                        if reachable == 0 {
                             continue;
                         }
 
                         if CHECK_SPIN {
                             let r1i = r1 as usize;
                             if let Some(smap) = spin_map {
-                                let spins = m & smap[x1u][0];
-                                spin_set[x1u][r1i][SpinType::NoSpin as usize] &= !spins;
-                                spin_set[x1u][r1i][SpinType::NoSpin as usize] |= m ^ spins;
-                                if spins != 0 {
+                                let stuck = immobile_bits(cm, x1u, rc, reachable);
+                                let spins = reachable & smap[x1u][0];
+                                let spin_tagged = spins | stuck;
+                                spin_set[x1u][r1i][SpinType::NoSpin as usize] |=
+                                    reachable ^ spin_tagged;
+                                if spin_tagged != 0 {
                                     if i >= 4 {
                                         spin_set[x1u][r1i][SpinType::Full as usize] |= spins;
+                                        spin_set[x1u][r1i][SpinType::Mini as usize] |=
+                                            stuck & !spins;
                                     } else {
                                         spin_set[x1u][r1i][SpinType::Mini as usize] |=
-                                            spins & !smap[x1u][1 + r1i];
+                                            (spins & !smap[x1u][1 + r1i]) | (stuck & !spins);
                                         spin_set[x1u][r1i][SpinType::Full as usize] |=
                                             spins & smap[x1u][1 + r1i];
                                     }
                                 }
                             } else {
-                                let blocked_left = if x1u > 0 { cm.get(x1u - 1, rc) } else { !0u64 };
-                                let blocked_right = if x1u < COL_NB - 1 { cm.get(x1u + 1, rc) } else { !0u64 };
-                                let same_col = cm.get(x1u, rc);
-                                let blocked_up = same_col >> 1;
-                                let blocked_down = (same_col << 1) | 1;
-                                let stuck = m & blocked_left & blocked_right & blocked_down & blocked_up;
+                                let stuck = immobile_bits(cm, x1u, rc, reachable);
                                 spin_set[x1u][r1i][SpinType::NoSpin as usize] &= !stuck;
                                 spin_set[x1u][r1i][SpinType::Mini as usize] |= stuck;
-                                spin_set[x1u][r1i][SpinType::NoSpin as usize] |= m ^ stuck;
+                                spin_set[x1u][r1i][SpinType::NoSpin as usize] |= reachable ^ stuck;
                             }
+                        }
+
+                        let m = reachable & !searched[x1u][r1 as usize];
+                        if m == 0 {
+                            continue;
                         }
 
                         to_search[x1u][r1 as usize] |= m;
@@ -323,8 +326,8 @@ fn generate_inner<const P: usize, const CHECK_SPIN: bool>(
 
                 let (mut full, mut mini, mut nospin) = if P == { Piece::T as usize } {
                     let full = raw_full;
-                    let mini = raw_mini & !full;
-                    let nospin = raw_nospin & !mini & !full;
+                    let mini = raw_mini;
+                    let nospin = raw_nospin;
                     (full, mini, nospin)
                 } else {
                     let mini = raw_mini;
@@ -375,6 +378,19 @@ struct RotateContext<'a> {
     spin_map: Option<&'a [[Bitboard; 5]; COL_NB]>,
 }
 
+fn immobile_bits(cm: &CollisionMap, x: usize, r: Rotation, reachable: Bitboard) -> Bitboard {
+    let blocked_left = if x > 0 { cm.get(x - 1, r) } else { !0u64 };
+    let blocked_right = if x < COL_NB - 1 {
+        cm.get(x + 1, r)
+    } else {
+        !0u64
+    };
+    let same_col = cm.get(x, r);
+    let blocked_up = same_col >> 1;
+    let blocked_down = (same_col << 1) | 1;
+    reachable & blocked_left & blocked_right & blocked_down & blocked_up
+}
+
 fn do_rotate_180<const P: usize, const CHECK_SPIN: bool>(ctx: &mut RotateContext<'_>) {
     let p = piece_from_index(P);
     let ri = ctx.r as usize;
@@ -406,41 +422,42 @@ fn do_rotate_180<const P: usize, const CHECK_SPIN: bool>(ctx: &mut RotateContext
         let threshold: i32 = 3;
         let y1 = threshold + kick.y as i32 + off.y as i32;
 
-        let mut m = ((current << y1) >> threshold) & !ctx.cm.get(x1u, rc);
-        current ^= (m << threshold) >> y1;
+        let reachable = ((current << y1) >> threshold) & !ctx.cm.get(x1u, rc);
+        current ^= (reachable << threshold) >> y1;
 
-        m &= !ctx.searched[x1u][r1 as usize];
-        if m == 0 {
+        if reachable == 0 {
             continue;
         }
 
         if CHECK_SPIN {
             let r1i = r1 as usize;
             if let Some(smap) = ctx.spin_map {
-                let spins = m & smap[x1u][0];
-                ctx.spin_set[x1u][r1i][SpinType::NoSpin as usize] &= !spins;
-                ctx.spin_set[x1u][r1i][SpinType::NoSpin as usize] |= m ^ spins;
-                if spins != 0 {
+                let stuck = immobile_bits(ctx.cm, x1u, rc, reachable);
+                let spins = reachable & smap[x1u][0];
+                let spin_tagged = spins | stuck;
+                ctx.spin_set[x1u][r1i][SpinType::NoSpin as usize] |= reachable ^ spin_tagged;
+                if spin_tagged != 0 {
                     if i >= 4 {
                         ctx.spin_set[x1u][r1i][SpinType::Full as usize] |= spins;
+                        ctx.spin_set[x1u][r1i][SpinType::Mini as usize] |= stuck & !spins;
                     } else {
                         ctx.spin_set[x1u][r1i][SpinType::Mini as usize] |=
-                            spins & !smap[x1u][1 + r1i];
+                            (spins & !smap[x1u][1 + r1i]) | (stuck & !spins);
                         ctx.spin_set[x1u][r1i][SpinType::Full as usize] |=
                             spins & smap[x1u][1 + r1i];
                     }
                 }
             } else {
-                let blocked_left = if x1u > 0 { ctx.cm.get(x1u - 1, rc) } else { !0u64 };
-                let blocked_right = if x1u < COL_NB - 1 { ctx.cm.get(x1u + 1, rc) } else { !0u64 };
-                let same_col = ctx.cm.get(x1u, rc);
-                let blocked_up = same_col >> 1;
-                let blocked_down = (same_col << 1) | 1;
-                let stuck = m & blocked_left & blocked_right & blocked_down & blocked_up;
+                let stuck = immobile_bits(ctx.cm, x1u, rc, reachable);
                 ctx.spin_set[x1u][r1i][SpinType::NoSpin as usize] &= !stuck;
                 ctx.spin_set[x1u][r1i][SpinType::Mini as usize] |= stuck;
-                ctx.spin_set[x1u][r1i][SpinType::NoSpin as usize] |= m ^ stuck;
+                ctx.spin_set[x1u][r1i][SpinType::NoSpin as usize] |= reachable ^ stuck;
             }
+        }
+
+        let m = reachable & !ctx.searched[x1u][r1 as usize];
+        if m == 0 {
+            continue;
         }
 
         ctx.to_search[x1u][r1 as usize] |= m;
@@ -735,8 +752,572 @@ fn do_process_180<const P: usize>(ctx: &mut ProcessContext<'_>) {
     }
 }
 
+// Packed fast path is opt-in via the `packed_movegen` feature (off by default,
+// absent from the wasm build) because its emission order degrades beam coaching.
+// When the feature is on, FUSION_NO_PACKED still forces the pure engine path.
+#[inline]
+#[cfg(feature = "packed_movegen")]
+fn packed_path_enabled() -> bool {
+    use std::sync::OnceLock;
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var_os("FUSION_NO_PACKED").is_none())
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MovegenConsumer {
+    General,
+    Search,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MovegenOrder {
+    ScalarCompatible,
+    CanonicalRaw,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MovegenRequest {
+    pub piece: Piece,
+    pub force: bool,
+    pub consumer: MovegenConsumer,
+    pub order: MovegenOrder,
+}
+
+impl MovegenRequest {
+    pub fn new(piece: Piece) -> Self {
+        Self {
+            piece,
+            force: false,
+            consumer: MovegenConsumer::General,
+            order: MovegenOrder::ScalarCompatible,
+        }
+    }
+
+    pub fn with_force(mut self, force: bool) -> Self {
+        self.force = force;
+        self
+    }
+
+    pub fn with_consumer(mut self, consumer: MovegenConsumer) -> Self {
+        self.consumer = consumer;
+        self
+    }
+
+    pub fn with_order(mut self, order: MovegenOrder) -> Self {
+        self.order = order;
+        self
+    }
+}
+
+#[inline]
+#[cfg(feature = "packed_movegen")]
+fn board_height_rows(b: &Board) -> usize {
+    for y in (0..b.rows.len()).rev() {
+        if b.rows[y] != 0 {
+            return y + 1;
+        }
+    }
+    0
+}
+
+#[inline]
+#[cfg(feature = "packed_movegen")]
+fn scalar_uses_slow_seed(b: &Board) -> bool {
+    let cols = b.compute_cols();
+    let mut h_bits = cols[0];
+    for col in cols.iter().skip(1) {
+        h_bits |= col;
+    }
+    bitlen(h_bits) as i32 > ACTIVE_RULES.spawn_row - 3
+}
+
+#[inline]
+#[cfg(feature = "packed_movegen")]
+fn request_allows_packed(b: &Board, request: MovegenRequest) -> bool {
+    if !packed_path_enabled() {
+        return false;
+    }
+    if !matches!(
+        request.piece,
+        Piece::I | Piece::S | Piece::Z | Piece::L | Piece::J
+    ) {
+        return false;
+    }
+    if request.consumer == MovegenConsumer::Search
+        || request.order == MovegenOrder::ScalarCompatible
+    {
+        return false;
+    }
+    if board_height_rows(b) > 24 {
+        return false;
+    }
+    if request.force && scalar_uses_slow_seed(b) {
+        return false;
+    }
+    true
+}
+
+pub fn generate_with_request(b: &Board, moves: &mut MoveBuffer, request: MovegenRequest) {
+    #[cfg(not(feature = "packed_movegen"))]
+    {
+        generate_engine(b, moves, request.piece, request.force);
+    }
+
+    #[cfg(feature = "packed_movegen")]
+    {
+        let mut used_packed = false;
+        if request_allows_packed(b, request) {
+            let rows: &[u16; crate::reach_packed::PH] =
+                b.rows[..crate::reach_packed::PH].try_into().unwrap();
+            crate::reach_packed::generate_packed_with_force(
+                rows,
+                request.piece,
+                request.force,
+                moves,
+            );
+            used_packed = true;
+        }
+
+        if !used_packed {
+            generate_engine(b, moves, request.piece, request.force);
+        }
+
+        if request.order == MovegenOrder::CanonicalRaw {
+            moves.sort_by_raw();
+        }
+    }
+}
+
+pub fn generate_search(b: &Board, moves: &mut MoveBuffer, p: Piece) {
+    generate_with_request(
+        b,
+        moves,
+        MovegenRequest::new(p)
+            .with_force(true)
+            .with_consumer(MovegenConsumer::Search)
+            .with_order(MovegenOrder::ScalarCompatible),
+    );
+}
+
 // -- generate: 1:1 port of generate() dispatch --
 pub fn generate(b: &Board, moves: &mut MoveBuffer, p: Piece, force: bool) {
+    generate_with_request(
+        b,
+        moves,
+        MovegenRequest::new(p)
+            .with_force(force)
+            .with_consumer(MovegenConsumer::General)
+            .with_order(MovegenOrder::CanonicalRaw),
+    );
+}
+
+/// True when the board has any covered hole/overhang, so a piece's set of
+/// physically reachable placements can differ from the geometric `generate`
+/// over-approximation. On a clean (no-hole) surface every geometric placement
+/// is reachable, so the reachability filter can be skipped.
+pub fn needs_reachability_filter(b: &Board) -> bool {
+    for col in b.compute_cols() {
+        if col == 0 {
+            continue;
+        }
+        let height = u64::BITS - col.leading_zeros();
+        let solid_below = (1u64 << height) - 1;
+        if col != solid_below {
+            return true;
+        }
+    }
+    false
+}
+
+/// `generate`, but restricted to placements that are actually reachable by a
+/// legal move sequence from spawn (no piece teleported into a capped well).
+/// Order-preserving so consumers that pair this with `expand_all_gm` stay
+/// index-aligned. Skips the (expensive) per-move pathfinder check when the board
+/// has no holes, where `generate` is already exact.
+/// True when placement `m`'s final cells are physically reachable by some legal
+/// input sequence. A spin-labelled move counts as reachable if EITHER the bare
+/// position is reachable (movegen may over-label an openly-droppable placement
+/// as a spin) OR the spin tuck itself is reachable. The spin label is attack
+/// metadata; physical reachability is about the occupied cells.
+pub fn move_reachable(b: &Board, m: &Move, force: bool) -> bool {
+    let bare = Move::new(m.piece(), m.rotation(), m.x(), m.y(), false);
+    if !crate::pathfinder::get_input(b, &bare, false, force).data.is_empty() {
+        return true;
+    }
+    m.spin() != SpinType::NoSpin
+        && !crate::pathfinder::get_input(b, m, false, force).data.is_empty()
+}
+
+pub fn generate_playable(b: &Board, moves: &mut MoveBuffer, p: Piece, force: bool) {
+    generate(b, moves, p, force);
+    if !needs_reachability_filter(b) {
+        return;
+    }
+    moves.retain(|m| b.legal_lock_placement(m) && move_reachable(b, m, force));
+}
+
+/// GPU-parity hook (non-production): internal collision map board[x][r] as y-bitsets.
+fn cols_from_rows(rows: &[u16; crate::board::BOARD_HEIGHT]) -> [Bitboard; COL_NB] {
+    let mut cols = [0u64; COL_NB];
+    for (y, &row) in rows.iter().enumerate() {
+        let mut bits = row as u64;
+        while bits != 0 {
+            let x = bits.trailing_zeros() as usize;
+            cols[x] |= 1u64 << y;
+            bits &= bits - 1;
+        }
+    }
+    cols
+}
+
+pub fn debug_collision_map(rows: &[u16; crate::board::BOARD_HEIGHT], p: Piece) -> [[Bitboard; 4]; COL_NB] {
+    crate::gen::CollisionMap::new(&cols_from_rows(rows), p).board
+}
+
+/// GPU-parity hook. Flat dims: KICKS[3][2][4][5][2], KICKS_180[2][4][6][2], canon_r[7][4], canon_off[7][4][2].
+pub fn debug_movegen_tables() -> (Vec<i32>, Vec<i32>, Vec<u32>, Vec<i32>) {
+    use crate::gen::{canonical_offset, canonical_r, KICKS, KICKS_180};
+    let pieces = [Piece::I, Piece::O, Piece::T, Piece::L, Piece::J, Piece::S, Piece::Z];
+    let mut kicks = Vec::new();
+    for set in KICKS.iter() {
+        for dir in set.iter() {
+            for rot in dir.iter() {
+                for c in rot.iter() {
+                    kicks.push(c.x as i32);
+                    kicks.push(c.y as i32);
+                }
+            }
+        }
+    }
+    let mut kicks180 = Vec::new();
+    for set in KICKS_180.iter() {
+        for rot in set.iter() {
+            for c in rot.iter() {
+                kicks180.push(c.x as i32);
+                kicks180.push(c.y as i32);
+            }
+        }
+    }
+    let mut canon_r = Vec::new();
+    let mut canon_off = Vec::new();
+    for &p in pieces.iter() {
+        for r in 0..4u8 {
+            let rr = Rotation::from_u8(r);
+            canon_r.push(canonical_r(p, rr) as u32);
+            let off = canonical_offset(p, rr);
+            canon_off.push(off.x as i32);
+            canon_off.push(off.y as i32);
+        }
+    }
+    (kicks, kicks180, canon_r, canon_off)
+}
+
+/// GPU-parity hook (non-production): engine move set as (x, y, rotation_u8, spin_u8).
+pub fn debug_move_set(rows: &[u16; crate::board::BOARD_HEIGHT], p: Piece) -> Vec<(i32, i32, u8, u8)> {
+    let mut b = Board::new();
+    b.rows = *rows;
+    b.cols = cols_from_rows(rows);
+    let mut moves = MoveBuffer::new();
+    generate(&b, &mut moves, p, false);
+    moves
+        .as_slice()
+        .iter()
+        .map(|m| (m.x(), m.y(), m.rotation() as u8, m.spin() as u8))
+        .collect()
+}
+
+/// GPU-parity hook (non-production): authoritative 5-ply beam `best` label via the
+/// real engine (generate+place+attack, gm=0, mult=1.0), mirroring bench_beam::beam_opt2
+/// (stable sort by acc desc, dedup by rows keep-first, top `bw`). Reference for GPU Gate 6.
+pub fn debug_beam_best(rows0: &[u16; crate::board::BOARD_HEIGHT], pieces: &[u8], bw: usize) -> i64 {
+    #[derive(Clone)]
+    struct N {
+        rows: [u16; 40],
+        acc: i64,
+        b2b: i32,
+        combo: i32,
+        pending: i32,
+    }
+    let mut cur: Vec<N> = vec![N { rows: *rows0, acc: 0, b2b: 0, combo: 0, pending: 0 }];
+    for &pe in pieces {
+        let p = piece_from_index(pe as usize);
+        let mut nxt: Vec<N> = Vec::new();
+        for node in &cur {
+            let mut b = Board::new();
+            b.rows = node.rows;
+            b.cols = cols_from_rows(&node.rows);
+            let mut moves = MoveBuffer::new();
+            generate(&b, &mut moves, p, false);
+            for m in moves.as_slice() {
+                let mut cr = node.rows;
+                let x = m.x();
+                let y = m.y();
+                if (x as usize) < 10 && (y as usize) < 40 {
+                    cr[y as usize] |= 1u16 << x;
+                }
+                let pc = m.cells();
+                for i in 0..3 {
+                    let cx = (pc[i].x as i32 + x) as usize;
+                    let cy = (pc[i].y as i32 + y) as usize;
+                    if cx < 10 && cy < 40 {
+                        cr[cy] |= 1u16 << cx;
+                    }
+                }
+                let mut cleared = 0u64;
+                for (yy, &cell) in cr.iter().enumerate() {
+                    if cell == 0x3FF {
+                        cleared |= 1u64 << yy;
+                    }
+                }
+                let lines = cleared.count_ones() as u8;
+                if cleared != 0 {
+                    let mut w = 0usize;
+                    for read in 0..40 {
+                        if cleared & (1u64 << read) == 0 {
+                            cr[w] = cr[read];
+                            w += 1;
+                        }
+                    }
+                    for cell in cr.iter_mut().take(40).skip(w) {
+                        *cell = 0;
+                    }
+                }
+                let is_empty = cr.iter().all(|&r| r == 0);
+                let at = crate::attack::calculate_attack_s2_tl_with_multiplier(
+                    lines,
+                    m.spin(),
+                    node.b2b,
+                    node.combo,
+                    is_empty,
+                    0,
+                    1.0,
+                );
+                nxt.push(N {
+                    rows: cr,
+                    acc: node.acc + at.attack as i64,
+                    b2b: at.b2b_after,
+                    combo: at.combo_after,
+                    pending: (node.pending - lines as i32).max(0),
+                });
+            }
+        }
+        if nxt.is_empty() {
+            cur.clear();
+            break;
+        }
+        let mut idx: Vec<usize> = (0..nxt.len()).collect();
+        idx.sort_by(|&a, &b| nxt[b].acc.cmp(&nxt[a].acc));
+        let mut seen: std::collections::HashSet<[u16; 40]> = std::collections::HashSet::new();
+        let mut kept: Vec<N> = Vec::with_capacity(bw);
+        for &ci in &idx {
+            if !seen.insert(nxt[ci].rows) {
+                continue;
+            }
+            kept.push(nxt[ci].clone());
+            if kept.len() >= bw {
+                break;
+            }
+        }
+        cur = kept;
+    }
+    cur.iter().map(|n| n.acc).max().unwrap_or(0)
+}
+
+/// GPU-parity hook (non-production): the beam frontier boards after running `pieces`.
+pub fn debug_beam_frontier(
+    rows0: &[u16; crate::board::BOARD_HEIGHT],
+    pieces: &[u8],
+    bw: usize,
+) -> Vec<[u16; 40]> {
+    #[derive(Clone)]
+    struct N {
+        rows: [u16; 40],
+        acc: i64,
+        b2b: i32,
+        combo: i32,
+        pending: i32,
+    }
+    let mut cur: Vec<N> = vec![N { rows: *rows0, acc: 0, b2b: 0, combo: 0, pending: 0 }];
+    for &pe in pieces {
+        let p = piece_from_index(pe as usize);
+        let mut nxt: Vec<N> = Vec::new();
+        for node in &cur {
+            let mut b = Board::new();
+            b.rows = node.rows;
+            b.cols = cols_from_rows(&node.rows);
+            let mut moves = MoveBuffer::new();
+            generate(&b, &mut moves, p, false);
+            for m in moves.as_slice() {
+                let mut cr = node.rows;
+                let x = m.x();
+                let y = m.y();
+                if (x as usize) < 10 && (y as usize) < 40 {
+                    cr[y as usize] |= 1u16 << x;
+                }
+                let pc = m.cells();
+                for i in 0..3 {
+                    let cx = (pc[i].x as i32 + x) as usize;
+                    let cy = (pc[i].y as i32 + y) as usize;
+                    if cx < 10 && cy < 40 {
+                        cr[cy] |= 1u16 << cx;
+                    }
+                }
+                let mut cleared = 0u64;
+                for (yy, &cell) in cr.iter().enumerate() {
+                    if cell == 0x3FF {
+                        cleared |= 1u64 << yy;
+                    }
+                }
+                let lines = cleared.count_ones() as u8;
+                if cleared != 0 {
+                    let mut w = 0usize;
+                    for read in 0..40 {
+                        if cleared & (1u64 << read) == 0 {
+                            cr[w] = cr[read];
+                            w += 1;
+                        }
+                    }
+                    for cell in cr.iter_mut().take(40).skip(w) {
+                        *cell = 0;
+                    }
+                }
+                let is_empty = cr.iter().all(|&r| r == 0);
+                let at = crate::attack::calculate_attack_s2_tl_with_multiplier(
+                    lines, m.spin(), node.b2b, node.combo, is_empty, 0, 1.0,
+                );
+                nxt.push(N {
+                    rows: cr,
+                    acc: node.acc + at.attack as i64,
+                    b2b: at.b2b_after,
+                    combo: at.combo_after,
+                    pending: (node.pending - lines as i32).max(0),
+                });
+            }
+        }
+        if nxt.is_empty() {
+            cur.clear();
+            break;
+        }
+        let mut idx: Vec<usize> = (0..nxt.len()).collect();
+        idx.sort_by(|&a, &b| nxt[b].acc.cmp(&nxt[a].acc));
+        let mut seen: std::collections::HashSet<[u16; 40]> = std::collections::HashSet::new();
+        let mut kept: Vec<N> = Vec::with_capacity(bw);
+        for &ci in &idx {
+            if !seen.insert(nxt[ci].rows) {
+                continue;
+            }
+            kept.push(nxt[ci].clone());
+            if kept.len() >= bw {
+                break;
+            }
+        }
+        cur = kept;
+    }
+    cur.iter().map(|n| n.rows).collect()
+}
+
+/// GPU-parity hook (non-production): per-ply (frontier_count, max_acc) trace of the
+/// beam, to localize where a GPU beam divergence first occurs.
+pub fn debug_beam_best_trace(
+    rows0: &[u16; crate::board::BOARD_HEIGHT],
+    pieces: &[u8],
+    bw: usize,
+) -> Vec<(usize, i64)> {
+    #[derive(Clone)]
+    struct N {
+        rows: [u16; 40],
+        acc: i64,
+        b2b: i32,
+        combo: i32,
+        pending: i32,
+    }
+    let mut cur: Vec<N> = vec![N { rows: *rows0, acc: 0, b2b: 0, combo: 0, pending: 0 }];
+    let mut trace = Vec::new();
+    for &pe in pieces {
+        let p = piece_from_index(pe as usize);
+        let mut nxt: Vec<N> = Vec::new();
+        for node in &cur {
+            let mut b = Board::new();
+            b.rows = node.rows;
+            b.cols = cols_from_rows(&node.rows);
+            let mut moves = MoveBuffer::new();
+            generate(&b, &mut moves, p, false);
+            for m in moves.as_slice() {
+                let mut cr = node.rows;
+                let x = m.x();
+                let y = m.y();
+                if (x as usize) < 10 && (y as usize) < 40 {
+                    cr[y as usize] |= 1u16 << x;
+                }
+                let pc = m.cells();
+                for i in 0..3 {
+                    let cx = (pc[i].x as i32 + x) as usize;
+                    let cy = (pc[i].y as i32 + y) as usize;
+                    if cx < 10 && cy < 40 {
+                        cr[cy] |= 1u16 << cx;
+                    }
+                }
+                let mut cleared = 0u64;
+                for (yy, &cell) in cr.iter().enumerate() {
+                    if cell == 0x3FF {
+                        cleared |= 1u64 << yy;
+                    }
+                }
+                let lines = cleared.count_ones() as u8;
+                if cleared != 0 {
+                    let mut w = 0usize;
+                    for read in 0..40 {
+                        if cleared & (1u64 << read) == 0 {
+                            cr[w] = cr[read];
+                            w += 1;
+                        }
+                    }
+                    for cell in cr.iter_mut().take(40).skip(w) {
+                        *cell = 0;
+                    }
+                }
+                let is_empty = cr.iter().all(|&r| r == 0);
+                let at = crate::attack::calculate_attack_s2_tl_with_multiplier(
+                    lines, m.spin(), node.b2b, node.combo, is_empty, 0, 1.0,
+                );
+                nxt.push(N {
+                    rows: cr,
+                    acc: node.acc + at.attack as i64,
+                    b2b: at.b2b_after,
+                    combo: at.combo_after,
+                    pending: (node.pending - lines as i32).max(0),
+                });
+            }
+        }
+        if nxt.is_empty() {
+            trace.push((0, 0));
+            cur.clear();
+            break;
+        }
+        let mut idx: Vec<usize> = (0..nxt.len()).collect();
+        idx.sort_by(|&a, &b| nxt[b].acc.cmp(&nxt[a].acc));
+        let mut seen: std::collections::HashSet<[u16; 40]> = std::collections::HashSet::new();
+        let mut kept: Vec<N> = Vec::with_capacity(bw);
+        for &ci in &idx {
+            if !seen.insert(nxt[ci].rows) {
+                continue;
+            }
+            kept.push(nxt[ci].clone());
+            if kept.len() >= bw {
+                break;
+            }
+        }
+        cur = kept;
+        let mx = cur.iter().map(|n| n.acc).max().unwrap_or(0);
+        trace.push((cur.len(), mx));
+    }
+    trace
+}
+
+/// Pure engine path (per-column collision-map BFS / generate16), bypassing the
+/// packed hybrid. `generate` dispatches here for O/T/force/tall boards; also
+/// exposed so benchmarks and the parity harness can compare engine vs packed.
+pub fn generate_engine(b: &Board, moves: &mut MoveBuffer, p: Piece, force: bool) {
     debug_assert!(ACTIVE_RULES.spawn_row > 0);
 
     // precompute columns once — avoids repeated 40-row iteration in col()
@@ -793,14 +1374,13 @@ pub fn generate(b: &Board, moves: &mut MoveBuffer, p: Piece, force: bool) {
                     | (corners[2] & corners[3] & (corners[0] | corners[1]));
 
                 spin_map[x][0] = spins;
-                if spins != 0 {
-                    for ri in 0..ROTATION_NB {
-                        let r: Rotation = Rotation::from_u8(ri as u8);
-                        if in_bounds(Piece::T, r, x as i32) {
-                            let cw_r = rotate(Direction::Cw, r);
-                            spin_map[x][1 + ri] = spins & corners[ri] & corners[cw_r as usize];
-                            check_spin |= (spins & !cm.get(x, r) & ((cm.get(x, r) << 1) | 1)) != 0;
-                        }
+                for ri in 0..ROTATION_NB {
+                    let r: Rotation = Rotation::from_u8(ri as u8);
+                    if in_bounds(Piece::T, r, x as i32) {
+                        let cw_r = rotate(Direction::Cw, r);
+                        spin_map[x][1 + ri] = spins & corners[ri] & corners[cw_r as usize];
+                        let legal = !cm.get(x, r) & ((cm.get(x, r) << 1) | 1);
+                        check_spin |= (spins & legal) != 0 || immobile_bits(&cm, x, r, legal) != 0;
                     }
                 }
             }
@@ -846,33 +1426,33 @@ pub fn generate(b: &Board, moves: &mut MoveBuffer, p: Piece, force: bool) {
                     Piece::Z => {
                         generate_inner::<{ Piece::Z as usize }, true>(&cm, moves, slow, force, None)
                     }
-                    _ => {
-                        generate_inner::<{ Piece::T as usize }, false>(&cm, moves, slow, force, None)
-                    }
+                    _ => generate_inner::<{ Piece::T as usize }, false>(
+                        &cm, moves, slow, force, None,
+                    ),
                 }
             } else {
                 match p {
-                    Piece::I => {
-                        generate_inner::<{ Piece::I as usize }, false>(&cm, moves, slow, force, None)
-                    }
-                    Piece::O => {
-                        generate_inner::<{ Piece::O as usize }, false>(&cm, moves, slow, force, None)
-                    }
-                    Piece::L => {
-                        generate_inner::<{ Piece::L as usize }, false>(&cm, moves, slow, force, None)
-                    }
-                    Piece::J => {
-                        generate_inner::<{ Piece::J as usize }, false>(&cm, moves, slow, force, None)
-                    }
-                    Piece::S => {
-                        generate_inner::<{ Piece::S as usize }, false>(&cm, moves, slow, force, None)
-                    }
-                    Piece::Z => {
-                        generate_inner::<{ Piece::Z as usize }, false>(&cm, moves, slow, force, None)
-                    }
-                    Piece::T => {
-                        generate_inner::<{ Piece::T as usize }, false>(&cm, moves, slow, force, None)
-                    }
+                    Piece::I => generate_inner::<{ Piece::I as usize }, false>(
+                        &cm, moves, slow, force, None,
+                    ),
+                    Piece::O => generate_inner::<{ Piece::O as usize }, false>(
+                        &cm, moves, slow, force, None,
+                    ),
+                    Piece::L => generate_inner::<{ Piece::L as usize }, false>(
+                        &cm, moves, slow, force, None,
+                    ),
+                    Piece::J => generate_inner::<{ Piece::J as usize }, false>(
+                        &cm, moves, slow, force, None,
+                    ),
+                    Piece::S => generate_inner::<{ Piece::S as usize }, false>(
+                        &cm, moves, slow, force, None,
+                    ),
+                    Piece::Z => generate_inner::<{ Piece::Z as usize }, false>(
+                        &cm, moves, slow, force, None,
+                    ),
+                    Piece::T => generate_inner::<{ Piece::T as usize }, false>(
+                        &cm, moves, slow, force, None,
+                    ),
                 }
             }
         }
@@ -931,6 +1511,371 @@ mod tests {
         ] {
             let ml = MoveList::new(&b, p);
             assert!(ml.size() > 0, "No moves for {:?}", p);
+        }
+    }
+
+    // col 5 is an empty 4-deep well capped by a single filled cell at row 4; a
+    // vertical I locked in the well (rows 0..3) is physically unreachable (the cap
+    // blocks entry from the top and the 1-wide well is too deep to spin into).
+    fn capped_well_board() -> Board {
+        let full = 0x3FFu16;
+        let mut rows = vec![full & !(1u16 << 5); 4];
+        rows.push(1u16 << 5);
+        board_from_rows(&rows)
+    }
+
+    fn reachable(b: &Board, m: &Move) -> bool {
+        move_reachable(b, m, false)
+    }
+
+    #[test]
+    fn capped_well_triggers_reachability_filter() {
+        assert!(needs_reachability_filter(&capped_well_board()));
+        assert!(!needs_reachability_filter(&Board::new()));
+    }
+
+    #[test]
+    fn raw_generate_overproduces_unreachable_in_capped_well() {
+        let b = capped_well_board();
+        let mut raw = MoveBuffer::new();
+        generate(&b, &mut raw, Piece::I, false);
+        let unreachable = raw.iter().filter(|m| !reachable(&b, m)).count();
+        assert!(
+            unreachable > 0,
+            "expected raw generate to over-produce unreachable I placements, got {} moves all reachable",
+            raw.len()
+        );
+    }
+
+    #[test]
+    fn generate_playable_keeps_exactly_reachable_legal_moves() {
+        let b = capped_well_board();
+        let mut raw = MoveBuffer::new();
+        generate(&b, &mut raw, Piece::I, false);
+        let mut playable = MoveBuffer::new();
+        generate_playable(&b, &mut playable, Piece::I, false);
+
+        for m in playable.iter() {
+            assert!(reachable(&b, m), "playable move {:?} is unreachable", m);
+            assert!(b.legal_lock_placement(m), "playable move {:?} floats", m);
+        }
+        let expected: Vec<Move> = raw
+            .iter()
+            .copied()
+            .filter(|m| b.legal_lock_placement(m) && reachable(&b, m))
+            .collect();
+        assert_eq!(
+            playable.as_slice(),
+            expected.as_slice(),
+            "generate_playable must equal the reachable+legal subset of generate, in order"
+        );
+        assert!(
+            playable.len() < raw.len(),
+            "filter removed nothing on a capped-well board"
+        );
+    }
+
+    #[test]
+    fn generate_playable_is_noop_on_clean_board() {
+        let b = Board::new();
+        for &p in &[
+            Piece::I,
+            Piece::O,
+            Piece::T,
+            Piece::L,
+            Piece::J,
+            Piece::S,
+            Piece::Z,
+        ] {
+            let mut raw = MoveBuffer::new();
+            generate(&b, &mut raw, p, false);
+            let mut playable = MoveBuffer::new();
+            generate_playable(&b, &mut playable, p, false);
+            assert_eq!(
+                playable.as_slice(),
+                raw.as_slice(),
+                "clean-board generate_playable changed the set for {:?}",
+                p
+            );
+        }
+    }
+
+    #[test]
+    fn generate_playable_drops_impossible_capped_well_i() {
+        // col 6 is a 1-wide 4-deep well (rows 0..3) capped by an overhang at
+        // rows 4..5. A vertical I in the well is collision-free but physically
+        // unreachable: no input sequence can pass the cap.
+        let b = board_from_rows(&[0x3BF, 0x3BF, 0x3BF, 0x3BF, 0x3CF, 0x3C7]);
+        let impossible = Move::new(Piece::I, Rotation::East, 6, 2, false);
+        assert!(
+            b.legal_lock_placement(&impossible),
+            "well placement is geometrically legal (collision-free)"
+        );
+        assert!(
+            crate::pathfinder::get_input(&b, &impossible, false, false)
+                .data
+                .is_empty(),
+            "capped-well I must be unreachable (harddrop cannot teleport past the cap)"
+        );
+        let mut playable = MoveBuffer::new();
+        generate_playable(&b, &mut playable, Piece::I, false);
+        assert!(
+            !playable.iter().any(|m| m.piece() == Piece::I
+                && m.rotation() == Rotation::East
+                && m.x() == 6
+                && m.y() == 2),
+            "generate_playable must drop the impossible capped-well I"
+        );
+    }
+
+    #[test]
+    fn generate_playable_retains_reachable_tspin() {
+        // This board emits a reachable T-spin Mini at North x=3 y=3 (see
+        // dual_reachable_t_spin_mini_prefers_rotation_label). The reachability
+        // filter must NOT drop it.
+        let b = board_from_rows(&[1007, 879, 1007, 995, 935, 519, 3, 3, 3]);
+        let mut raw = MoveBuffer::new();
+        generate(&b, &mut raw, Piece::T, false);
+        let spin = *raw
+            .iter()
+            .find(|m| {
+                m.piece() == Piece::T
+                    && m.rotation() == Rotation::North
+                    && m.x() == 3
+                    && m.y() == 3
+                    && m.spin() == SpinType::Mini
+            })
+            .expect("board must emit the reachable T-spin Mini");
+        assert!(
+            reachable(&b, &spin),
+            "get_input must find a path for the reachable T-spin Mini"
+        );
+        let mut playable = MoveBuffer::new();
+        generate_playable(&b, &mut playable, Piece::T, false);
+        assert!(
+            playable.as_slice().contains(&spin),
+            "generate_playable dropped a reachable T-spin Mini (false-negative)"
+        );
+    }
+
+    fn board_from_rows(rows: &[u16]) -> Board {
+        let mut b = Board::new();
+        for (y, &row) in rows.iter().enumerate() {
+            b.rows[y] = row;
+            let mut bits = row as u64;
+            while bits != 0 {
+                let x = bits.trailing_zeros() as usize;
+                b.cols[x] |= 1u64 << y;
+                bits &= bits - 1;
+            }
+        }
+        b
+    }
+
+    fn rows_after_move(board: &Board, m: &Move) -> [u16; 40] {
+        let mut next = board.clone();
+        next.place(m);
+        let cleared = next.line_clears();
+        if cleared != 0 {
+            next.clear_lines(cleared);
+        }
+        next.rows
+    }
+
+    #[test]
+    fn dual_reachable_t_spin_mini_prefers_rotation_label() {
+        let b = board_from_rows(&[1007, 879, 1007, 995, 935, 519, 3, 3, 3]);
+        let mut moves = MoveBuffer::new();
+        generate(&b, &mut moves, Piece::T, false);
+
+        let spins: Vec<SpinType> = moves
+            .as_slice()
+            .iter()
+            .filter(|m| m.piece() == Piece::T)
+            .filter(|m| m.rotation() == Rotation::North && m.x() == 3 && m.y() == 3)
+            .map(|m| m.spin())
+            .collect();
+
+        assert_eq!(
+            spins,
+            vec![SpinType::Mini],
+            "expected T North x=3 y=3 to be emitted only as Mini"
+        );
+    }
+
+    #[test]
+    fn dual_reachable_t_nospin_replay_keeps_nonspin_candidate() {
+        let b = board_from_rows(&[511, 511, 991, 542, 28, 12]);
+        let mut moves = MoveBuffer::new();
+        generate(&b, &mut moves, Piece::T, false);
+        let mut expected = [0u16; 40];
+        expected[0] = 511;
+        expected[1] = 511;
+        expected[2] = 638;
+        expected[3] = 60;
+        expected[4] = 12;
+
+        let spins: Vec<SpinType> = moves
+            .as_slice()
+            .iter()
+            .filter(|m| m.piece() == Piece::T)
+            .filter(|m| rows_after_move(&b, m) == expected)
+            .map(|m| m.spin())
+            .collect();
+
+        assert!(
+            spins.contains(&SpinType::NoSpin),
+            "expected replay-matched placement to retain a NoSpin candidate, got {spins:?}"
+        );
+    }
+
+    fn board_with_height(h: usize) -> Board {
+        let mut b = Board::new();
+        for y in 0..h {
+            b.rows[y] = 0x1FF; // cols 0-8 filled, col 9 open well -> real moves
+        }
+        for y in 0..b.rows.len() {
+            let mut bits = b.rows[y] as u64;
+            while bits != 0 {
+                let x = bits.trailing_zeros() as usize;
+                b.cols[x] |= 1u64 << y;
+                bits &= bits - 1;
+            }
+        }
+        b
+    }
+
+    fn board_with_spawn_boundary() -> Board {
+        board_with_height((ACTIVE_RULES.spawn_row - 2) as usize)
+    }
+
+    fn raw_moves_for_request(board: &Board, piece: Piece, force: bool) -> Vec<u16> {
+        let request = MovegenRequest::new(piece)
+            .with_force(force)
+            .with_consumer(MovegenConsumer::Search)
+            .with_order(MovegenOrder::ScalarCompatible);
+        let mut moves = MoveBuffer::new();
+        generate_with_request(board, &mut moves, request);
+        moves.as_slice().iter().map(|m| m.raw()).collect()
+    }
+
+    fn raw_moves_for_engine(board: &Board, piece: Piece, force: bool) -> Vec<u16> {
+        let mut moves = MoveBuffer::new();
+        generate_engine(board, &mut moves, piece, force);
+        moves.as_slice().iter().map(|m| m.raw()).collect()
+    }
+
+    #[cfg(feature = "packed_movegen")]
+    fn raw_moves_for_order(
+        board: &Board,
+        piece: Piece,
+        force: bool,
+        order: MovegenOrder,
+    ) -> Vec<u16> {
+        let request = MovegenRequest::new(piece)
+            .with_force(force)
+            .with_consumer(MovegenConsumer::General)
+            .with_order(order);
+        let mut moves = MoveBuffer::new();
+        generate_with_request(board, &mut moves, request);
+        moves.as_slice().iter().map(|m| m.raw()).collect()
+    }
+
+    #[test]
+    fn scalar_compatible_request_matches_engine_for_force_modes() {
+        let boards = [
+            Board::new(),
+            board_with_spawn_boundary(),
+            board_with_height(28),
+        ];
+        for board in boards {
+            for force in [false, true] {
+                for piece in [
+                    Piece::I,
+                    Piece::O,
+                    Piece::T,
+                    Piece::L,
+                    Piece::J,
+                    Piece::S,
+                    Piece::Z,
+                ] {
+                    assert_eq!(
+                        raw_moves_for_request(&board, piece, force),
+                        raw_moves_for_engine(&board, piece, force),
+                        "request output differs from engine for {piece:?} force={force} height={}",
+                        board.height()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "packed_movegen")]
+    fn packed_feature_request_api_matches_engine_oracle() {
+        let boards = [
+            Board::new(),
+            board_with_height(13),
+            board_with_spawn_boundary(),
+            board_with_height(24),
+        ];
+        for board in boards {
+            for force in [false, true] {
+                for piece in [
+                    Piece::I,
+                    Piece::O,
+                    Piece::T,
+                    Piece::L,
+                    Piece::J,
+                    Piece::S,
+                    Piece::Z,
+                ] {
+                    let scalar =
+                        raw_moves_for_order(&board, piece, force, MovegenOrder::ScalarCompatible);
+                    let engine = raw_moves_for_engine(&board, piece, force);
+                    assert_eq!(
+                        scalar,
+                        engine,
+                        "scalar-compatible request differs for {piece:?} force={force} height={}",
+                        board.height()
+                    );
+
+                    let mut canonical =
+                        raw_moves_for_order(&board, piece, force, MovegenOrder::CanonicalRaw);
+                    let mut sorted_engine = engine;
+                    sorted_engine.sort_unstable();
+                    canonical.sort_unstable();
+                    assert_eq!(
+                        canonical,
+                        sorted_engine,
+                        "canonical request differs for {piece:?} force={force} height={}",
+                        board.height()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "packed_movegen")]
+    fn hybrid_equals_engine_across_gate_boundaries() {
+        // h<=24 routes to packed; h>24 falls back to engine. Production generate()
+        // canonical-sorts, so its output must equal the sorted engine output at
+        // every boundary, including the h=24/25 routing edge.
+        for h in [13usize, 18, 23, 24, 25, 29] {
+            let b = board_with_height(h);
+            for &p in &[Piece::I, Piece::S, Piece::Z, Piece::L, Piece::J] {
+                let mut via = MoveBuffer::new();
+                generate(&b, &mut via, p, false);
+                let got: Vec<u16> = via.as_slice().iter().map(|m| m.raw()).collect();
+
+                let mut eng = MoveBuffer::new();
+                generate_engine(&b, &mut eng, p, false);
+                let mut want: Vec<u16> = eng.as_slice().iter().map(|m| m.raw()).collect();
+                want.sort_unstable();
+
+                assert_eq!(got, want, "hybrid != engine at h={h} p={p:?}");
+            }
         }
     }
 }

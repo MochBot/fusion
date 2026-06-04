@@ -140,16 +140,20 @@ fn get_input_inner(
         let y = m.y;
         let rc = canonical_r(p, r);
 
-        // harddrop
-        let drop_mask = !((!cm.get(x, rc)) << (63 - y as u32));
-        let drop_y = (clz(drop_mask) as i8) - 1;
+        // harddrop: contiguous gravity descent from y. Stepping one row at a
+        // time (instead of a bitmask scan for the lowest collision-free row)
+        // stops the piece above the first blocked cell, so it cannot teleport
+        // into a disconnected pocket beneath a capped column.
+        let mut drop_y = y;
+        while drop_y > 0 && (cm.get(x, rc) & bb((drop_y - 1) as i32)) == 0 {
+            drop_y -= 1;
+        }
 
         if drop_y >= 0 {
-            let mut s = m.s;
-            if can_spin {
-                s = SpinType::NoSpin;
-            }
-            let sc = if can_spin { s as usize } else { 0 };
+            // Preserve the rotation's spin label only when the piece is already
+            // resting (drop_y == y); a piece that falls further after rotating
+            // locks as a no-spin, mirroring movegen's lock-row spin tagging.
+            let sc = if can_spin && drop_y == y { m.s as usize } else { 0 };
             let _rc_idx = canonical_r(p, r) as usize;
 
             // check if this harddrop position == target
@@ -259,7 +263,11 @@ fn get_input_inner(
                                     face_filled += 1;
                                 }
                             }
-                            s = if face_filled >= 2 || k == 4 {
+                            // `k >= 4` (not `== 4`) to match movegen's full-spin tag
+                            // (movegen.rs uses `i >= 4`); high kick indices on 180s
+                            // would otherwise mislabel a Full spin as Mini and make a
+                            // reachable spin look unreachable to the filter.
+                            s = if face_filled >= 2 || k >= 4 {
                                 SpinType::Full
                             } else {
                                 SpinType::Mini
