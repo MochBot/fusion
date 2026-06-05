@@ -170,6 +170,147 @@ pub fn calculate_attack(
     })
 }
 
+const S2_TL_PC_GARBAGE: u32 = 5;
+const S2_TL_PC_B2B: i32 = 1;
+const S2_TL_B2B_CHARGE_AT: i32 = 4;
+const S2_TL_B2B_CHARGE_BASE: i32 = 3;
+const S2_TL_GARBAGE_MULTIPLIER: f64 = 1.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct S2TlAttackOutcome {
+    pub attack: u32,
+    pub b2b_after: i32,
+    pub combo_after: i32,
+}
+
+#[allow(dead_code)]
+pub(crate) fn count_cleared_garbage_rows(cleared: u64, garbage_rows: &[u64]) -> u8 {
+    let mut count = 0u8;
+    for y in 0..40 {
+        if cleared & (1u64 << y) != 0 && garbage_rows.get(y).copied().unwrap_or(0) != 0 {
+            count += 1;
+        }
+    }
+    count
+}
+
+/// Calculates Triangle.js Season-2 TETRA LEAGUE lock attack as the sum of
+/// separately floored rawGarbage events.
+pub fn calculate_attack_s2_tl(
+    lines: u8,
+    spin: SpinType,
+    pre_b2b: i32,
+    pre_combo: i32,
+    is_perfect_clear: bool,
+    garbage_cleared: u8,
+) -> S2TlAttackOutcome {
+    calculate_attack_s2_tl_with_multiplier(
+        lines,
+        spin,
+        pre_b2b,
+        pre_combo,
+        is_perfect_clear,
+        garbage_cleared,
+        S2_TL_GARBAGE_MULTIPLIER,
+    )
+}
+
+pub fn calculate_attack_s2_tl_with_multiplier(
+    lines: u8,
+    spin: SpinType,
+    pre_b2b: i32,
+    pre_combo: i32,
+    is_perfect_clear: bool,
+    garbage_cleared: u8,
+    garbage_multiplier: f64,
+) -> S2TlAttackOutcome {
+    let difficult_clear = spin != SpinType::NoSpin || lines >= 4;
+    let mut b2b_after = pre_b2b;
+    let combo_after;
+    let mut broke_b2b = Some(pre_b2b);
+
+    if lines > 0 {
+        combo_after = pre_combo.saturating_add(1);
+        if difficult_clear && !(is_perfect_clear && S2_TL_PC_B2B > 0) {
+            b2b_after = b2b_after.saturating_add(1);
+            broke_b2b = None;
+        }
+        if is_perfect_clear && S2_TL_PC_B2B > 0 {
+            b2b_after = b2b_after.saturating_add(S2_TL_PC_B2B);
+            broke_b2b = None;
+        }
+        if broke_b2b.is_some() {
+            b2b_after = -1;
+        }
+    } else {
+        combo_after = -1;
+        broke_b2b = None;
+    }
+
+    if lines == 0 {
+        return S2TlAttackOutcome {
+            attack: 0,
+            b2b_after,
+            combo_after,
+        };
+    }
+
+    let mut garbage = base_attack(lines, spin) as f64;
+    if b2b_after.max(0) > 0 {
+        garbage += BACK_TO_BACK_BONUS as f64;
+    }
+
+    let combo = combo_after.max(0) as f64;
+    if combo > 0.0 {
+        garbage *= 1.0 + COMBO_BONUS as f64 * combo;
+        if combo > 1.0 {
+            garbage = garbage.max((1.0 + combo * COMBO_FLOOR_SCALE as f64).ln());
+        }
+    }
+
+    let special_bonus = if garbage_cleared > 0 && difficult_clear {
+        1.0_f64
+    } else {
+        0.0_f64
+    };
+    let main_event = (garbage * garbage_multiplier + special_bonus).floor() as u32;
+
+    let surge_event = broke_b2b
+        .filter(|b2b| b2b.saturating_add(1) > S2_TL_B2B_CHARGE_AT)
+        .map(|b2b| {
+            ((b2b - S2_TL_B2B_CHARGE_AT + S2_TL_B2B_CHARGE_BASE + 1) as f64 * garbage_multiplier)
+                .floor()
+                .max(0.0) as u32
+        })
+        .unwrap_or(0);
+
+    let pc_event = if is_perfect_clear {
+        (S2_TL_PC_GARBAGE as f64 * garbage_multiplier).floor() as u32
+    } else {
+        0
+    };
+
+    S2TlAttackOutcome {
+        attack: main_event + surge_event + pc_event,
+        b2b_after,
+        combo_after,
+    }
+}
+
+/// Banked surge potential at a given B2B count: the surge attack that a
+/// non-difficult clear would release right now (and 0 below the charge
+/// threshold). Mirrors the `surge_event` term above so potential-shaped coaching
+/// value treats cashing surge as neutral and credits building it.
+pub fn surge_potential(b2b: i32, garbage_multiplier: f64) -> i64 {
+    if b2b.saturating_add(1) > S2_TL_B2B_CHARGE_AT {
+        (((b2b - S2_TL_B2B_CHARGE_AT + S2_TL_B2B_CHARGE_BASE + 1) as f64 * garbage_multiplier)
+            .floor()
+            .max(0.0)) as i64
+    } else {
+        0
+    }
+}
+
 /// Parameters for the extended attack calculation.
 pub struct AttackContext<'a> {
     pub lines: u8,
@@ -539,6 +680,31 @@ mod tests {
     }
 
     #[test]
+    fn test_surge_potential_pins_released_surge() {
+        for n in [4, 5, 6, 7, 10, 15] {
+            let released = calculate_attack_full(&AttackContext {
+                lines: 1,
+                spin: SpinType::NoSpin,
+                b2b: 0,
+                combo: 0,
+                config: &tl(),
+                is_perfect_clear: false,
+                b2b_broken_from: Some(n),
+                clears_garbage: false,
+            });
+            assert_eq!(
+                surge_potential(i32::from(n), 1.0),
+                released as i64,
+                "surge_potential({n}) must equal the released surge"
+            );
+        }
+        assert_eq!(surge_potential(3, 1.0), 0, "below charge threshold");
+        assert_eq!(surge_potential(0, 1.0), 0);
+        assert_eq!(surge_potential(-1, 1.0), 0, "b2b sentinel");
+        assert_eq!(surge_potential(4, 2.0), 8, "multiplier scales potential");
+    }
+
+    #[test]
     fn test_surge_release_not_triggered_by_difficult_clear() {
         // quad (b2b-eligible) should NOT trigger surge release even if b2b_broken_from
         let with_surge = calculate_attack_full(&AttackContext {
@@ -675,5 +841,89 @@ mod tests {
             clears_garbage: true,
         });
         assert_eq!(without, with);
+    }
+    #[test]
+    fn test_s2_tl_signed_opening_single() {
+        let outcome = calculate_attack_s2_tl(1, SpinType::NoSpin, -1, -1, false, 0);
+        assert_eq!(outcome.attack, 0);
+        assert_eq!(outcome.b2b_after, -1);
+        assert_eq!(outcome.combo_after, 0);
+    }
+
+    #[test]
+    fn test_s2_tl_surge_is_separate_from_combo_multiplier() {
+        let outcome = calculate_attack_s2_tl(2, SpinType::NoSpin, 4, 3, false, 0);
+        assert_eq!(outcome.attack, 6);
+        assert_eq!(outcome.b2b_after, -1);
+        assert_eq!(outcome.combo_after, 4);
+    }
+
+    #[test]
+    fn test_s2_tl_garbage_special_bonus_is_after_combo_multiplier() {
+        let outcome = calculate_attack_s2_tl(4, SpinType::NoSpin, -1, 3, false, 1);
+        assert_eq!(outcome.attack, 9);
+        assert_eq!(outcome.b2b_after, 0);
+        assert_eq!(outcome.combo_after, 4);
+    }
+
+    #[test]
+    fn test_s2_tl_quad_gets_garbage_clear_special_bonus() {
+        let outcome = calculate_attack_s2_tl(4, SpinType::NoSpin, -1, -1, false, 4);
+        assert_eq!(outcome.attack, 5);
+        assert_eq!(outcome.b2b_after, 0);
+        assert_eq!(outcome.combo_after, 0);
+    }
+
+    #[test]
+    fn test_s2_tl_single_garbage_clear_has_no_special_bonus() {
+        let outcome = calculate_attack_s2_tl(1, SpinType::NoSpin, -1, -1, false, 1);
+        assert_eq!(outcome.attack, 0);
+        assert_eq!(outcome.b2b_after, -1);
+        assert_eq!(outcome.combo_after, 0);
+    }
+
+    #[test]
+    fn test_count_cleared_garbage_rows_counts_only_cleared_tagged_rows() {
+        let cleared = (1u64 << 0) | (1u64 << 1) | (1u64 << 2) | (1u64 << 3);
+        let mut garbage_rows = [0u64; 40];
+        garbage_rows[1] = 0x03FF;
+        garbage_rows[2] = 1;
+        garbage_rows[4] = 0x03FF;
+
+        assert_eq!(count_cleared_garbage_rows(cleared, &garbage_rows), 2);
+    }
+
+    #[test]
+    fn test_s2_tl_mini_single_gets_flat_b2b_on_zero_base() {
+        let outcome = calculate_attack_s2_tl(1, SpinType::Mini, 0, -1, false, 0);
+        assert_eq!(outcome.attack, 1);
+        assert_eq!(outcome.b2b_after, 1);
+        assert_eq!(outcome.combo_after, 0);
+    }
+
+    #[test]
+    fn test_s2_tl_perfect_clear_event_is_separate() {
+        let outcome = calculate_attack_s2_tl(1, SpinType::NoSpin, -1, 7, true, 0);
+        assert_eq!(outcome.attack, 7);
+        assert_eq!(outcome.b2b_after, 0);
+        assert_eq!(outcome.combo_after, 8);
+    }
+
+    #[test]
+    fn test_s2_tl_dynamic_multiplier_matches_triangle_main_event() {
+        let outcome =
+            calculate_attack_s2_tl_with_multiplier(1, SpinType::NoSpin, -1, 4, false, 0, 1.027);
+        assert_eq!(outcome.attack, 2);
+        assert_eq!(outcome.b2b_after, -1);
+        assert_eq!(outcome.combo_after, 5);
+    }
+
+    #[test]
+    fn test_s2_tl_dynamic_multiplier_applies_before_garbage_special_bonus() {
+        let outcome =
+            calculate_attack_s2_tl_with_multiplier(4, SpinType::NoSpin, -1, 0, false, 4, 1.251);
+        assert_eq!(outcome.attack, 7);
+        assert_eq!(outcome.b2b_after, 0);
+        assert_eq!(outcome.combo_after, 1);
     }
 }

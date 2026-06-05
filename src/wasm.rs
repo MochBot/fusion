@@ -767,8 +767,7 @@ impl std::hash::Hasher for FxHasher64 {
         self.h
     }
 }
-type FxRowSet =
-    std::collections::HashSet<[u16; 40], std::hash::BuildHasherDefault<FxHasher64>>;
+type FxRowSet = std::collections::HashSet<[u16; 40], std::hash::BuildHasherDefault<FxHasher64>>;
 
 // Drop the bits of `gm` at cleared row positions and shift higher bits down,
 // matching how `clear_lines` compacts the board (software pext on a single u64).
@@ -826,6 +825,65 @@ pub fn beam_best_gm_wasm(
     keep_line: &[u32],
     beam_width: u32,
     garbage_multiplier: f64,
+) -> f64 {
+    beam_best_gm_impl(
+        start_board,
+        start_gmask,
+        pieces,
+        b2b,
+        combo,
+        pending,
+        keep_line,
+        beam_width,
+        garbage_multiplier,
+        false,
+    )
+}
+
+/// Surge-potential-shaped variant of `beam_best_gm`: each placement's value is
+/// its realized attack plus the change in banked surge potential
+/// (`surge_potential(b2b_after) - surge_potential(b2b_before)`). This makes
+/// building B2B count toward the coaching gap and cashing surge out neutral.
+/// Dedups by (rows, b2b, combo) — shaping makes b2b/combo affect value — to
+/// match the JS `s2BestLine` beam it parity-anchors.
+#[wasm_bindgen(js_name = "beam_best_gm_surge")]
+pub fn beam_best_gm_surge_wasm(
+    start_board: &[u32],
+    start_gmask: &[u32],
+    pieces: &[u8],
+    b2b: i32,
+    combo: i32,
+    pending: i32,
+    keep_line: &[u32],
+    beam_width: u32,
+    garbage_multiplier: f64,
+) -> f64 {
+    beam_best_gm_impl(
+        start_board,
+        start_gmask,
+        pieces,
+        b2b,
+        combo,
+        pending,
+        keep_line,
+        beam_width,
+        garbage_multiplier,
+        true,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn beam_best_gm_impl(
+    start_board: &[u32],
+    start_gmask: &[u32],
+    pieces: &[u8],
+    b2b: i32,
+    combo: i32,
+    pending: i32,
+    keep_line: &[u32],
+    beam_width: u32,
+    garbage_multiplier: f64,
+    surge_shaping: bool,
 ) -> f64 {
     struct BNode {
         board: crate::board::Board,
@@ -895,9 +953,15 @@ pub fn beam_best_gm_wasm(
                 if child_gm != 0 {
                     child_gm &= nonempty_row_mask(&nb);
                 }
+                let shaped_delta = if surge_shaping {
+                    crate::attack::surge_potential(attack.b2b_after as i32, garbage_multiplier)
+                        - crate::attack::surge_potential(node.b2b, garbage_multiplier)
+                } else {
+                    0
+                };
                 children.push(Child {
                     board: nb,
-                    acc: node.acc + attack.attack as i64,
+                    acc: node.acc + attack.attack as i64 + shaped_delta,
                     b2b: attack.b2b_after as i32,
                     combo: attack.combo_after as i32,
                     pending: (node.pending - lines as i32).max(0),
@@ -921,12 +985,23 @@ pub fn beam_best_gm_wasm(
         };
         let mut seen: FxRowSet =
             FxRowSet::with_capacity_and_hasher(children.len(), Default::default());
+        let mut seen_full: std::collections::HashSet<([u16; 40], i32, i32)> =
+            std::collections::HashSet::with_capacity(if surge_shaping {
+                children.len()
+            } else {
+                0
+            });
         let mut pruned: Vec<BNode> = Vec::with_capacity(bw);
         let mut kept = false;
         for &ci in &idx {
             let c = &children[ci];
             let rows = c.board.rows;
-            if !seen.insert(rows) {
+            let is_dup = if surge_shaping {
+                !seen_full.insert((rows, c.b2b, c.combo))
+            } else {
+                !seen.insert(rows)
+            };
+            if is_dup {
                 continue;
             }
             if Some(rows) == keepb {
@@ -1238,6 +1313,45 @@ mod tests {
     }
 
     #[test]
+    fn test_beam_surge_credits_b2b_build() {
+        // Tetris well (col 9 open, rows 0..3 = cols 0-8), b2b=6 charged. The only
+        // clear is the I quad in col 9 -> b2b 6->7 (build): shaped value adds the
+        // marginal surge potential over the realized attack.
+        let mut board = [0u32; 40];
+        for y in 0..4 {
+            board[y] = 0x03FFu32 & !(1u32 << 9);
+        }
+        let gmask = [0u32; 40];
+        let raw = beam_best_gm_wasm(&board, &gmask, &[0], 6, 0, 0, &[], 64, 1.0);
+        let surge = beam_best_gm_surge_wasm(&board, &gmask, &[0], 6, 0, 0, &[], 64, 1.0);
+        let dp = (crate::attack::surge_potential(7, 1.0) - crate::attack::surge_potential(6, 1.0))
+            as f64;
+        assert_eq!(dp, 1.0);
+        assert_eq!(
+            surge,
+            raw + dp,
+            "building b2b 6->7 must add +{dp} surge potential (raw={raw} surge={surge})"
+        );
+    }
+
+    #[test]
+    fn test_beam_surge_cashout_is_neutral() {
+        // Single-clear well (row 0 = cols 0-8, col 9 open), b2b=6. The best raw
+        // line breaks the surge for ~6 realized; shaped, cashing it is neutral
+        // because banked potential drops by the same amount.
+        let mut board = [0u32; 40];
+        board[0] = 0x03FFu32 & !(1u32 << 9);
+        let gmask = [0u32; 40];
+        let raw = beam_best_gm_wasm(&board, &gmask, &[0], 6, 0, 0, &[], 64, 1.0);
+        let surge = beam_best_gm_surge_wasm(&board, &gmask, &[0], 6, 0, 0, &[], 64, 1.0);
+        assert!(raw >= 6.0, "raw should cash the surge (got {raw})");
+        assert_eq!(
+            surge, 0.0,
+            "cashing surge nets to neutral under shaping (raw={raw} surge={surge})"
+        );
+    }
+
+    #[test]
     fn test_expand_beam_gm_rejects_short_inputs() {
         assert!(expand_beam_gm_wasm(&[], &[], &[], 0, 1, 1.0).is_empty());
     }
@@ -1275,9 +1389,23 @@ mod tests {
         let old = beam_best_gm_wasm(&board, &gmask, &pieces, -1, -1, 0, &[], 8, 1.0);
         let counts = [0u32, 0u32];
         let gi = beam_best_gm_gi_wasm(
-            &board, &gmask, &pieces, -1, -1, 0, &[], 8, &[1.0, 1.0], &[], &counts, 0,
+            &board,
+            &gmask,
+            &pieces,
+            -1,
+            -1,
+            0,
+            &[],
+            8,
+            &[1.0, 1.0],
+            &[],
+            &counts,
+            0,
         );
-        assert!(old > 0.0, "precondition: old beam returns positive, got {old}");
+        assert!(
+            old > 0.0,
+            "precondition: old beam returns positive, got {old}"
+        );
         assert_eq!(
             old, gi,
             "gi-beam with zero garbage must equal old beam ({old} vs {gi})"
@@ -1295,7 +1423,18 @@ mod tests {
         }
         let counts = [4u32, 0u32];
         let acc = beam_best_gm_gi_wasm(
-            &board, &gmask, &pieces, -1, -1, 0, &[], 16, &[1.0, 1.0], &garbage_rows, &counts, 4,
+            &board,
+            &gmask,
+            &pieces,
+            -1,
+            -1,
+            0,
+            &[],
+            16,
+            &[1.0, 1.0],
+            &garbage_rows,
+            &counts,
+            4,
         );
         assert!(
             acc > 0.0,
