@@ -3,24 +3,92 @@ use std::env;
 use std::fs::File;
 use std::hash::{BuildHasherDefault, Hasher};
 use std::io::{self, Read, Write};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use direct_cobra_copy::attack::calculate_attack_s2_tl_with_multiplier;
 use direct_cobra_copy::board::{Board, FULL_ROW};
 use direct_cobra_copy::header::Piece;
 use direct_cobra_copy::move_buffer::MoveBuffer;
-use direct_cobra_copy::movegen::generate;
+use direct_cobra_copy::movegen::generate_playable;
 use rayon::prelude::*;
 
-const K: usize = 5;
-const N_FRAMES: usize = K + 1;
+const DEFAULT_K: usize = 5;
 const FRAME_BYTES: usize = 195;
 const OPP_BYTES: usize = 186;
-const RECORD_BYTES: usize = FRAME_BYTES * N_FRAMES + OPP_BYTES + 4;
 const STRIDE_F: usize = 464;
 const STRIDE_BYTES: usize = STRIDE_F * 4;
-const BEAM: usize = 300;
-const BEAM_FEAT: usize = 150;
+const DEFAULT_BEAM: usize = 300;
+const DEFAULT_BEAM_FEAT: usize = 150;
+
+#[derive(Clone, Copy)]
+struct LabelConfig {
+    k: usize,
+    beam: usize,
+    beam_feat: usize,
+    profile: bool,
+}
+
+impl LabelConfig {
+    fn new(k: usize, beam: usize, beam_feat: usize) -> Self {
+        Self { k, beam, beam_feat, profile: false }
+    }
+
+    fn from_env() -> io::Result<Self> {
+        let mut cfg = Self::new(
+            read_positive_usize_env("K", DEFAULT_K)?,
+            read_positive_usize_env("BEAM", DEFAULT_BEAM)?,
+            read_positive_usize_env("BEAM_FEAT", DEFAULT_BEAM_FEAT)?,
+        );
+        cfg.profile = env::var_os("LABEL_OPP_PROFILE").is_some();
+        Ok(cfg)
+    }
+
+    fn record_bytes(self) -> usize {
+        FRAME_BYTES * (self.k + 1) + OPP_BYTES + 4
+    }
+}
+
+#[derive(Default)]
+struct ProfileCounters {
+    beam_calls: AtomicU64,
+    beam_nodes: AtomicU64,
+    moves: AtomicU64,
+    generated_unique: AtomicU64,
+    generate_ns: AtomicU64,
+    score_ns: AtomicU64,
+    prune_ns: AtomicU64,
+}
+
+static PROFILE: ProfileCounters = ProfileCounters {
+    beam_calls: AtomicU64::new(0),
+    beam_nodes: AtomicU64::new(0),
+    moves: AtomicU64::new(0),
+    generated_unique: AtomicU64::new(0),
+    generate_ns: AtomicU64::new(0),
+    score_ns: AtomicU64::new(0),
+    prune_ns: AtomicU64::new(0),
+};
+
+fn add_counter(counter: &AtomicU64, value: u64) {
+    counter.fetch_add(value, Ordering::Relaxed);
+}
+
+fn elapsed_ns(start: Instant) -> u64 {
+    start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64
+}
+
+fn read_positive_usize_env(name: &str, default: usize) -> io::Result<usize> {
+    let Some(raw) = env::var_os(name) else { return Ok(default); };
+    let raw = raw.to_string_lossy();
+    let value = raw.parse::<usize>().map_err(|_| {
+        io::Error::new(io::ErrorKind::InvalidInput, format!("{name} must be a positive integer, got {raw}"))
+    })?;
+    if value == 0 {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("{name} must be positive")));
+    }
+    Ok(value)
+}
 
 #[derive(Clone)]
 struct FrameRec {
@@ -55,7 +123,7 @@ impl Default for FrameRec {
 
 #[derive(Clone)]
 struct ContextRec {
-    frames: [FrameRec; N_FRAMES],
+    frames: Vec<FrameRec>,
     opp_rows: [u16; 40],
     opp_gmask: [u16; 40],
     opp_piece: i8,
@@ -69,8 +137,14 @@ struct ContextRec {
 
 impl Default for ContextRec {
     fn default() -> Self {
+        Self::with_horizon(DEFAULT_K)
+    }
+}
+
+impl ContextRec {
+    fn with_horizon(k: usize) -> Self {
         Self {
-            frames: std::array::from_fn(|_| FrameRec::default()),
+            frames: vec![FrameRec::default(); k + 1],
             opp_rows: [0; 40],
             opp_gmask: [0; 40],
             opp_piece: -1,
@@ -125,7 +199,7 @@ impl Hasher for FxHasher {
     }
 }
 
-type FxSet = std::collections::HashSet<[u16; 40], BuildHasherDefault<FxHasher>>;
+type FxMap<V> = std::collections::HashMap<[u16; 40], V, BuildHasherDefault<FxHasher>>;
 
 fn read_u16(buf: &[u8], off: &mut usize) -> u16 {
     let v = u16::from_le_bytes([buf[*off], buf[*off + 1]]);
@@ -153,11 +227,11 @@ fn read_f64(buf: &[u8], off: &mut usize) -> f64 {
 
 fn parse_frame(buf: &[u8], off: &mut usize) -> FrameRec {
     let mut rec = FrameRec::default();
-    for y in 0..40 {
-        rec.rows[y] = read_u16(buf, off) & 0x03ff;
+    for row in &mut rec.rows {
+        *row = read_u16(buf, off) & 0x03ff;
     }
-    for y in 0..40 {
-        rec.gmask[y] = read_u16(buf, off) & 0x03ff;
+    for row in &mut rec.gmask {
+        *row = read_u16(buf, off) & 0x03ff;
     }
     rec.piece = read_i8(buf, off);
     rec.hold = read_i8(buf, off);
@@ -172,17 +246,17 @@ fn parse_frame(buf: &[u8], off: &mut usize) -> FrameRec {
     rec
 }
 
-fn parse_context(buf: &[u8]) -> ContextRec {
+fn parse_context(buf: &[u8], cfg: &LabelConfig) -> ContextRec {
     let mut off = 0;
-    let mut rec = ContextRec::default();
-    for t in 0..N_FRAMES {
-        rec.frames[t] = parse_frame(buf, &mut off);
+    let mut rec = ContextRec::with_horizon(cfg.k);
+    for frame in &mut rec.frames {
+        *frame = parse_frame(buf, &mut off);
     }
-    for y in 0..40 {
-        rec.opp_rows[y] = read_u16(buf, &mut off) & 0x03ff;
+    for row in &mut rec.opp_rows {
+        *row = read_u16(buf, &mut off) & 0x03ff;
     }
-    for y in 0..40 {
-        rec.opp_gmask[y] = read_u16(buf, &mut off) & 0x03ff;
+    for row in &mut rec.opp_gmask {
+        *row = read_u16(buf, &mut off) & 0x03ff;
     }
     rec.opp_piece = read_i8(buf, &mut off);
     for q in 0..5 {
@@ -193,7 +267,7 @@ fn parse_context(buf: &[u8]) -> ContextRec {
     rec.opp_pending = read_i32(buf, &mut off);
     rec.opp_mult = read_f64(buf, &mut off);
     rec.outcome = read_i32(buf, &mut off);
-    debug_assert_eq!(off, RECORD_BYTES);
+    debug_assert_eq!(off, cfg.record_bytes());
     rec
 }
 
@@ -214,8 +288,8 @@ fn board_from_rows(rows: &[u16; 40]) -> Board {
     let mut board = Board::new();
     board.rows = *rows;
     board.cols = [0; 10];
-    for y in 0..40 {
-        let mut bits = board.rows[y] as u64;
+    for (y, row) in board.rows.iter().enumerate() {
+        let mut bits = *row as u64;
         while bits != 0 {
             let x = bits.trailing_zeros() as usize;
             board.cols[x] |= 1u64 << y;
@@ -315,7 +389,7 @@ fn expand_raw(s: &FrameRec, piece: i8) -> Vec<ExpandRec> {
     let Some(p) = piece_from_external(piece) else { return Vec::new(); };
     let board = board_from_rows(&s.rows);
     let mut moves = MoveBuffer::new();
-    generate(&board, &mut moves, p, false);
+    generate_playable(&board, &mut moves, p, false);
     let mut out = Vec::with_capacity(moves.as_slice().len());
     for m in moves.as_slice() {
         let mut rows = s.rows;
@@ -352,17 +426,18 @@ fn bottom_garbage_run(gm: &[u16; 40]) -> usize {
 
 fn shift_down_key(rows: &[u16; 40], g: usize) -> [u16; 40] {
     let mut key = [0u16; 40];
-    for y in 0..40 {
-        key[y] = rows.get(y + g).copied().unwrap_or(0);
+    for (y, value) in key.iter_mut().enumerate() {
+        *value = rows.get(y + g).copied().unwrap_or(0);
     }
     key
 }
 
-fn reconstruct(frames: &[FrameRec; N_FRAMES]) -> Option<(f64, [usize; K], [[u16; 40]; K])> {
+fn reconstruct(frames: &[FrameRec]) -> Option<(f64, Vec<usize>, Vec<[u16; 40]>)> {
+    let k = frames.len().checked_sub(1)?;
     let mut acc = 0.0;
-    let mut garbage_counts = [0usize; K];
-    let mut garbage_rows = [[0u16; 40]; K];
-    for t in 0..K {
+    let mut garbage_counts = vec![0usize; k];
+    let mut garbage_rows = vec![[0u16; 40]; k];
+    for t in 0..k {
         let s = &frames[t];
         let nx = &frames[t + 1];
         let max_g = bottom_garbage_run(&nx.gmask);
@@ -394,13 +469,14 @@ fn reconstruct(frames: &[FrameRec; N_FRAMES]) -> Option<(f64, [usize; K], [[u16;
         let (pick, g, flat) = chosen?;
         acc += flat[pick].attack;
         garbage_counts[t] = g;
-        for i in 0..g.min(40) {
-            garbage_rows[t][i] = frames[t + 1].rows[i];
+        for (i, row) in garbage_rows[t].iter_mut().enumerate().take(g.min(40)) {
+            *row = frames[t + 1].rows[i];
         }
     }
     Some((acc, garbage_counts, garbage_rows))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn beam_best(
     rows0: &[u16; 40],
     gmask0: &[u16; 40],
@@ -408,30 +484,44 @@ fn beam_best(
     b2b: i32,
     combo: i32,
     pending: i32,
-    keep_line: Option<&[[u16; 40]; K]>,
+    keep_line: Option<&[[u16; 40]]>,
     multipliers: &[f64],
-    garbage_counts: Option<&[usize; K]>,
-    garbage_rows: Option<&[[u16; 40]; K]>,
+    garbage_counts: Option<&[usize]>,
+    garbage_rows: Option<&[[u16; 40]]>,
     beam_width: usize,
+    profile: bool,
 ) -> f64 {
+    if profile {
+        add_counter(&PROFILE.beam_calls, 1);
+    }
     let mut beam = vec![Node { rows: *rows0, gm: gm_bits(gmask0), acc: 0, b2b, combo, pending }];
     for t in 0..pieces.len() {
         let Some(piece) = piece_from_external(pieces[t]) else { break; };
         let mult = multipliers.get(t).copied().unwrap_or(1.0);
-        let gc_insert = garbage_counts.map(|counts| counts[t]).unwrap_or(0).min(40);
+        let gc_insert = garbage_counts.and_then(|counts| counts.get(t)).copied().unwrap_or(0).min(40);
         let mut inserted_bits = 0u64;
-        let grow = garbage_rows.map(|rows| rows[t]).unwrap_or([0u16; 40]);
+        let grow = garbage_rows.and_then(|rows| rows.get(t)).copied().unwrap_or([0u16; 40]);
         for (i, row) in grow.iter().enumerate().take(gc_insert) {
             if *row & 0x03ff != 0 {
                 inserted_bits |= 1u64 << i;
             }
         }
 
-        let mut children: Vec<Node> = Vec::with_capacity(beam.len().saturating_mul(40));
+        let mut unique: Vec<Node> = Vec::with_capacity(beam_width.saturating_mul(2));
+        let mut unique_index = FxMap::<usize>::with_capacity_and_hasher(beam.len().saturating_mul(40), Default::default());
         for node in &beam {
+            if profile {
+                add_counter(&PROFILE.beam_nodes, 1);
+            }
             let board = board_from_rows(&node.rows);
             let mut moves = MoveBuffer::new();
-            generate(&board, &mut moves, piece, false);
+            let gen_start = Instant::now();
+            generate_playable(&board, &mut moves, piece, false);
+            if profile {
+                add_counter(&PROFILE.generate_ns, elapsed_ns(gen_start));
+                add_counter(&PROFILE.moves, moves.as_slice().len() as u64);
+            }
+            let score_start = Instant::now();
             for m in moves.as_slice() {
                 let mut rows = node.rows;
                 place_rows(&mut rows, m);
@@ -453,67 +543,80 @@ fn beam_best(
                 }
                 if gc_insert > 0 {
                     let mut shifted = [0u16; 40];
-                    for y in gc_insert..40 {
-                        shifted[y] = rows[y - gc_insert];
-                    }
-                    for i in 0..gc_insert {
-                        shifted[i] = grow[i] & 0x03ff;
+                    shifted[gc_insert..40].copy_from_slice(&rows[..(40 - gc_insert)]);
+                    for (i, row) in grow.iter().enumerate().take(gc_insert) {
+                        shifted[i] = *row & 0x03ff;
                     }
                     rows = shifted;
                     child_gm = ((child_gm << gc_insert) | inserted_bits) & ((1u64 << 40) - 1);
                 }
-                children.push(Node {
+                let child = Node {
                     rows,
                     gm: child_gm,
                     acc: node.acc + attack.attack as i64,
                     b2b: attack.b2b_after,
                     combo: attack.combo_after,
                     pending: (node.pending - lines as i32).max(0),
-                });
+                };
+                if let Some(&idx) = unique_index.get(&child.rows) {
+                    if child.acc > unique[idx].acc {
+                        unique[idx] = child;
+                    }
+                } else {
+                    unique_index.insert(child.rows, unique.len());
+                    unique.push(child);
+                }
+            }
+            if profile {
+                add_counter(&PROFILE.score_ns, elapsed_ns(score_start));
             }
         }
-        if children.is_empty() {
+        if unique.is_empty() {
             break;
         }
-        let mut idx: Vec<usize> = (0..children.len()).collect();
-        idx.sort_by(|&a, &b| children[b].acc.cmp(&children[a].acc));
+        if profile {
+            add_counter(&PROFILE.generated_unique, unique.len() as u64);
+        }
+        let prune_start = Instant::now();
+        unique.sort_by(|a, b| b.acc.cmp(&a.acc));
         let keepb = keep_line.map(|keep| keep[t]);
-        let mut seen = FxSet::with_capacity_and_hasher(children.len(), Default::default());
         let mut pruned = Vec::with_capacity(beam_width);
         let mut kept = false;
-        for &ci in &idx {
-            let rows = children[ci].rows;
-            if !seen.insert(rows) {
-                continue;
-            }
+        for child in &unique {
+            let rows = child.rows;
             if Some(rows) == keepb {
                 kept = true;
             }
-            pruned.push(children[ci].clone());
+            pruned.push(child.clone());
             if pruned.len() >= beam_width {
                 break;
             }
         }
         if let Some(kb) = keepb {
             if !kept {
-                for &ci in &idx {
-                    if children[ci].rows == kb {
-                        pruned.push(children[ci].clone());
+                for child in &unique {
+                    if child.rows == kb {
+                        pruned.push(child.clone());
                         break;
                     }
                 }
             }
         }
         beam = pruned;
+        if profile {
+            add_counter(&PROFILE.prune_ns, elapsed_ns(prune_start));
+        }
     }
     beam.iter().map(|node| node.acc).max().unwrap_or(0) as f64
 }
 
-fn feat_attack(rows: &[u16; 40], gmask: &[u16; 40], pieces: [i8; K], b2b: i32, combo: i32, pending: i32, mult: f64) -> f64 {
-    if pieces.iter().any(|&p| p < 0) {
+fn feat_attack(rows: &[u16; 40], gmask: &[u16; 40], pieces: &[i8], k: usize, b2b: i32, combo: i32, pending: i32, mult: f64, beam_feat: usize, profile: bool) -> f64 {
+    if pieces.len() < k || pieces.iter().any(|&p| p < 0) {
         return 0.0;
     }
-    beam_best(rows, gmask, &pieces, b2b.max(0), combo.max(0), pending.max(0), None, &[mult; K], None, None, BEAM_FEAT)
+    let pieces = &pieces[..k];
+    let multipliers = vec![mult; pieces.len()];
+    beam_best(rows, gmask, pieces, b2b.max(0), combo.max(0), pending.max(0), None, &multipliers, None, None, beam_feat, profile)
 }
 
 fn height_holes(rows: &[u16; 40]) -> (u32, u32) {
@@ -529,8 +632,8 @@ fn height_holes(rows: &[u16; 40]) -> (u32, u32) {
         }
         if top >= 0 {
             max_h = max_h.max(top as u32 + 1);
-            for y in 0..top as usize {
-                if rows[y] & (1u16 << x) == 0 {
+            for row in rows.iter().take(top as usize) {
+                if *row & (1u16 << x) == 0 {
                     holes += 1;
                 }
             }
@@ -544,30 +647,31 @@ fn put_f32(out: &mut [u8; STRIDE_BYTES], off: &mut usize, value: f32) {
     *off += 4;
 }
 
-fn label_record(ctx: &ContextRec) -> [u8; STRIDE_BYTES] {
+fn label_record(ctx: &ContextRec, cfg: &LabelConfig) -> [u8; STRIDE_BYTES] {
     let rec = &ctx.frames[0];
-    let pieces = [ctx.frames[0].piece, ctx.frames[1].piece, ctx.frames[2].piece, ctx.frames[3].piece, ctx.frames[4].piece];
-    let multipliers = [ctx.frames[0].mult, ctx.frames[1].mult, ctx.frames[2].mult, ctx.frames[3].mult, ctx.frames[4].mult];
+    let pieces: Vec<i8> = ctx.frames.iter().take(cfg.k).map(|frame| frame.piece).collect();
+    let multipliers: Vec<f64> = ctx.frames.iter().take(cfg.k).map(|frame| frame.mult).collect();
     let recon = reconstruct(&ctx.frames);
     let matched = if recon.is_some() { 1.0 } else { 0.0 };
-    let player_atk = recon.as_ref().map(|r| r.0).unwrap_or_else(|| ctx.frames[..K].iter().map(|f| f.atk).sum());
+    let player_atk = recon.as_ref().map(|r| r.0).unwrap_or_else(|| ctx.frames[..cfg.k].iter().map(|f| f.atk).sum());
     let best = if let Some((_, garbage_counts, garbage_rows)) = &recon {
-        let keep = [ctx.frames[1].rows, ctx.frames[2].rows, ctx.frames[3].rows, ctx.frames[4].rows, ctx.frames[5].rows];
-        beam_best(&rec.rows, &rec.gmask, &pieces, rec.b2b, rec.combo, rec.pending, Some(&keep), &multipliers, Some(garbage_counts), Some(garbage_rows), BEAM)
+        let keep: Vec<[u16; 40]> = ctx.frames.iter().skip(1).take(cfg.k).map(|frame| frame.rows).collect();
+        beam_best(&rec.rows, &rec.gmask, &pieces, rec.b2b, rec.combo, rec.pending, Some(&keep), &multipliers, Some(garbage_counts), Some(garbage_rows), cfg.beam, cfg.profile)
     } else {
-        beam_best(&rec.rows, &rec.gmask, &pieces, rec.b2b, rec.combo, rec.pending, None, &[rec.mult; K], None, None, BEAM)
+        let fallback_multipliers = vec![rec.mult; cfg.k];
+        beam_best(&rec.rows, &rec.gmask, &pieces, rec.b2b, rec.combo, rec.pending, None, &fallback_multipliers, None, None, cfg.beam, cfg.profile)
     };
     let my_pieces = [rec.piece, rec.queue[0], rec.queue[1], rec.queue[2], rec.queue[3]];
     let opp_pieces = [ctx.opp_piece, ctx.opp_queue[0], ctx.opp_queue[1], ctx.opp_queue[2], ctx.opp_queue[3]];
-    let my_best = feat_attack(&rec.rows, &rec.gmask, my_pieces, rec.b2b, rec.combo, rec.pending, rec.mult).max(0.0);
-    let opp_best = feat_attack(&ctx.opp_rows, &ctx.opp_gmask, opp_pieces, ctx.opp_b2b, ctx.opp_combo, ctx.opp_pending, ctx.opp_mult).max(0.0);
+    let my_best = feat_attack(&rec.rows, &rec.gmask, &my_pieces, cfg.k, rec.b2b, rec.combo, rec.pending, rec.mult, cfg.beam_feat, cfg.profile).max(0.0);
+    let opp_best = feat_attack(&ctx.opp_rows, &ctx.opp_gmask, &opp_pieces, cfg.k, ctx.opp_b2b, ctx.opp_combo, ctx.opp_pending, ctx.opp_mult, cfg.beam_feat, cfg.profile).max(0.0);
     let (oh, ohl) = height_holes(&ctx.opp_rows);
 
     let mut out = [0u8; STRIDE_BYTES];
     let mut off = 0;
-    for y in 0..40 {
+    for row in &rec.rows {
         for x in 0..10 {
-            put_f32(&mut out, &mut off, if rec.rows[y] & (1u16 << x) != 0 { 1.0 } else { 0.0 });
+            put_f32(&mut out, &mut off, if *row & (1u16 << x) != 0 { 1.0 } else { 0.0 });
         }
     }
     for p in 0..7 {
@@ -576,9 +680,9 @@ fn label_record(ctx: &ContextRec) -> [u8; STRIDE_BYTES] {
     for p in 0..7 {
         put_f32(&mut out, &mut off, if rec.hold == p { 1.0 } else { 0.0 });
     }
-    for q in 0..5 {
+    for queued in &rec.queue {
         for p in 0..7 {
-            put_f32(&mut out, &mut off, if rec.queue[q] == p { 1.0 } else { 0.0 });
+            put_f32(&mut out, &mut off, if *queued == p { 1.0 } else { 0.0 });
         }
     }
     put_f32(&mut out, &mut off, rec.b2b.max(0) as f32);
@@ -610,14 +714,22 @@ fn read_input() -> io::Result<Vec<u8>> {
     Ok(input)
 }
 
-fn main() -> io::Result<()> {
-    let input = read_input()?;
-    if input.len() % RECORD_BYTES != 0 {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, format!("input size {} is not a multiple of {RECORD_BYTES}", input.len())));
+fn validate_input_size(len: usize, cfg: &LabelConfig) -> io::Result<()> {
+    let record_bytes = cfg.record_bytes();
+    if len % record_bytes != 0 {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, format!("input size {len} is not a multiple of {record_bytes}")));
     }
+    Ok(())
+}
+
+fn main() -> io::Result<()> {
+    let cfg = LabelConfig::from_env()?;
+    let input = read_input()?;
+    validate_input_size(input.len(), &cfg)?;
     let bench = env::var_os("LABEL_OPP_BENCH").is_some();
     let t0 = Instant::now();
-    let records: Vec<[u8; STRIDE_BYTES]> = input.par_chunks_exact(RECORD_BYTES).map(|chunk| label_record(&parse_context(chunk))).collect();
+    let record_bytes = cfg.record_bytes();
+    let records: Vec<[u8; STRIDE_BYTES]> = input.par_chunks_exact(record_bytes).map(|chunk| label_record(&parse_context(chunk, &cfg), &cfg)).collect();
     let mut stdout = io::stdout().lock();
     for record in &records {
         stdout.write_all(record)?;
@@ -625,6 +737,18 @@ fn main() -> io::Result<()> {
     if bench {
         let dt = t0.elapsed().as_secs_f64();
         eprintln!("label_opp records={} samples/s={:.2}", records.len(), records.len() as f64 / dt);
+    }
+    if cfg.profile {
+        eprintln!(
+            "label_opp_profile beam_calls={} beam_nodes={} moves={} unique={} generate_ms={:.3} score_ms={:.3} prune_ms={:.3}",
+            PROFILE.beam_calls.load(Ordering::Relaxed),
+            PROFILE.beam_nodes.load(Ordering::Relaxed),
+            PROFILE.moves.load(Ordering::Relaxed),
+            PROFILE.generated_unique.load(Ordering::Relaxed),
+            PROFILE.generate_ns.load(Ordering::Relaxed) as f64 / 1_000_000.0,
+            PROFILE.score_ns.load(Ordering::Relaxed) as f64 / 1_000_000.0,
+            PROFILE.prune_ns.load(Ordering::Relaxed) as f64 / 1_000_000.0,
+        );
     }
     Ok(())
 }
@@ -635,7 +759,14 @@ mod tests {
 
     #[test]
     fn context_record_size_matches_emitter_schema() {
-        assert_eq!(RECORD_BYTES, 1360);
+        assert_eq!(LabelConfig::new(5, 300, 150).record_bytes(), 1360);
+        assert_eq!(STRIDE_BYTES, 1856);
+    }
+
+    #[test]
+    fn k7_context_record_size_matches_emitter_schema() {
+        let cfg = LabelConfig::new(7, 500, 150);
+        assert_eq!(cfg.record_bytes(), 1750);
         assert_eq!(STRIDE_BYTES, 1856);
     }
 
@@ -651,9 +782,35 @@ mod tests {
         ctx.opp_piece = 0;
         ctx.opp_queue = [1, 2, 3, 4, 5];
         ctx.opp_mult = 1.0;
-        let out = label_record(&ctx);
+        let out = label_record(&ctx, &LabelConfig::new(5, 300, 150));
         assert_eq!(out.len(), STRIDE_BYTES);
         let piece0 = f32::from_le_bytes(out[400 * 4..401 * 4].try_into().unwrap());
         assert_eq!(piece0, 1.0);
+    }
+
+    #[test]
+    fn k7_empty_context_labels_have_expected_static_features() {
+        let cfg = LabelConfig::new(7, 500, 150);
+        let mut ctx = ContextRec::with_horizon(cfg.k);
+        for frame in &mut ctx.frames {
+            frame.piece = 0;
+            frame.hold = 1;
+            frame.queue = [2, 3, 4, 5, 6];
+            frame.mult = 1.0;
+        }
+        ctx.opp_piece = 0;
+        ctx.opp_queue = [1, 2, 3, 4, 5];
+        ctx.opp_mult = 1.0;
+        let out = label_record(&ctx, &cfg);
+        assert_eq!(out.len(), STRIDE_BYTES);
+        let piece0 = f32::from_le_bytes(out[400 * 4..401 * 4].try_into().unwrap());
+        assert_eq!(piece0, 1.0);
+    }
+
+    #[test]
+    fn input_size_validation_uses_configured_horizon() {
+        let cfg = LabelConfig::new(7, 500, 150);
+        let err = validate_input_size(cfg.record_bytes() - 1, &cfg).unwrap_err();
+        assert!(err.to_string().contains("1750"));
     }
 }

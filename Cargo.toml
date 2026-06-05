@@ -7,6 +7,10 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [[bin]]
+name = "bench_beam"
+path = "src/bin/bench_beam.rs"
+
+[[bin]]
 name = "perft_cli"
 path = "src/bin/perft_cli.rs"
 
@@ -34,10 +38,26 @@ path = "src/bin/generate_policy_value_labels.rs"
 name = "policy_value_runtime_parity_fixture"
 path = "src/bin/policy_value_runtime_parity_fixture.rs"
 
+[[bin]]
+name = "policy_value_infer_bench"
+path = "src/bin/policy_value_infer_bench.rs"
+
+[[bin]]
+name = "bench_search_throughput"
+path = "src/bin/bench_search_throughput.rs"
+
 [features]
 default = ["rayon"]
 rayon = ["dep:rayon"]
 wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:console_error_panic_hook"]
+# Opt-in beam-search order-independence (Option D). Off by default and absent
+# from the wasm build so shipped behaviour matches the deployed scalar-BFS order.
+deterministic_beam_tiebreak = []
+# Opt-in packed-movegen fast path + its canonical Move::raw() emission order.
+# Off by default and not enabled by the wasm feature because its enumeration
+# order degrades beam coaching quality (REJECTED on the net>=0 bar); the default
+# build stays on the deployed pure-engine BFS-worklist order.
+packed_movegen = []
 
 [dependencies]
 rayon = { version = "1.10", optional = true }

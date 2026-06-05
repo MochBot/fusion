@@ -105,10 +105,8 @@ mod native {
     use tract_onnx::prelude::*;
 
     use crate::board::Board;
-    use crate::header::{Move, Piece};
+    use crate::header::Move;
     use crate::state::GameState;
-
-    pub use super::{CANDIDATE_CAPACITY, MOVE_FEATURE_DIM, TOTAL_FEATURES};
 
     #[derive(Clone, Debug, serde::Deserialize)]
     pub struct PolicyValueRuntimeManifest {
@@ -256,7 +254,9 @@ mod native {
 
     #[cfg(test)]
     mod tests {
+        use super::super::{CANDIDATE_CAPACITY, MOVE_FEATURE_DIM, TOTAL_FEATURES};
         use super::*;
+        use crate::header::Piece;
 
         #[test]
         fn candidate_feature_shape_matches_contract() {
@@ -282,21 +282,6 @@ mod native {
     use crate::board::Board;
     use crate::header::Move;
     use crate::state::GameState;
-
-    #[derive(Clone, Debug, serde::Deserialize)]
-    pub struct PolicyValueRuntimeManifest {
-        pub schema_version: String,
-        pub format: String,
-        pub model_path: String,
-        pub state_feature_dim: usize,
-        pub move_feature_dim: usize,
-        pub policy_output: String,
-        pub value_output: String,
-        pub policy_head_type: String,
-        pub move_id_contract: String,
-        pub candidate_capacity: usize,
-        pub shared_input_contract: String,
-    }
 
     pub struct PolicyValueRuntime;
 

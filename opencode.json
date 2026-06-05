@@ -1,0 +1,11 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "cocoindex-code": {
+      "type": "local",
+      "command": ["/Users/li8591/.config/opencode/scripts/ccc-mcp-safe.py"],
+      "enabled": true,
+      "timeout": 120000
+    }
+  }
+}

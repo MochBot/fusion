@@ -247,6 +247,7 @@ impl CollisionMap {
         CollisionMap { board }
     }
 
+    #[inline(always)]
     pub(crate) fn get(&self, x: usize, r: Rotation) -> Bitboard {
         self.board[x][r as usize]
     }
@@ -294,6 +295,7 @@ impl CollisionMap16 {
         CollisionMap16 { board }
     }
 
+    #[inline(always)]
     pub(crate) fn get(&self, x: usize) -> Bitboard {
         self.board[x]
     }

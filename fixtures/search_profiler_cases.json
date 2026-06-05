@@ -1,0 +1,146 @@
+[
+  {
+    "schema_version": "search-profiler-fixture-v1",
+    "source": "mosaic-fusion-testing/src/test/full-golden-report.ts",
+    "case_id": "golden-replay-opening-t-1164",
+    "replay_id": "golden-fixture-sample.ttrm",
+    "round": 1,
+    "player": "player1",
+    "name": "golden_replay_opening_t",
+    "current": "T",
+    "hold": "I",
+    "queue": ["O", "L", "J", "S", "Z"],
+    "board_rows": [
+      [0, 1015],
+      [1, 1007],
+      [2, 991],
+      [3, 767]
+    ],
+    "opponent_rows": [
+      [0, 15],
+      [1, 31]
+    ],
+    "b2b": 2,
+    "combo": 1,
+    "pending_garbage": 3,
+    "lines_total": 18,
+    "bag_number": 4,
+    "pieces_into_bag": 3,
+    "expected": {
+      "lock_frame": 1164,
+      "best_move_raw": 452
+    }
+  },
+  {
+    "schema_version": "search-profiler-fixture-v1",
+    "source": "mosaic-fusion-testing/src/test/full-golden-report.ts",
+    "case_id": "golden-replay-low-l-0912",
+    "replay_id": "golden-fixture-sample.ttrm",
+    "round": 1,
+    "player": "player1",
+    "name": "golden_replay_low_l",
+    "current": "L",
+    "hold": null,
+    "queue": ["J", "O", "I", "S", "T", "Z"],
+    "board_rows": [
+      [0, 959],
+      [1, 895],
+      [2, 1007],
+      [3, 511]
+    ],
+    "opponent_rows": [
+      [0, 63]
+    ],
+    "b2b": 0,
+    "combo": 0,
+    "pending_garbage": 1,
+    "lines_total": 10,
+    "bag_number": 3,
+    "pieces_into_bag": 1,
+    "expected": {
+      "lock_frame": 912,
+      "best_move_raw": 20996
+    }
+  },
+  {
+    "schema_version": "search-profiler-fixture-v1",
+    "source": "mosaic-fusion-testing/src/test/full-golden-report.ts",
+    "case_id": "golden-replay-high-j-1848",
+    "replay_id": "golden-fixture-sample.ttrm",
+    "round": 2,
+    "player": "player1",
+    "name": "golden_replay_high_j",
+    "current": "J",
+    "hold": "O",
+    "queue": ["L", "I", "S", "Z", "T"],
+    "board_rows": [
+      [0, 1015],
+      [1, 1007],
+      [2, 991],
+      [3, 959],
+      [4, 895],
+      [5, 767],
+      [6, 1015],
+      [7, 1007],
+      [8, 991],
+      [9, 959],
+      [10, 895],
+      [11, 767],
+      [12, 1015],
+      [13, 1007],
+      [14, 991],
+      [15, 959],
+      [16, 895],
+      [17, 767],
+      [18, 511],
+      [19, 255]
+    ],
+    "opponent_rows": [
+      [0, 127],
+      [1, 255],
+      [2, 511]
+    ],
+    "b2b": 4,
+    "combo": 2,
+    "pending_garbage": 6,
+    "lines_total": 52,
+    "bag_number": 8,
+    "pieces_into_bag": 5,
+    "expected": {
+      "lock_frame": 1848,
+      "best_move_raw": 29268
+    }
+  },
+  {
+    "schema_version": "search-profiler-fixture-v1",
+    "source": "mosaic-fusion-testing/src/test/full-golden-report.ts",
+    "case_id": "golden-replay-flat-o-2036",
+    "replay_id": "golden-fixture-sample.ttrm",
+    "round": 2,
+    "player": "player2",
+    "name": "golden_replay_flat_o",
+    "current": "O",
+    "hold": null,
+    "queue": ["T", "I", "L", "J", "S", "Z"],
+    "board_rows": [
+      [0, 975],
+      [1, 975],
+      [2, 831],
+      [3, 831],
+      [4, 255]
+    ],
+    "opponent_rows": [
+      [0, 3]
+    ],
+    "b2b": 1,
+    "combo": 0,
+    "pending_garbage": 0,
+    "lines_total": 24,
+    "bag_number": 5,
+    "pieces_into_bag": 2,
+    "expected": {
+      "lock_frame": 2036,
+      "best_move_raw": 10246
+    }
+  }
+]

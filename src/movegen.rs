@@ -948,12 +948,33 @@ pub fn move_reachable(b: &Board, m: &Move, force: bool) -> bool {
         && !crate::pathfinder::get_input(b, m, false, force).data.is_empty()
 }
 
+pub(crate) const PACKED_OLJ_MAX_HEIGHT: usize = 22;
+
 pub fn generate_playable(b: &Board, moves: &mut MoveBuffer, p: Piece, force: bool) {
     generate(b, moves, p, force);
     if !needs_reachability_filter(b) {
         return;
     }
-    moves.retain(|m| b.legal_lock_placement(m) && move_reachable(b, m, force));
+    // Packed whole-board reachability is byte-exact vs the scalar BFS for O/L/J up
+    // to PACKED_OLJ_MAX_HEIGHT (proven in packed_oljfilter_matches_scalar_generate_playable);
+    // it diverges above that and for I/T/S/Z, which keep the exact scalar BFS.
+    if matches!(p, Piece::O | Piece::L | Piece::J)
+        && (b.height() as usize) <= PACKED_OLJ_MAX_HEIGHT
+    {
+        let rows30: &[u16; crate::reach_packed::PH] =
+            b.rows[..crate::reach_packed::PH].try_into().unwrap();
+        let mut packed = MoveBuffer::new();
+        crate::reach_packed::generate_packed_with_force(rows30, p, force, &mut packed);
+        packed.sort_by_raw();
+        let praws = packed.as_slice();
+        moves.retain(|m| {
+            b.legal_lock_placement(m)
+                && praws.binary_search_by(|x| x.raw().cmp(&m.raw())).is_ok()
+        });
+        return;
+    }
+    let reach = crate::pathfinder::reachable_locks(b, p, force);
+    moves.retain(|m| b.legal_lock_placement(m) && reach.move_reachable(m));
 }
 
 /// GPU-parity hook (non-production): internal collision map board[x][r] as y-bitsets.
@@ -1877,5 +1898,287 @@ mod tests {
                 assert_eq!(got, want, "hybrid != engine at h={h} p={p:?}");
             }
         }
+    }
+
+    #[test]
+    fn reachable_locks_matches_move_reachable_on_holed_boards() {
+        fn xs(s: &mut u64) -> u64 {
+            let mut x = *s;
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            *s = x;
+            x
+        }
+        let mut st = 0xDEAD_BEEF_1234_5678u64;
+        let pieces = [
+            Piece::I,
+            Piece::O,
+            Piece::T,
+            Piece::L,
+            Piece::J,
+            Piece::S,
+            Piece::Z,
+        ];
+        let mut checks = 0u64;
+        let mut holed = 0u64;
+        for _ in 0..3000 {
+            let h = 3 + (xs(&mut st) % 14) as usize;
+            let mut rows = vec![0u16; h];
+            for r in rows.iter_mut() {
+                *r = (xs(&mut st) as u16) & 0x3FF;
+            }
+            if let Some(l) = rows.last_mut() {
+                if *l == 0 {
+                    *l = 1u16 << (xs(&mut st) % 10);
+                }
+            }
+            let b = board_from_rows(&rows);
+            if !needs_reachability_filter(&b) {
+                continue;
+            }
+            holed += 1;
+            for &p in &pieces {
+                for force in [false, true] {
+                    let reach = crate::pathfinder::reachable_locks(&b, p, force);
+                    let mut gen = MoveBuffer::new();
+                    generate(&b, &mut gen, p, force);
+                    for m in gen.iter() {
+                        checks += 1;
+                        let want = move_reachable(&b, m, force);
+                        let got = reach.move_reachable(m);
+                        assert_eq!(
+                            got, want,
+                            "reach!=oracle p={p:?} force={force} m=({},{},{:?},{:?}) rows={rows:?}",
+                            m.x(),
+                            m.y(),
+                            m.rotation(),
+                            m.spin()
+                        );
+                    }
+                }
+            }
+        }
+        assert!(
+            holed > 100 && checks > 1000,
+            "insufficient coverage holed={holed} checks={checks}"
+        );
+    }
+
+    fn legacy_playable(b: &Board, p: Piece, force: bool) -> Vec<u16> {
+        let mut moves = MoveBuffer::new();
+        generate(b, &mut moves, p, force);
+        if needs_reachability_filter(b) {
+            moves.retain(|m| b.legal_lock_placement(m) && move_reachable(b, m, force));
+        }
+        moves.as_slice().iter().map(|m| m.raw()).collect()
+    }
+
+    #[test]
+    fn generate_playable_matches_legacy_per_move_filter() {
+        fn xs(s: &mut u64) -> u64 {
+            let mut x = *s;
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            *s = x;
+            x
+        }
+        let mut st = 0x0F1E_2D3C_4B5A_6978u64;
+        let pieces = [
+            Piece::I,
+            Piece::O,
+            Piece::T,
+            Piece::L,
+            Piece::J,
+            Piece::S,
+            Piece::Z,
+        ];
+        let mut holed = 0u64;
+        for _ in 0..800 {
+            let h = 3 + (xs(&mut st) % 14) as usize;
+            let mut rows = vec![0u16; h];
+            for r in rows.iter_mut() {
+                *r = (xs(&mut st) as u16) & 0x3FF;
+            }
+            if let Some(l) = rows.last_mut() {
+                if *l == 0 {
+                    *l = 1u16 << (xs(&mut st) % 10);
+                }
+            }
+            let b = board_from_rows(&rows);
+            if !needs_reachability_filter(&b) {
+                continue;
+            }
+            holed += 1;
+            for &p in &pieces {
+                for force in [false, true] {
+                    let mut pb = MoveBuffer::new();
+                    generate_playable(&b, &mut pb, p, force);
+                    let got: Vec<u16> = pb.as_slice().iter().map(|m| m.raw()).collect();
+                    let want = legacy_playable(&b, p, force);
+                    assert_eq!(
+                        got, want,
+                        "generate_playable != legacy filter p={p:?} force={force} rows={rows:?}"
+                    );
+                }
+            }
+        }
+        assert!(holed > 50, "insufficient holed coverage {holed}");
+    }
+
+    #[test]
+    fn packed_oljfilter_matches_scalar_generate_playable() {
+        fn xs(s: &mut u64) -> u64 {
+            let mut x = *s;
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            *s = x;
+            x
+        }
+        let mut st = 0xC0FF_EE13_3700_1234u64;
+        let pieces = [Piece::O, Piece::L, Piece::J];
+        let mut per_height_holed = [0u64; 64];
+        let mut per_height_mismatch = [0u64; 64];
+        let mut first: Option<String> = None;
+        for _ in 0..6000 {
+            let h = 3 + (xs(&mut st) % 24) as usize;
+            let mut rows = vec![0u16; h];
+            for r in rows.iter_mut() {
+                *r = (xs(&mut st) as u16) & 0x3FF;
+            }
+            if let Some(l) = rows.last_mut() {
+                if *l == 0 {
+                    *l = 1u16 << (xs(&mut st) % 10);
+                }
+            }
+            let b = board_from_rows(&rows);
+            if !needs_reachability_filter(&b) {
+                continue;
+            }
+            if b.height() as usize > PACKED_OLJ_MAX_HEIGHT {
+                continue;
+            }
+            per_height_holed[h] += 1;
+            let rows30: &[u16; crate::reach_packed::PH] =
+                b.rows[..crate::reach_packed::PH].try_into().unwrap();
+            for &p in &pieces {
+                for force in [false, true] {
+                    let mut sb = MoveBuffer::new();
+                    generate_playable(&b, &mut sb, p, force);
+                    let scalar: Vec<u16> = sb.as_slice().iter().map(|m| m.raw()).collect();
+
+                    let mut pk = MoveBuffer::new();
+                    crate::reach_packed::generate_packed_with_force(rows30, p, force, &mut pk);
+                    let mut pset: Vec<u16> = pk.as_slice().iter().map(|m| m.raw()).collect();
+                    pset.sort_unstable();
+                    pset.dedup();
+                    let mut hb = MoveBuffer::new();
+                    generate(&b, &mut hb, p, force);
+                    hb.retain(|m| b.legal_lock_placement(m) && pset.binary_search(&m.raw()).is_ok());
+                    let hybrid: Vec<u16> = hb.as_slice().iter().map(|m| m.raw()).collect();
+
+                    if hybrid != scalar {
+                        per_height_mismatch[h] += 1;
+                        if first.is_none() {
+                            first = Some(format!("h={h} p={p:?} force={force} rows={rows:?}"));
+                        }
+                    }
+                }
+            }
+        }
+        let total: u64 = per_height_mismatch.iter().sum();
+        let maxh = (0..64).rev().find(|&h| per_height_holed[h] > 0).unwrap_or(0);
+        eprintln!("OLJ packed parity: max_holed_height={maxh} total_mismatch={total}");
+        for h in 0..=maxh {
+            if per_height_mismatch[h] > 0 {
+                eprintln!("  height {h}: {} mismatches / {} holed", per_height_mismatch[h], per_height_holed[h]);
+            }
+        }
+        if let Some(f) = &first {
+            eprintln!("  first: {f}");
+        }
+        assert_eq!(total, 0, "packed OLJ filter diverges from scalar (see per-height above)");
+    }
+
+    /// Real-distribution parity: decode boards from an actual production `.ctx`
+    /// shard (path via env `LABEL_OPP_REAL_CTX`) and assert the hybrid
+    /// `generate_playable` is byte-identical to the legacy per-move pathfinder
+    /// filter on every real board. Hermetic skip when the env is absent.
+    #[test]
+    fn generate_playable_matches_legacy_on_real_contexts() {
+        let path = match std::env::var("LABEL_OPP_REAL_CTX") {
+            Ok(p) => p,
+            Err(_) => return,
+        };
+        // K=7 context record layout: FRAME_BYTES=195 per frame, (K+1)=8 frames.
+        const FRAME_BYTES: usize = 195;
+        const REC: usize = 1750;
+        const NFRAMES: usize = 8;
+        let data = std::fs::read(&path).expect("read real ctx sample");
+        let nrec = data.len() / REC;
+        assert!(nrec > 0, "no records in {path} (len={})", data.len());
+        let pieces = [
+            Piece::I,
+            Piece::O,
+            Piece::T,
+            Piece::L,
+            Piece::J,
+            Piece::S,
+            Piece::Z,
+        ];
+        let max_rec = nrec.min(30_000);
+        let mut holed = 0u64;
+        let mut checks = 0u64;
+        let mut olj_le22 = 0u64;
+        for i in 0..max_rec {
+            let rec = &data[i * REC..(i + 1) * REC];
+            for f in 0..NFRAMES {
+                let off = f * FRAME_BYTES;
+                let mut rows = [0u16; 40];
+                for (y, r) in rows.iter_mut().enumerate() {
+                    let lo = rec[off + y * 2] as u16;
+                    let hi = rec[off + y * 2 + 1] as u16;
+                    *r = (lo | (hi << 8)) & 0x03FF;
+                }
+                let h = (0..40).rev().find(|&y| rows[y] != 0).map(|y| y + 1);
+                let h = match h {
+                    Some(h) => h,
+                    None => continue,
+                };
+                let rowsv = rows[..h].to_vec();
+                let b = board_from_rows(&rowsv);
+                if !needs_reachability_filter(&b) {
+                    continue;
+                }
+                holed += 1;
+                let height = b.height() as usize;
+                for &p in &pieces {
+                    if matches!(p, Piece::O | Piece::L | Piece::J) && height <= PACKED_OLJ_MAX_HEIGHT
+                    {
+                        olj_le22 += 1;
+                    }
+                    for force in [false, true] {
+                        let mut pb = MoveBuffer::new();
+                        generate_playable(&b, &mut pb, p, force);
+                        let got: Vec<u16> = pb.as_slice().iter().map(|m| m.raw()).collect();
+                        let want = legacy_playable(&b, p, force);
+                        checks += 1;
+                        assert_eq!(
+                            got, want,
+                            "real-ctx parity FAIL rec={i} frame={f} p={p:?} force={force} height={height} rows={rowsv:?}"
+                        );
+                    }
+                }
+            }
+        }
+        assert!(
+            holed > 100 && checks > 1000 && olj_le22 > 100,
+            "insufficient real coverage holed={holed} checks={checks} olj_le22={olj_le22}"
+        );
+        eprintln!(
+            "real-ctx parity OK records={max_rec} holed_boards={holed} checks={checks} olj_packed_path_boards={olj_le22}"
+        );
     }
 }

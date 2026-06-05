@@ -27,3 +27,35 @@ models/*/
 .env.*
 !.env.example
 !.env.test
+
+# CocoIndex AI tooling cache
+.cocoindex_code/
+
+# Generated training data artifacts (large; reproducible; not source)
+training/*.shards/
+training/triangle_*/
+training/training_data*
+training/*.launch.log*
+training/*.bak
+training/_backup/
+training/z_tier_collector.launch.log
+
+# Replay corpora (raw data; not source)
+data/replays*/
+
+# Local checkpoint runs (large; live on Modal volumes)
+modal_runs/
+
+# Generated fresh-corpus + smoke artifacts (reproducible data, not source)
+training/fresh_x_xplus*
+training/_smoke/
+
+training/_supp_slice/
+
+# Generated full-supplement corpus (bun-preprocessed, ~9.2M; reproducible data)
+training/supplement_full*
+training/training_data_triangle_v1_supplement*
+
+# Archived stale corpora (legacy phase-0 + superseded elite; see DATA_INVENTORY.md)
+training/_archive/
+data-legacy/
