@@ -297,18 +297,13 @@ pub fn calculate_attack_s2_tl_with_multiplier(
     }
 }
 
-/// Banked surge potential at a given B2B count: the surge attack that a
-/// non-difficult clear would release right now (and 0 below the charge
-/// threshold). Mirrors the `surge_event` term above so potential-shaped coaching
-/// value treats cashing surge as neutral and credits building it.
+/// Banked surge potential at a given B2B count: linear in B2B, so the pre-sequence
+/// B2B is already banked and building one more credits ~`garbage_multiplier` instead
+/// of a cliff jump at the charge threshold. At/above the threshold it equals the
+/// realized `surge_event` (cashing is neutral); below it the surge isn't cashable
+/// yet, so breaking the chain forfeits the banked progress.
 pub fn surge_potential(b2b: i32, garbage_multiplier: f64) -> i64 {
-    if b2b.saturating_add(1) > S2_TL_B2B_CHARGE_AT {
-        (((b2b - S2_TL_B2B_CHARGE_AT + S2_TL_B2B_CHARGE_BASE + 1) as f64 * garbage_multiplier)
-            .floor()
-            .max(0.0)) as i64
-    } else {
-        0
-    }
+    (b2b as f64 * garbage_multiplier).floor().max(0.0) as i64
 }
 
 /// Parameters for the extended attack calculation.
@@ -680,7 +675,9 @@ mod tests {
     }
 
     #[test]
-    fn test_surge_potential_pins_released_surge() {
+    fn test_surge_potential_pins_released_surge_at_threshold() {
+        // At/above the charge threshold the banked potential equals the surge a
+        // break would actually release, so cashing is exactly neutral.
         for n in [4, 5, 6, 7, 10, 15] {
             let released = calculate_attack_full(&AttackContext {
                 lines: 1,
@@ -698,9 +695,13 @@ mod tests {
                 "surge_potential({n}) must equal the released surge"
             );
         }
-        assert_eq!(surge_potential(3, 1.0), 0, "below charge threshold");
+        // Linear below the threshold: the pre-sequence B2B is banked progress, so
+        // building credits +1 per B2B (3->4 is +1, not a cliff jump).
+        assert_eq!(surge_potential(3, 1.0), 3);
+        assert_eq!(surge_potential(1, 1.0), 1);
+        assert_eq!(surge_potential(4, 1.0) - surge_potential(3, 1.0), 1, "no cliff at threshold");
         assert_eq!(surge_potential(0, 1.0), 0);
-        assert_eq!(surge_potential(-1, 1.0), 0, "b2b sentinel");
+        assert_eq!(surge_potential(-1, 1.0), 0, "b2b sentinel clamps to 0");
         assert_eq!(surge_potential(4, 2.0), 8, "multiplier scales potential");
     }
 
