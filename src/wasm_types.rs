@@ -171,7 +171,7 @@ pub(crate) fn coaching_to_contract(v: CoachingState) -> MachineDiagnosticsJson {
 // Serde JSON types for WASM serialization
 // ---------------------------------------------------------------------------
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub(crate) struct MoveResultJson {
     pub piece: u8,
     pub rotation: u8,

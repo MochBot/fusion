@@ -72,11 +72,15 @@ console_error_panic_hook = { version = "0.1", optional = true }
 tract-onnx = "0.21"
 
 [package.metadata.wasm-pack.profile.release]
-wasm-opt = false
+wasm-opt = ['-O3', '-all']
 
 [profile.release]
 opt-level = 3
 lto = true
 codegen-units = 1
-panic = "abort"
+# Unwind (not abort) so the WASM coaching entrypoints' std::panic::catch_unwind
+# guards actually catch a panic and return JsValue::NULL instead of trapping the
+# whole instance. An aborted panic poisons the instance and the next JsBoard.free()
+# throws "attempted to take ownership of Rust value while it was borrowed".
+panic = "unwind"
 strip = "symbols"

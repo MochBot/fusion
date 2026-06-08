@@ -1049,6 +1049,250 @@ fn beam_best_gm_impl(
     mx as f64
 }
 
+fn board_health_rows(rows: &[u16; 40]) -> (i32, i32) {
+    let mut height = 0i32;
+    let mut holes = 0i32;
+    for x in 0..10u16 {
+        let mut top: i32 = -1;
+        for y in (0..40usize).rev() {
+            if (rows[y] >> x) & 1 == 1 {
+                top = y as i32;
+                break;
+            }
+        }
+        if top < 0 {
+            continue;
+        }
+        if top + 1 > height {
+            height = top + 1;
+        }
+        for y in 0..top as usize {
+            if (rows[y] >> x) & 1 == 0 {
+                holes += 1;
+            }
+        }
+    }
+    (height, holes)
+}
+
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct LineStepJson {
+    rows: Vec<u16>,
+    attack: f64,
+    lines: u8,
+    b2b: i32,
+    combo: i32,
+    spin: u8,
+    b2b_before: i32,
+    combo_before: i32,
+    is_surge_release: bool,
+    surge_potential_delta: f64,
+    #[serde(rename = "move")]
+    mv: Option<MoveResultJson>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LineResultJson {
+    attack: f64,
+    selection_score: f64,
+    health_penalty: f64,
+    steps: Vec<LineStepJson>,
+    final_rows: Vec<u16>,
+}
+
+fn empty_line_result() -> LineResultJson {
+    LineResultJson {
+        attack: 0.0,
+        selection_score: 0.0,
+        health_penalty: 0.0,
+        steps: Vec::new(),
+        final_rows: Vec::new(),
+    }
+}
+
+struct LNode {
+    board: crate::board::Board,
+    gm: u64,
+    acc: f64,
+    sel: f64,
+    holes: i32,
+    b2b: i32,
+    combo: i32,
+    pending: i32,
+    steps: Vec<LineStepJson>,
+}
+
+// Step+wellness-emitting beam. Mirrors beam_best_gm_impl's exact per-child S2 attack
+// (surge-shaped) so with hole_w=height_w=0 the max accumulated attack is identical to
+// beam_best_gm_surge; adds board-wellness selection (selection_score = acc - penalty,
+// penalty vs the START board) and reconstructs the chosen line's per-step breakdown,
+// matching the TS s2BestLine contract so the live coaching path can call one Rust beam.
+#[wasm_bindgen(js_name = "beam_best_gm_line")]
+#[allow(clippy::too_many_arguments)]
+pub fn beam_best_gm_line_wasm(
+    start_board: &[u32],
+    start_gmask: &[u32],
+    pieces: &[u8],
+    b2b: i32,
+    combo: i32,
+    pending: i32,
+    beam_width: u32,
+    garbage_multiplier: f64,
+    hole_w: f64,
+    height_w: f64,
+    height_grace: f64,
+) -> JsValue {
+    if start_board.len() < 40 || start_gmask.len() < 40 {
+        return to_js(&empty_line_result());
+    }
+    let bw = beam_width as usize;
+    let wellness_on = hole_w != 0.0 || height_w != 0.0;
+
+    let mut rows0 = [0u64; 40];
+    for y in 0..40 {
+        rows0[y] = start_board[y] as u64;
+    }
+    let start_b = crate::wasm_board::board_from_row_bitmasks(&rows0);
+    let (start_height, start_holes) = board_health_rows(&start_b.rows);
+
+    let penalty_of = |height: i32, holes: i32| -> f64 {
+        if !wellness_on {
+            return 0.0;
+        }
+        hole_w * ((holes - start_holes).max(0) as f64)
+            + height_w * (((height - start_height) as f64 - height_grace).max(0.0))
+    };
+
+    let mut beam: Vec<LNode> = vec![LNode {
+        board: start_b,
+        gm: gm_bits_from_mask(start_gmask),
+        acc: 0.0,
+        sel: 0.0,
+        holes: start_holes,
+        b2b,
+        combo,
+        pending,
+        steps: Vec::new(),
+    }];
+
+    for t in 0..pieces.len() {
+        let p = match piece_from_external(pieces[t]) {
+            Some(p) => p,
+            None => break,
+        };
+        let mut order: Vec<LNode> = Vec::with_capacity(beam.len().saturating_mul(40));
+        let mut index: std::collections::HashMap<([u16; 40], i32, i32), usize> =
+            std::collections::HashMap::with_capacity(beam.len().saturating_mul(40));
+        for node in &beam {
+            let mut moves = MoveBuffer::new();
+            generate_playable(&node.board, &mut moves, p, false);
+            for m in moves.as_slice() {
+                let mut nb = node.board.clone();
+                nb.place(m);
+                let cleared = nb.line_clears();
+                let lines = cleared.count_ones() as u8;
+                if cleared != 0 {
+                    nb.clear_lines(cleared);
+                }
+                let spin_u8 = m.spin() as u8;
+                let garbage_cleared = (cleared & node.gm).count_ones() as u8;
+                let attack = calculate_attack_s2_tl_with_multiplier(
+                    lines,
+                    m.spin(),
+                    node.b2b,
+                    node.combo,
+                    nb.is_empty(),
+                    garbage_cleared,
+                    garbage_multiplier,
+                );
+                let mut child_gm = compact_gm_bits(node.gm, cleared);
+                if child_gm != 0 {
+                    child_gm &= nonempty_row_mask(&nb);
+                }
+                let surge_delta = crate::attack::surge_potential(attack.b2b_after as i32, garbage_multiplier)
+                    - crate::attack::surge_potential(node.b2b, garbage_multiplier);
+                let acc_new = node.acc + attack.attack as f64 + surge_delta as f64;
+                let (h_height, h_holes) = board_health_rows(&nb.rows);
+                let sel = acc_new - penalty_of(h_height, h_holes);
+                let key = (nb.rows, attack.b2b_after as i32, attack.combo_after as i32);
+                let existing = index.get(&key).copied();
+                if let Some(idx) = existing {
+                    if order[idx].sel >= sel {
+                        continue;
+                    }
+                }
+                let is_surge_release = lines >= 1 && lines < 4 && spin_u8 == 0 && node.b2b >= 4;
+                let mut steps = node.steps.clone();
+                steps.push(LineStepJson {
+                    rows: nb.rows.to_vec(),
+                    attack: attack.attack as f64,
+                    lines,
+                    b2b: attack.b2b_after as i32,
+                    combo: attack.combo_after as i32,
+                    spin: spin_u8,
+                    b2b_before: node.b2b,
+                    combo_before: node.combo,
+                    is_surge_release,
+                    surge_potential_delta: surge_delta as f64,
+                    mv: Some(MoveResultJson {
+                        piece: piece_to_external(m.piece()),
+                        rotation: m.rotation() as u8,
+                        x: m.x() as i8,
+                        y: m.y() as i8,
+                        score: 0.0,
+                        spin: spin_u8,
+                        hold_used: false,
+                    }),
+                });
+                let lnode = LNode {
+                    board: nb,
+                    gm: child_gm,
+                    acc: acc_new,
+                    sel,
+                    holes: h_holes,
+                    b2b: attack.b2b_after as i32,
+                    combo: attack.combo_after as i32,
+                    pending: (node.pending - lines as i32).max(0),
+                    steps,
+                };
+                match existing {
+                    Some(idx) => order[idx] = lnode,
+                    None => {
+                        index.insert(key, order.len());
+                        order.push(lnode);
+                    }
+                }
+            }
+        }
+        if order.is_empty() {
+            break;
+        }
+        let mut next: Vec<LNode> = order;
+        next.sort_by(|a, b| {
+            b.sel
+                .partial_cmp(&a.sel)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(b.acc.partial_cmp(&a.acc).unwrap_or(std::cmp::Ordering::Equal))
+                .then(a.holes.cmp(&b.holes))
+        });
+        next.truncate(bw);
+        beam = next;
+    }
+
+    match beam.into_iter().next() {
+        Some(best) => to_js(&LineResultJson {
+            attack: best.acc,
+            selection_score: best.sel,
+            health_penalty: best.acc - best.sel,
+            steps: best.steps,
+            final_rows: best.board.rows.to_vec(),
+        }),
+        None => to_js(&empty_line_result()),
+    }
+}
+
 /// Insert `garbage` rows at the bottom of a row/gmask pair, shifting the
 /// existing stack up. `garbage[0]` is the bottom-most inserted row. Cells
 /// pushed above row 39 are dropped. Returns the new (rows, gmask). All cells
