@@ -7,6 +7,7 @@ pub mod default_ruleset;
 pub mod eval;
 pub mod gen;
 pub mod header;
+pub mod label_kernel;
 pub mod move_buffer;
 pub mod move_encoding_ffi;
 pub mod movegen;
