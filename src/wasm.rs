@@ -1731,6 +1731,280 @@ mod tests {
         );
     }
 
+    // Timing probe for the live coaching beam shape (beam 300, K=5, surge shaping).
+    // Run manually: cargo test --release --features wasm beam_timing_probe -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn beam_timing_probe() {
+        let mut board = [0u32; 40];
+        let mut gmask = [0u32; 40];
+        for y in 0..6 {
+            board[y] = 0x03FFu32 & !(1u32 << 4);
+            gmask[y] = board[y];
+        }
+        board[6] = 0b0000110111;
+        board[7] = 0b0000100101;
+        let pieces = [0u8, 2, 1, 3, 5];
+
+        let mut sink = 0.0f64;
+        for _ in 0..3 {
+            sink += beam_best_gm_impl(&board, &gmask, &pieces, 1, 0, 0, &[], 300, 1.0, true);
+        }
+        let iters = 30u32;
+        let start = std::time::Instant::now();
+        for _ in 0..iters {
+            sink += beam_best_gm_impl(&board, &gmask, &pieces, 1, 0, 0, &[], 300, 1.0, true);
+        }
+        let per_call = start.elapsed().as_nanos() / iters as u128;
+        println!("beam_timing_probe ns_per_call={per_call} sink={sink}");
+    }
+
+    #[derive(Default)]
+    struct BeamPhaseStats {
+        generate_ns: u128,
+        needs_filter_ns: u128,
+        packed_ns: u128,
+        reachable_ns: u128,
+        retain_ns: u128,
+        clone_ns: u128,
+        place_clear_ns: u128,
+        attack_ns: u128,
+        child_misc_ns: u128,
+        sort_prune_ns: u128,
+        nodes: u64,
+        children: u64,
+        pathfinder_calls: u64,
+        packed_calls: u64,
+    }
+
+    #[test]
+    #[ignore]
+    fn beam_phase_timing_probe() {
+        use std::time::Instant;
+
+        struct BNode {
+            board: crate::board::Board,
+            gm: u64,
+            acc: i64,
+            b2b: i32,
+            combo: i32,
+            pending: i32,
+        }
+        struct Child {
+            board: crate::board::Board,
+            acc: i64,
+            b2b: i32,
+            combo: i32,
+            pending: i32,
+            gm: u64,
+        }
+
+        let mut board = [0u32; 40];
+        let mut gmask = [0u32; 40];
+        for y in 0..6 {
+            board[y] = 0x03FFu32 & !(1u32 << 4);
+            gmask[y] = board[y];
+        }
+        board[6] = 0b0000110111;
+        board[7] = 0b0000100101;
+        let pieces = [0u8, 2, 1, 3, 5];
+        let bw = 300usize;
+        let garbage_multiplier = 1.0;
+
+        let mut rows0 = [0u64; 40];
+        for y in 0..40 {
+            rows0[y] = board[y] as u64;
+        }
+        let mut beam: Vec<BNode> = vec![BNode {
+            board: crate::wasm_board::board_from_row_bitmasks(&rows0),
+            gm: gm_bits_from_mask(&gmask),
+            acc: 0,
+            b2b: 1,
+            combo: 0,
+            pending: 0,
+        }];
+        let mut children: Vec<Child> = Vec::new();
+        let mut idx: Vec<usize> = Vec::new();
+        let mut seen: FxRowSet = FxRowSet::default();
+        let mut seen_full: FxFullSet = FxFullSet::default();
+        let mut pruned: Vec<BNode> = Vec::with_capacity(bw);
+        let mut moves = MoveBuffer::new();
+        let mut stats = BeamPhaseStats::default();
+
+        for &piece in &pieces {
+            let p = piece_from_external(piece).expect("probe piece id is valid");
+            children.clear();
+            children.reserve(beam.len().saturating_mul(40));
+            for node in &beam {
+                stats.nodes += 1;
+                moves.clear();
+
+                let start = Instant::now();
+                generate(&node.board, &mut moves, p, false);
+                stats.generate_ns += start.elapsed().as_nanos();
+
+                let start = Instant::now();
+                let needs_filter = crate::movegen::needs_reachability_filter(&node.board);
+                stats.needs_filter_ns += start.elapsed().as_nanos();
+
+                if needs_filter {
+                    if matches!(p, Piece::O | Piece::L | Piece::J)
+                        && (node.board.height() as usize) <= crate::movegen::PACKED_OLJ_MAX_HEIGHT
+                    {
+                        let start = Instant::now();
+                        let rows30: &[u16; crate::reach_packed::PH] = node.board.rows
+                            [..crate::reach_packed::PH]
+                            .try_into()
+                            .unwrap();
+                        let mut packed = MoveBuffer::new();
+                        crate::reach_packed::generate_packed_with_force(
+                            rows30,
+                            p,
+                            false,
+                            &mut packed,
+                        );
+                        packed.sort_by_raw();
+                        stats.packed_ns += start.elapsed().as_nanos();
+
+                        let start = Instant::now();
+                        let praws = packed.as_slice();
+                        moves.retain(|m| {
+                            node.board.legal_lock_placement(m)
+                                && praws.binary_search_by(|x| x.raw().cmp(&m.raw())).is_ok()
+                        });
+                        stats.retain_ns += start.elapsed().as_nanos();
+                        stats.packed_calls += 1;
+                    } else {
+                        let start = Instant::now();
+                        let reach = crate::pathfinder::reachable_locks(&node.board, p, false);
+                        stats.reachable_ns += start.elapsed().as_nanos();
+
+                        let start = Instant::now();
+                        moves.retain(|m| {
+                            node.board.legal_lock_placement(m) && reach.move_reachable(m)
+                        });
+                        stats.retain_ns += start.elapsed().as_nanos();
+                        stats.pathfinder_calls += 1;
+                    }
+                }
+
+                for m in moves.as_slice() {
+                    let start = Instant::now();
+                    let mut nb = node.board.clone();
+                    stats.clone_ns += start.elapsed().as_nanos();
+
+                    let start = Instant::now();
+                    nb.place(m);
+                    let cleared = nb.line_clears();
+                    let lines = cleared.count_ones() as u8;
+                    if cleared != 0 {
+                        nb.clear_lines(cleared);
+                    }
+                    stats.place_clear_ns += start.elapsed().as_nanos();
+
+                    let start = Instant::now();
+                    let spin = m.spin();
+                    let garbage_cleared = (cleared & node.gm).count_ones() as u8;
+                    let attack = calculate_attack_s2_tl_with_multiplier(
+                        lines,
+                        spin,
+                        node.b2b,
+                        node.combo,
+                        nb.is_empty(),
+                        garbage_cleared,
+                        garbage_multiplier,
+                    );
+                    let shaped_delta =
+                        crate::attack::surge_potential(attack.b2b_after as i32, garbage_multiplier)
+                            - crate::attack::surge_potential(node.b2b, garbage_multiplier);
+                    stats.attack_ns += start.elapsed().as_nanos();
+
+                    let start = Instant::now();
+                    let mut child_gm = compact_gm_bits(node.gm, cleared);
+                    if child_gm != 0 {
+                        child_gm &= nonempty_row_mask(&nb);
+                    }
+                    children.push(Child {
+                        board: nb,
+                        acc: node.acc + attack.attack as i64 + shaped_delta,
+                        b2b: attack.b2b_after as i32,
+                        combo: attack.combo_after as i32,
+                        pending: (node.pending - lines as i32).max(0),
+                        gm: child_gm,
+                    });
+                    stats.child_misc_ns += start.elapsed().as_nanos();
+                    stats.children += 1;
+                }
+            }
+            if children.is_empty() {
+                break;
+            }
+
+            let start = Instant::now();
+            idx.clear();
+            idx.extend(0..children.len());
+            idx.sort_by(|&a, &b| children[b].acc.cmp(&children[a].acc));
+            seen.clear();
+            seen.reserve(children.len());
+            seen_full.clear();
+            seen_full.reserve(children.len());
+            pruned.clear();
+            pruned.reserve(bw);
+            for &ci in &idx {
+                let c = &children[ci];
+                let rows = c.board.rows;
+                if !seen_full.insert((rows, c.b2b, c.combo)) {
+                    continue;
+                }
+                pruned.push(BNode {
+                    board: c.board.clone(),
+                    gm: c.gm,
+                    acc: c.acc,
+                    b2b: c.b2b,
+                    combo: c.combo,
+                    pending: c.pending,
+                });
+                if pruned.len() >= bw {
+                    break;
+                }
+            }
+            stats.sort_prune_ns += start.elapsed().as_nanos();
+            std::mem::swap(&mut beam, &mut pruned);
+        }
+
+        let result = beam.iter().map(|node| node.acc).max().unwrap_or(0) as f64;
+        let total = stats.generate_ns
+            + stats.needs_filter_ns
+            + stats.packed_ns
+            + stats.reachable_ns
+            + stats.retain_ns
+            + stats.clone_ns
+            + stats.place_clear_ns
+            + stats.attack_ns
+            + stats.child_misc_ns
+            + stats.sort_prune_ns;
+        println!("beam_phase_timing_probe result={result} nodes={} children={} pathfinder_calls={} packed_calls={}", stats.nodes, stats.children, stats.pathfinder_calls, stats.packed_calls);
+        for (label, ns) in [
+            ("generate", stats.generate_ns),
+            ("needs_filter", stats.needs_filter_ns),
+            ("packed", stats.packed_ns),
+            ("reachable_locks", stats.reachable_ns),
+            ("retain", stats.retain_ns),
+            ("clone", stats.clone_ns),
+            ("place_clear", stats.place_clear_ns),
+            ("attack", stats.attack_ns),
+            ("child_misc", stats.child_misc_ns),
+            ("sort_prune", stats.sort_prune_ns),
+        ] {
+            let pct = if total == 0 {
+                0.0
+            } else {
+                ns as f64 * 100.0 / total as f64
+            };
+            println!("phase {label:>15}: {ns:>12} ns {pct:>6.2}%");
+        }
+    }
+
     #[test]
     fn test_apply_garbage_insert_shifts_up() {
         let mut rows = [0u64; 40];

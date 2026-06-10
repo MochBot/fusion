@@ -68,6 +68,7 @@ struct PathNode {
 
 // -- GhostMove --
 
+#[derive(Clone, Copy)]
 struct GhostMove {
     r: Rotation,
     x: i8,
@@ -153,7 +154,11 @@ fn get_input_inner(
             // Preserve the rotation's spin label only when the piece is already
             // resting (drop_y == y); a piece that falls further after rotating
             // locks as a no-spin, mirroring movegen's lock-row spin tagging.
-            let sc = if can_spin && drop_y == y { m.s as usize } else { 0 };
+            let sc = if can_spin && drop_y == y {
+                m.s as usize
+            } else {
+                0
+            };
             let _rc_idx = canonical_r(p, r) as usize;
 
             // check if this harddrop position == target
@@ -277,9 +282,11 @@ fn get_input_inner(
                         // Non-T allspin: 4-direction immobility check
                         let rt_c = canonical_r(p, rt);
                         let blocked_left = x1u == 0 || cm.get(x1u - 1, rt_c) & bb(y1) != 0;
-                        let blocked_right = x1u >= COL_NB - 1 || cm.get(x1u + 1, rt_c) & bb(y1) != 0;
+                        let blocked_right =
+                            x1u >= COL_NB - 1 || cm.get(x1u + 1, rt_c) & bb(y1) != 0;
                         let blocked_down = y1 <= 0 || cm.get(x1u, rt_c) & bb(y1 - 1) != 0;
-                        let blocked_up = y1 >= ROW_NB as i32 - 1 || cm.get(x1u, rt_c) & bb(y1 + 1) != 0;
+                        let blocked_up =
+                            y1 >= ROW_NB as i32 - 1 || cm.get(x1u, rt_c) & bb(y1 + 1) != 0;
                         if blocked_left && blocked_right && blocked_down && blocked_up {
                             s = SpinType::Mini;
                         }
@@ -465,8 +472,8 @@ impl ReachLocks {
 }
 
 thread_local! {
-    static RL_QUEUE: std::cell::RefCell<VecDeque<GhostMove>> =
-        std::cell::RefCell::new(VecDeque::with_capacity(256));
+    static RL_QUEUE: std::cell::RefCell<Vec<GhostMove>> =
+        std::cell::RefCell::new(Vec::with_capacity(256));
 }
 
 pub(crate) fn reachable_locks(board: &Board, p: Piece, force: bool) -> ReachLocks {
@@ -477,229 +484,542 @@ pub(crate) fn reachable_locks(board: &Board, p: Piece, force: bool) -> ReachLock
     let can_spin = is_t || is_allspin;
 
     RL_QUEUE.with(|qcell| {
-    let mut queue = qcell.borrow_mut();
-    queue.clear();
-    let mut searched = [[[0u64; ROTATION_NB]; COL_NB]; SPIN_NB];
-    let mut locks = [[[0u64; ROTATION_NB]; COL_NB]; SPIN_NB];
+        let mut queue = qcell.borrow_mut();
+        queue.clear();
+        let mut searched = [[[0u64; ROTATION_NB]; COL_NB]; SPIN_NB];
+        let mut locks = [[[0u64; ROTATION_NB]; COL_NB]; SPIN_NB];
 
-    let spawn_y = if force {
-        let blocked = cm.get(SPAWN_COL, Rotation::North);
-        let above_spawn = !bb_low(ACTIVE_RULES.spawn_row);
-        let valid = !blocked & above_spawn;
-        if valid == 0 {
-            return ReachLocks { piece: p, locks };
-        }
-        ctz(valid) as i8
-    } else {
-        if cm.get(SPAWN_COL, Rotation::North) & bb(ACTIVE_RULES.spawn_row) != 0 {
-            return ReachLocks { piece: p, locks };
-        }
-        ACTIVE_RULES.spawn_row as i8
-    };
+        let spawn_y = if force {
+            let blocked = cm.get(SPAWN_COL, Rotation::North);
+            let above_spawn = !bb_low(ACTIVE_RULES.spawn_row);
+            let valid = !blocked & above_spawn;
+            if valid == 0 {
+                return ReachLocks { piece: p, locks };
+            }
+            ctz(valid) as i8
+        } else {
+            if cm.get(SPAWN_COL, Rotation::North) & bb(ACTIVE_RULES.spawn_row) != 0 {
+                return ReachLocks { piece: p, locks };
+            }
+            ACTIVE_RULES.spawn_row as i8
+        };
 
-    searched[0][SPAWN_COL][Rotation::North as usize] |= bb(spawn_y as i32);
-    queue.push_back(GhostMove {
-        r: Rotation::North,
-        x: SPAWN_COL as i8,
-        y: spawn_y,
-        i: GhostMove::root_index(),
-        s: SpinType::NoSpin,
-    });
+        searched[0][SPAWN_COL][Rotation::North as usize] |= bb(spawn_y as i32);
+        queue.push(GhostMove {
+            r: Rotation::North,
+            x: SPAWN_COL as i8,
+            y: spawn_y,
+            i: GhostMove::root_index(),
+            s: SpinType::NoSpin,
+        });
 
-    while let Some(m) = queue.pop_front() {
-        let x = m.x as usize;
-        let r = m.r;
-        let y = m.y;
-        let rc = canonical_r(p, r);
+        let mut head = 0usize;
+        while head < queue.len() {
+            let m = queue[head];
+            head += 1;
+            let x = m.x as usize;
+            let r = m.r;
+            let y = m.y;
+            let rc = canonical_r(p, r);
 
-        let mut drop_y = y;
-        while drop_y > 0 && (cm.get(x, rc) & bb((drop_y - 1) as i32)) == 0 {
-            drop_y -= 1;
-        }
-        if drop_y >= 0 {
-            // Spin label survives only when the piece is already resting; a piece
-            // that falls further after rotating locks as no-spin (mirrors get_input).
-            let sc = if can_spin && drop_y == y { m.s as usize } else { 0 };
-            locks[sc][x][rc as usize] |= bb(drop_y as i32);
-        }
-
-        if p != Piece::O {
-            let dirs = if ACTIVE_RULES.enable_180 { 3 } else { 2 };
-            for d_idx in 0..dirs {
-                let d = match d_idx {
-                    0 => Direction::Cw,
-                    1 => Direction::Ccw,
-                    _ => Direction::Flip,
-                };
-
-                let rt = rotate(d, r);
-                let off = canonical_offset(p, r) - canonical_offset(p, rt);
-
-                let mut kick_buf = [Coordinates::new(0, 0); 6];
-                let kick_count = if d == Direction::Flip {
-                    let ki = kick_180_index(p);
-                    let arr = &KICKS_180[ki][r as usize];
-                    let n = if !ACTIVE_RULES.srs_plus { 2 } else { arr.len() };
-                    kick_buf[..n].copy_from_slice(&arr[..n]);
-                    n
+            let mut drop_y = y;
+            while drop_y > 0 && (cm.get(x, rc) & bb((drop_y - 1) as i32)) == 0 {
+                drop_y -= 1;
+            }
+            if drop_y >= 0 {
+                // Spin label survives only when the piece is already resting; a piece
+                // that falls further after rotating locks as no-spin (mirrors get_input).
+                let sc = if can_spin && drop_y == y {
+                    m.s as usize
                 } else {
-                    let ki = kick_index(p, ACTIVE_RULES.srs_plus);
-                    let arr = &KICKS[ki][d as usize][r as usize];
-                    kick_buf[..arr.len()].copy_from_slice(arr);
-                    arr.len()
+                    0
                 };
+                locks[sc][x][rc as usize] |= bb(drop_y as i32);
+            }
 
-                for (k, &kick) in kick_buf.iter().enumerate().take(kick_count) {
-                    let x1 = m.x as i32 + kick.x as i32 + off.x as i32;
-                    let y1 = y as i32 + kick.y as i32 + off.y as i32;
+            if p != Piece::O {
+                let dirs = if ACTIVE_RULES.enable_180 { 3 } else { 2 };
+                for d_idx in 0..dirs {
+                    let d = match d_idx {
+                        0 => Direction::Cw,
+                        1 => Direction::Ccw,
+                        _ => Direction::Flip,
+                    };
 
-                    if x1 < 0 || y1 < 0 {
-                        continue;
-                    }
-                    let x1u = x1 as usize;
-                    if !in_bounds(p, rt, x1) {
-                        continue;
-                    }
-                    if y1 >= ROW_NB as i32 {
-                        continue;
-                    }
+                    let rt = rotate(d, r);
+                    let off = canonical_offset(p, r) - canonical_offset(p, rt);
 
-                    let rt_c = canonical_r(p, rt);
-                    if cm.get(x1u, rt_c) & bb(y1) != 0 {
-                        continue;
-                    }
+                    let mut kick_buf = [Coordinates::new(0, 0); 6];
+                    let kick_count = if d == Direction::Flip {
+                        let ki = kick_180_index(p);
+                        let arr = &KICKS_180[ki][r as usize];
+                        let n = if !ACTIVE_RULES.srs_plus { 2 } else { arr.len() };
+                        kick_buf[..n].copy_from_slice(&arr[..n]);
+                        n
+                    } else {
+                        let ki = kick_index(p, ACTIVE_RULES.srs_plus);
+                        let arr = &KICKS[ki][d as usize][r as usize];
+                        kick_buf[..arr.len()].copy_from_slice(arr);
+                        arr.len()
+                    };
 
-                    let mut s = SpinType::NoSpin;
-                    if is_t {
-                        let ty = y1;
-                        let tx = x1;
-                        let mut corners = 0u32;
-                        for &(dx, dy) in &[(-1i32, -1i32), (1, -1), (-1, 1), (1, 1)] {
-                            let cx = tx + dx;
-                            let cy = ty + dy;
-                            if cx < 0 || cx >= COL_NB as i32 || cy < 0 || board.occupied(cx, cy) {
-                                corners += 1;
-                            }
+                    for (k, &kick) in kick_buf.iter().enumerate().take(kick_count) {
+                        let x1 = m.x as i32 + kick.x as i32 + off.x as i32;
+                        let y1 = y as i32 + kick.y as i32 + off.y as i32;
+
+                        if x1 < 0 || y1 < 0 {
+                            continue;
                         }
-                        if corners >= 3 {
-                            let face = match rt {
-                                Rotation::North => [(0i32, -1i32), (0, 1)],
-                                Rotation::East => [(-1, 0), (1, 0)],
-                                Rotation::South => [(0, -1), (0, 1)],
-                                Rotation::West => [(-1, 0), (1, 0)],
-                            };
-                            let mut face_filled = 0u32;
-                            for &(dx, dy) in &face {
-                                let fx = tx + dx;
-                                let fy = ty + dy;
-                                if fx < 0 || fx >= COL_NB as i32 || fy < 0 || board.occupied(fx, fy)
+                        let x1u = x1 as usize;
+                        if !in_bounds(p, rt, x1) {
+                            continue;
+                        }
+                        if y1 >= ROW_NB as i32 {
+                            continue;
+                        }
+
+                        let rt_c = canonical_r(p, rt);
+                        if cm.get(x1u, rt_c) & bb(y1) != 0 {
+                            continue;
+                        }
+
+                        let mut s = SpinType::NoSpin;
+                        if is_t {
+                            let ty = y1;
+                            let tx = x1;
+                            let mut corners = 0u32;
+                            for &(dx, dy) in &[(-1i32, -1i32), (1, -1), (-1, 1), (1, 1)] {
+                                let cx = tx + dx;
+                                let cy = ty + dy;
+                                if cx < 0 || cx >= COL_NB as i32 || cy < 0 || board.occupied(cx, cy)
                                 {
-                                    face_filled += 1;
+                                    corners += 1;
                                 }
                             }
-                            s = if face_filled >= 2 || k >= 4 {
-                                SpinType::Full
-                            } else {
-                                SpinType::Mini
-                            };
+                            if corners >= 3 {
+                                let face = match rt {
+                                    Rotation::North => [(0i32, -1i32), (0, 1)],
+                                    Rotation::East => [(-1, 0), (1, 0)],
+                                    Rotation::South => [(0, -1), (0, 1)],
+                                    Rotation::West => [(-1, 0), (1, 0)],
+                                };
+                                let mut face_filled = 0u32;
+                                for &(dx, dy) in &face {
+                                    let fx = tx + dx;
+                                    let fy = ty + dy;
+                                    if fx < 0
+                                        || fx >= COL_NB as i32
+                                        || fy < 0
+                                        || board.occupied(fx, fy)
+                                    {
+                                        face_filled += 1;
+                                    }
+                                }
+                                s = if face_filled >= 2 || k >= 4 {
+                                    SpinType::Full
+                                } else {
+                                    SpinType::Mini
+                                };
+                            }
+                        } else if is_allspin {
+                            let rt_c = canonical_r(p, rt);
+                            let blocked_left = x1u == 0 || cm.get(x1u - 1, rt_c) & bb(y1) != 0;
+                            let blocked_right =
+                                x1u >= COL_NB - 1 || cm.get(x1u + 1, rt_c) & bb(y1) != 0;
+                            let blocked_down = y1 <= 0 || cm.get(x1u, rt_c) & bb(y1 - 1) != 0;
+                            let blocked_up =
+                                y1 >= ROW_NB as i32 - 1 || cm.get(x1u, rt_c) & bb(y1 + 1) != 0;
+                            if blocked_left && blocked_right && blocked_down && blocked_up {
+                                s = SpinType::Mini;
+                            }
                         }
-                    } else if is_allspin {
-                        let rt_c = canonical_r(p, rt);
-                        let blocked_left = x1u == 0 || cm.get(x1u - 1, rt_c) & bb(y1) != 0;
-                        let blocked_right = x1u >= COL_NB - 1 || cm.get(x1u + 1, rt_c) & bb(y1) != 0;
-                        let blocked_down = y1 <= 0 || cm.get(x1u, rt_c) & bb(y1 - 1) != 0;
-                        let blocked_up = y1 >= ROW_NB as i32 - 1 || cm.get(x1u, rt_c) & bb(y1 + 1) != 0;
-                        if blocked_left && blocked_right && blocked_down && blocked_up {
-                            s = SpinType::Mini;
+
+                        let s_idx = if can_spin { s as usize } else { 0 };
+                        let rt_c_idx = canonical_r(p, rt) as usize;
+
+                        if searched[s_idx][x1u][rt_c_idx] & bb(y1) != 0 {
+                            continue;
                         }
+                        searched[s_idx][x1u][rt_c_idx] |= bb(y1);
+
+                        queue.push(GhostMove {
+                            r: rt,
+                            x: x1 as i8,
+                            y: y1 as i8,
+                            i: GhostMove::root_index(),
+                            s,
+                        });
+                        break;
                     }
-
-                    let s_idx = if can_spin { s as usize } else { 0 };
-                    let rt_c_idx = canonical_r(p, rt) as usize;
-
-                    if searched[s_idx][x1u][rt_c_idx] & bb(y1) != 0 {
-                        continue;
-                    }
-                    searched[s_idx][x1u][rt_c_idx] |= bb(y1);
-
-                    queue.push_back(GhostMove {
-                        r: rt,
-                        x: x1 as i8,
-                        y: y1 as i8,
-                        i: GhostMove::root_index(),
-                        s,
-                    });
-                    break;
                 }
             }
-        }
 
-        for dx in [-1i8, 1i8] {
-            let x1 = m.x as i32 + dx as i32;
-            if x1 < 0 {
-                continue;
-            }
-            let x1u = x1 as usize;
-            if !in_bounds(p, r, x1) {
-                continue;
-            }
-            let rc = canonical_r(p, r);
-            if cm.get(x1u, rc) & bb(y as i32) != 0 {
-                continue;
-            }
+            for dx in [-1i8, 1i8] {
+                let x1 = m.x as i32 + dx as i32;
+                if x1 < 0 {
+                    continue;
+                }
+                let x1u = x1 as usize;
+                if !in_bounds(p, r, x1) {
+                    continue;
+                }
+                let rc = canonical_r(p, r);
+                if cm.get(x1u, rc) & bb(y as i32) != 0 {
+                    continue;
+                }
 
-            let s_idx = if can_spin {
-                SpinType::NoSpin as usize
-            } else {
-                0
-            };
-            let rc_idx = canonical_r(p, r) as usize;
-
-            if searched[s_idx][x1u][rc_idx] & bb(y as i32) != 0 {
-                continue;
-            }
-            searched[s_idx][x1u][rc_idx] |= bb(y as i32);
-
-            queue.push_back(GhostMove {
-                r,
-                x: x1 as i8,
-                y,
-                i: GhostMove::root_index(),
-                s: SpinType::NoSpin,
-            });
-        }
-
-        let y1 = y - 1;
-        if y1 >= 0 {
-            let rc = canonical_r(p, r);
-            if cm.get(x, rc) & bb(y1 as i32) == 0 {
                 let s_idx = if can_spin {
                     SpinType::NoSpin as usize
                 } else {
                     0
                 };
-                let rc_idx = rc as usize;
-                if searched[s_idx][x][rc_idx] & bb(y1 as i32) == 0 {
-                    searched[s_idx][x][rc_idx] |= bb(y1 as i32);
-                    queue.push_back(GhostMove {
-                        r,
-                        x: m.x,
-                        y: y1,
-                        i: GhostMove::root_index(),
-                        s: SpinType::NoSpin,
-                    });
+                let rc_idx = canonical_r(p, r) as usize;
+
+                if searched[s_idx][x1u][rc_idx] & bb(y as i32) != 0 {
+                    continue;
+                }
+                searched[s_idx][x1u][rc_idx] |= bb(y as i32);
+
+                queue.push(GhostMove {
+                    r,
+                    x: x1 as i8,
+                    y,
+                    i: GhostMove::root_index(),
+                    s: SpinType::NoSpin,
+                });
+            }
+
+            let y1 = y - 1;
+            if y1 >= 0 {
+                let rc = canonical_r(p, r);
+                if cm.get(x, rc) & bb(y1 as i32) == 0 {
+                    let s_idx = if can_spin {
+                        SpinType::NoSpin as usize
+                    } else {
+                        0
+                    };
+                    let rc_idx = rc as usize;
+                    if searched[s_idx][x][rc_idx] & bb(y1 as i32) == 0 {
+                        searched[s_idx][x][rc_idx] |= bb(y1 as i32);
+                        queue.push(GhostMove {
+                            r,
+                            x: m.x,
+                            y: y1,
+                            i: GhostMove::root_index(),
+                            s: SpinType::NoSpin,
+                        });
+                    }
                 }
             }
         }
-    }
 
-    ReachLocks { piece: p, locks }
+        ReachLocks { piece: p, locks }
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn board_from_rows(rows: &[u16]) -> Board {
+        let mut b = Board::new();
+        for (y, &row) in rows.iter().enumerate().take(crate::board::BOARD_HEIGHT) {
+            b.rows[y] = row & 0x03FF;
+        }
+        let rows = b.rows;
+        b.clear();
+        for y in 0..crate::board::BOARD_HEIGHT {
+            let mut bits = rows[y] as u64;
+            while bits != 0 {
+                let x = bits.trailing_zeros() as i32;
+                b.rows[y] |= 1u16 << x;
+                b.cols[x as usize] |= 1u64 << y;
+                bits &= bits - 1;
+            }
+        }
+        b
+    }
+
+    fn reachable_locks_vecdeque_oracle(
+        board: &Board,
+        p: Piece,
+        force: bool,
+    ) -> [[[u64; ROTATION_NB]; COL_NB]; SPIN_NB] {
+        let cols = board.compute_cols();
+        let cm = CollisionMap::new(&cols, p);
+        let is_t = p == Piece::T && ACTIVE_RULES.enable_tspin;
+        let is_allspin = p != Piece::T && p != Piece::O && ACTIVE_RULES.enable_allspin;
+        let can_spin = is_t || is_allspin;
+        let mut queue: VecDeque<GhostMove> = VecDeque::new();
+        let mut searched = [[[0u64; ROTATION_NB]; COL_NB]; SPIN_NB];
+        let mut locks = [[[0u64; ROTATION_NB]; COL_NB]; SPIN_NB];
+
+        let spawn_y = if force {
+            let blocked = cm.get(SPAWN_COL, Rotation::North);
+            let above_spawn = !bb_low(ACTIVE_RULES.spawn_row);
+            let valid = !blocked & above_spawn;
+            if valid == 0 {
+                return locks;
+            }
+            ctz(valid) as i8
+        } else {
+            if cm.get(SPAWN_COL, Rotation::North) & bb(ACTIVE_RULES.spawn_row) != 0 {
+                return locks;
+            }
+            ACTIVE_RULES.spawn_row as i8
+        };
+
+        searched[0][SPAWN_COL][Rotation::North as usize] |= bb(spawn_y as i32);
+        queue.push_back(GhostMove {
+            r: Rotation::North,
+            x: SPAWN_COL as i8,
+            y: spawn_y,
+            i: GhostMove::root_index(),
+            s: SpinType::NoSpin,
+        });
+
+        while let Some(m) = queue.pop_front() {
+            let x = m.x as usize;
+            let r = m.r;
+            let y = m.y;
+            let rc = canonical_r(p, r);
+
+            let mut drop_y = y;
+            while drop_y > 0 && (cm.get(x, rc) & bb((drop_y - 1) as i32)) == 0 {
+                drop_y -= 1;
+            }
+            if drop_y >= 0 {
+                let sc = if can_spin && drop_y == y {
+                    m.s as usize
+                } else {
+                    0
+                };
+                locks[sc][x][rc as usize] |= bb(drop_y as i32);
+            }
+
+            if p != Piece::O {
+                let dirs = if ACTIVE_RULES.enable_180 { 3 } else { 2 };
+                for d_idx in 0..dirs {
+                    let d = match d_idx {
+                        0 => Direction::Cw,
+                        1 => Direction::Ccw,
+                        _ => Direction::Flip,
+                    };
+
+                    let rt = rotate(d, r);
+                    let off = canonical_offset(p, r) - canonical_offset(p, rt);
+
+                    let mut kick_buf = [Coordinates::new(0, 0); 6];
+                    let kick_count = if d == Direction::Flip {
+                        let ki = kick_180_index(p);
+                        let arr = &KICKS_180[ki][r as usize];
+                        let n = if !ACTIVE_RULES.srs_plus { 2 } else { arr.len() };
+                        kick_buf[..n].copy_from_slice(&arr[..n]);
+                        n
+                    } else {
+                        let ki = kick_index(p, ACTIVE_RULES.srs_plus);
+                        let arr = &KICKS[ki][d as usize][r as usize];
+                        kick_buf[..arr.len()].copy_from_slice(arr);
+                        arr.len()
+                    };
+
+                    for (k, &kick) in kick_buf.iter().enumerate().take(kick_count) {
+                        let x1 = m.x as i32 + kick.x as i32 + off.x as i32;
+                        let y1 = y as i32 + kick.y as i32 + off.y as i32;
+
+                        if x1 < 0 || y1 < 0 {
+                            continue;
+                        }
+                        let x1u = x1 as usize;
+                        if !in_bounds(p, rt, x1) || y1 >= ROW_NB as i32 {
+                            continue;
+                        }
+
+                        let rt_c = canonical_r(p, rt);
+                        if cm.get(x1u, rt_c) & bb(y1) != 0 {
+                            continue;
+                        }
+
+                        let mut s = SpinType::NoSpin;
+                        if is_t {
+                            let mut corners = 0u32;
+                            for &(dx, dy) in &[(-1i32, -1i32), (1, -1), (-1, 1), (1, 1)] {
+                                let cx = x1 + dx;
+                                let cy = y1 + dy;
+                                if cx < 0 || cx >= COL_NB as i32 || cy < 0 || board.occupied(cx, cy)
+                                {
+                                    corners += 1;
+                                }
+                            }
+                            if corners >= 3 {
+                                let face = match rt {
+                                    Rotation::North => [(0i32, -1i32), (0, 1)],
+                                    Rotation::East => [(-1, 0), (1, 0)],
+                                    Rotation::South => [(0, -1), (0, 1)],
+                                    Rotation::West => [(-1, 0), (1, 0)],
+                                };
+                                let mut face_filled = 0u32;
+                                for &(dx, dy) in &face {
+                                    let fx = x1 + dx;
+                                    let fy = y1 + dy;
+                                    if fx < 0
+                                        || fx >= COL_NB as i32
+                                        || fy < 0
+                                        || board.occupied(fx, fy)
+                                    {
+                                        face_filled += 1;
+                                    }
+                                }
+                                s = if face_filled >= 2 || k >= 4 {
+                                    SpinType::Full
+                                } else {
+                                    SpinType::Mini
+                                };
+                            }
+                        } else if is_allspin {
+                            let rt_c = canonical_r(p, rt);
+                            let blocked_left = x1u == 0 || cm.get(x1u - 1, rt_c) & bb(y1) != 0;
+                            let blocked_right =
+                                x1u >= COL_NB - 1 || cm.get(x1u + 1, rt_c) & bb(y1) != 0;
+                            let blocked_down = y1 <= 0 || cm.get(x1u, rt_c) & bb(y1 - 1) != 0;
+                            let blocked_up =
+                                y1 >= ROW_NB as i32 - 1 || cm.get(x1u, rt_c) & bb(y1 + 1) != 0;
+                            if blocked_left && blocked_right && blocked_down && blocked_up {
+                                s = SpinType::Mini;
+                            }
+                        }
+
+                        let s_idx = if can_spin { s as usize } else { 0 };
+                        let rt_c_idx = canonical_r(p, rt) as usize;
+
+                        if searched[s_idx][x1u][rt_c_idx] & bb(y1) != 0 {
+                            continue;
+                        }
+                        searched[s_idx][x1u][rt_c_idx] |= bb(y1);
+
+                        queue.push_back(GhostMove {
+                            r: rt,
+                            x: x1 as i8,
+                            y: y1 as i8,
+                            i: GhostMove::root_index(),
+                            s,
+                        });
+                        break;
+                    }
+                }
+            }
+
+            for dx in [-1i8, 1i8] {
+                let x1 = m.x as i32 + dx as i32;
+                if x1 < 0 {
+                    continue;
+                }
+                let x1u = x1 as usize;
+                if !in_bounds(p, r, x1) {
+                    continue;
+                }
+                let rc = canonical_r(p, r);
+                if cm.get(x1u, rc) & bb(y as i32) != 0 {
+                    continue;
+                }
+
+                let s_idx = if can_spin {
+                    SpinType::NoSpin as usize
+                } else {
+                    0
+                };
+                let rc_idx = canonical_r(p, r) as usize;
+
+                if searched[s_idx][x1u][rc_idx] & bb(y as i32) != 0 {
+                    continue;
+                }
+                searched[s_idx][x1u][rc_idx] |= bb(y as i32);
+
+                queue.push_back(GhostMove {
+                    r,
+                    x: x1 as i8,
+                    y,
+                    i: GhostMove::root_index(),
+                    s: SpinType::NoSpin,
+                });
+            }
+
+            let y1 = y - 1;
+            if y1 >= 0 {
+                let rc = canonical_r(p, r);
+                if cm.get(x, rc) & bb(y1 as i32) == 0 {
+                    let s_idx = if can_spin {
+                        SpinType::NoSpin as usize
+                    } else {
+                        0
+                    };
+                    let rc_idx = rc as usize;
+                    if searched[s_idx][x][rc_idx] & bb(y1 as i32) == 0 {
+                        searched[s_idx][x][rc_idx] |= bb(y1 as i32);
+                        queue.push_back(GhostMove {
+                            r,
+                            x: m.x,
+                            y: y1,
+                            i: GhostMove::root_index(),
+                            s: SpinType::NoSpin,
+                        });
+                    }
+                }
+            }
+        }
+
+        locks
+    }
+
+    fn xs(s: &mut u64) -> u64 {
+        let mut x = *s;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        *s = x;
+        x
+    }
+
+    #[test]
+    #[ignore]
+    fn reachable_locks_matches_vecdeque_oracle_on_100k_holey_boards() {
+        let pieces = [
+            Piece::I,
+            Piece::O,
+            Piece::T,
+            Piece::L,
+            Piece::J,
+            Piece::S,
+            Piece::Z,
+        ];
+        let mut st = 0xA11C_E5E5_2026_0610u64;
+        let mut boards = 0u64;
+        while boards < 100_000 {
+            let h = 2 + (xs(&mut st) % 21) as usize;
+            let mut rows = vec![0u16; h];
+            for r in rows.iter_mut() {
+                *r = (xs(&mut st) as u16) & 0x03FF;
+            }
+            if let Some(last) = rows.last_mut() {
+                if *last == 0 {
+                    *last = 1u16 << (xs(&mut st) % 10);
+                }
+            }
+            let b = board_from_rows(&rows);
+            if !crate::movegen::needs_reachability_filter(&b) {
+                continue;
+            }
+            boards += 1;
+            for &p in &pieces {
+                for force in [false, true] {
+                    let got = reachable_locks(&b, p, force);
+                    let want = reachable_locks_vecdeque_oracle(&b, p, force);
+                    assert_eq!(got.locks, want, "p={p:?} force={force} rows={rows:?}");
+                }
+            }
+        }
+        assert_eq!(boards, 100_000);
+    }
 
     #[test]
     fn test_get_input_simple_i_drop() {
