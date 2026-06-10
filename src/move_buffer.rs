@@ -46,6 +46,11 @@ impl MoveBuffer {
     }
 
     #[inline]
+    pub fn clear(&mut self) {
+        self.len = 0;
+    }
+
+    #[inline]
     pub fn as_slice(&self) -> &[Move] {
         // SAFETY: the first `len` elements were written by `push` and are
         // initialized; `Move` is `Copy` with no drop glue.
@@ -59,8 +64,9 @@ impl MoveBuffer {
     #[inline]
     pub fn sort_by_raw(&mut self) {
         // SAFETY: same initialized-prefix invariant as as_slice; Move is Copy.
-        let s =
-            unsafe { std::slice::from_raw_parts_mut(self.data.as_mut_ptr() as *mut Move, self.len) };
+        let s = unsafe {
+            std::slice::from_raw_parts_mut(self.data.as_mut_ptr() as *mut Move, self.len)
+        };
         s.sort_unstable_by_key(|m| m.raw());
     }
 

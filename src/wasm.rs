@@ -768,6 +768,10 @@ impl std::hash::Hasher for FxHasher64 {
     }
 }
 type FxRowSet = std::collections::HashSet<[u16; 40], std::hash::BuildHasherDefault<FxHasher64>>;
+type FxFullSet =
+    std::collections::HashSet<([u16; 40], i32, i32), std::hash::BuildHasherDefault<FxHasher64>>;
+type FxFullMap<V> =
+    std::collections::HashMap<([u16; 40], i32, i32), V, std::hash::BuildHasherDefault<FxHasher64>>;
 
 // Drop the bits of `gm` at cleared row positions and shift higher bits down,
 // matching how `clear_lines` compacts the board (software pext on a single u64).
@@ -920,15 +924,22 @@ fn beam_best_gm_impl(
         combo,
         pending,
     }];
+    let mut children: Vec<Child> = Vec::new();
+    let mut idx: Vec<usize> = Vec::new();
+    let mut seen: FxRowSet = FxRowSet::default();
+    let mut seen_full: FxFullSet = FxFullSet::default();
+    let mut pruned: Vec<BNode> = Vec::with_capacity(bw);
+    let mut moves = MoveBuffer::new();
 
     for t in 0..k {
         let p = match piece_from_external(pieces[t]) {
             Some(p) => p,
             None => break,
         };
-        let mut children: Vec<Child> = Vec::with_capacity(beam.len().saturating_mul(40));
+        children.clear();
+        children.reserve(beam.len().saturating_mul(40));
         for node in &beam {
-            let mut moves = MoveBuffer::new();
+            moves.clear();
             generate_playable(&node.board, &mut moves, p, false);
             for m in moves.as_slice() {
                 let mut nb = node.board.clone();
@@ -972,7 +983,8 @@ fn beam_best_gm_impl(
         if children.is_empty() {
             break;
         }
-        let mut idx: Vec<usize> = (0..children.len()).collect();
+        idx.clear();
+        idx.extend(0..children.len());
         idx.sort_by(|&a, &b| children[b].acc.cmp(&children[a].acc));
         let keepb: Option<[u16; 40]> = if use_keep {
             let mut kb = [0u16; 40];
@@ -983,15 +995,14 @@ fn beam_best_gm_impl(
         } else {
             None
         };
-        let mut seen: FxRowSet =
-            FxRowSet::with_capacity_and_hasher(children.len(), Default::default());
-        let mut seen_full: std::collections::HashSet<([u16; 40], i32, i32)> =
-            std::collections::HashSet::with_capacity(if surge_shaping {
-                children.len()
-            } else {
-                0
-            });
-        let mut pruned: Vec<BNode> = Vec::with_capacity(bw);
+        seen.clear();
+        seen.reserve(children.len());
+        seen_full.clear();
+        if surge_shaping {
+            seen_full.reserve(children.len());
+        }
+        pruned.clear();
+        pruned.reserve(bw);
         let mut kept = false;
         for &ci in &idx {
             let c = &children[ci];
@@ -1038,7 +1049,7 @@ fn beam_best_gm_impl(
                 }
             }
         }
-        beam = pruned;
+        std::mem::swap(&mut beam, &mut pruned);
     }
     let mut mx: i64 = 0;
     for node in &beam {
@@ -1176,17 +1187,21 @@ pub fn beam_best_gm_line_wasm(
         pending,
         steps: Vec::new(),
     }];
+    let mut order: Vec<LNode> = Vec::new();
+    let mut index: FxFullMap<usize> = FxFullMap::default();
+    let mut moves = MoveBuffer::new();
 
     for t in 0..pieces.len() {
         let p = match piece_from_external(pieces[t]) {
             Some(p) => p,
             None => break,
         };
-        let mut order: Vec<LNode> = Vec::with_capacity(beam.len().saturating_mul(40));
-        let mut index: std::collections::HashMap<([u16; 40], i32, i32), usize> =
-            std::collections::HashMap::with_capacity(beam.len().saturating_mul(40));
+        order.clear();
+        order.reserve(beam.len().saturating_mul(40));
+        index.clear();
+        index.reserve(beam.len().saturating_mul(40));
         for node in &beam {
-            let mut moves = MoveBuffer::new();
+            moves.clear();
             generate_playable(&node.board, &mut moves, p, false);
             for m in moves.as_slice() {
                 let mut nb = node.board.clone();
@@ -1211,8 +1226,9 @@ pub fn beam_best_gm_line_wasm(
                 if child_gm != 0 {
                     child_gm &= nonempty_row_mask(&nb);
                 }
-                let surge_delta = crate::attack::surge_potential(attack.b2b_after as i32, garbage_multiplier)
-                    - crate::attack::surge_potential(node.b2b, garbage_multiplier);
+                let surge_delta =
+                    crate::attack::surge_potential(attack.b2b_after as i32, garbage_multiplier)
+                        - crate::attack::surge_potential(node.b2b, garbage_multiplier);
                 let acc_new = node.acc + attack.attack as f64 + surge_delta as f64;
                 let (h_height, h_holes) = board_health_rows(&nb.rows);
                 let sel = acc_new - penalty_of(h_height, h_holes);
@@ -1269,16 +1285,19 @@ pub fn beam_best_gm_line_wasm(
         if order.is_empty() {
             break;
         }
-        let mut next: Vec<LNode> = order;
-        next.sort_by(|a, b| {
+        order.sort_by(|a, b| {
             b.sel
                 .partial_cmp(&a.sel)
                 .unwrap_or(std::cmp::Ordering::Equal)
-                .then(b.acc.partial_cmp(&a.acc).unwrap_or(std::cmp::Ordering::Equal))
+                .then(
+                    b.acc
+                        .partial_cmp(&a.acc)
+                        .unwrap_or(std::cmp::Ordering::Equal),
+                )
                 .then(a.holes.cmp(&b.holes))
         });
-        next.truncate(bw);
-        beam = next;
+        order.truncate(bw);
+        std::mem::swap(&mut beam, &mut order);
     }
 
     match beam.into_iter().next() {
@@ -1375,6 +1394,11 @@ pub fn beam_best_gm_gi_wasm(
         combo,
         pending,
     }];
+    let mut children: Vec<Child> = Vec::new();
+    let mut idx: Vec<usize> = Vec::new();
+    let mut seen: FxRowSet = FxRowSet::default();
+    let mut pruned: Vec<BNode> = Vec::with_capacity(bw);
+    let mut moves = MoveBuffer::new();
 
     for t in 0..k {
         let p = match piece_from_external(pieces[t]) {
@@ -1398,9 +1422,10 @@ pub fn beam_best_gm_gi_wasm(
             }
             b
         };
-        let mut children: Vec<Child> = Vec::with_capacity(beam.len().saturating_mul(40));
+        children.clear();
+        children.reserve(beam.len().saturating_mul(40));
         for node in &beam {
-            let mut moves = MoveBuffer::new();
+            moves.clear();
             generate_playable(&node.board, &mut moves, p, false);
             for m in moves.as_slice() {
                 let mut nb = node.board.clone();
@@ -1451,7 +1476,8 @@ pub fn beam_best_gm_gi_wasm(
         if children.is_empty() {
             break;
         }
-        let mut idx: Vec<usize> = (0..children.len()).collect();
+        idx.clear();
+        idx.extend(0..children.len());
         idx.sort_by(|&a, &b| children[b].acc.cmp(&children[a].acc));
         let keepb: Option<[u16; 40]> = if use_keep {
             let mut kb = [0u16; 40];
@@ -1462,9 +1488,10 @@ pub fn beam_best_gm_gi_wasm(
         } else {
             None
         };
-        let mut seen: FxRowSet =
-            FxRowSet::with_capacity_and_hasher(children.len(), Default::default());
-        let mut pruned: Vec<BNode> = Vec::with_capacity(bw);
+        seen.clear();
+        seen.reserve(children.len());
+        pruned.clear();
+        pruned.reserve(bw);
         let mut kept = false;
         for &ci in &idx {
             let c = &children[ci];
@@ -1506,7 +1533,7 @@ pub fn beam_best_gm_gi_wasm(
                 }
             }
         }
-        beam = pruned;
+        std::mem::swap(&mut beam, &mut pruned);
     }
     let mut mx: i64 = 0;
     for node in &beam {
@@ -1605,6 +1632,102 @@ mod tests {
         assert_eq!(
             beam_best_gm_wasm(&[], &[], &[0], -1, -1, 0, &[], 1, 1.0),
             0.0
+        );
+    }
+
+    fn assert_f64_bits(label: &str, actual: f64, expected_bits: u64) {
+        assert_eq!(
+            actual.to_bits(),
+            expected_bits,
+            "{label}: actual={actual} bits={:#018x}",
+            actual.to_bits()
+        );
+    }
+
+    fn first_child_keep_line(board: &[u32; 40], piece: u8, pieces_len: usize) -> Vec<u32> {
+        let mut rows0 = [0u64; 40];
+        for y in 0..40 {
+            rows0[y] = board[y] as u64;
+        }
+        let b = crate::wasm_board::board_from_row_bitmasks(&rows0);
+        let p = piece_from_external(piece).expect("external piece id is valid");
+        let mut moves = MoveBuffer::new();
+        generate_playable(&b, &mut moves, p, false);
+        let m = moves.as_slice().first().expect("fixture has legal moves");
+        let mut child = b.clone();
+        child.place(m);
+        let cleared = child.line_clears();
+        if cleared != 0 {
+            child.clear_lines(cleared);
+        }
+
+        let mut keep_line = vec![0u32; pieces_len * 40];
+        for y in 0..40 {
+            keep_line[y] = child.rows[y] as u32;
+        }
+        keep_line
+    }
+
+    #[test]
+    fn test_beam_best_gm_impl_characterization() {
+        let mut tetris_well = [0u32; 40];
+        let mut garbage_mask = [0u32; 40];
+        for y in 0..4 {
+            tetris_well[y] = 0x03FFu32 & !(1u32 << 9);
+            garbage_mask[y] = tetris_well[y];
+        }
+        assert_f64_bits(
+            "raw_multistep_garbage_mask",
+            beam_best_gm_impl(
+                &tetris_well,
+                &garbage_mask,
+                &[0, 2, 1],
+                -1,
+                -1,
+                0,
+                &[],
+                16,
+                1.0,
+                false,
+            ),
+            0x4024000000000000,
+        );
+
+        assert_f64_bits(
+            "surge_shaped_dynamic_multiplier",
+            beam_best_gm_impl(
+                &tetris_well,
+                &garbage_mask,
+                &[0, 0],
+                6,
+                0,
+                0,
+                &[],
+                16,
+                1.027,
+                true,
+            ),
+            0x402a000000000000,
+        );
+
+        let empty_board = [0u32; 40];
+        let empty_gmask = [0u32; 40];
+        let keep_line = first_child_keep_line(&empty_board, 1, 2);
+        assert_f64_bits(
+            "keep_line_branch_empty_board",
+            beam_best_gm_impl(
+                &empty_board,
+                &empty_gmask,
+                &[1, 0],
+                -1,
+                -1,
+                0,
+                &keep_line,
+                4,
+                1.0,
+                false,
+            ),
+            0,
         );
     }
 
