@@ -2,6 +2,7 @@
 // piece-agnostic allspin: any piece with spin gets bonus, not just T
 
 use crate::header::SpinType;
+use std::sync::OnceLock;
 
 // base attack table — no spin
 pub const SINGLE: u8 = 0;
@@ -29,6 +30,25 @@ const COMBO_FLOOR_SCALE: f32 = 1.25;
 
 const CLASSIC_COMBO_TABLE: [u8; 11] = [0, 1, 1, 2, 2, 3, 3, 4, 4, 4, 5];
 const MODERN_COMBO_TABLE: [u8; 13] = [0, 1, 1, 2, 2, 2, 3, 3, 3, 3, 3, 3, 4];
+static COMBO_FLOOR_LN_TABLE: OnceLock<[f64; 256]> = OnceLock::new();
+
+fn combo_floor_ln_value(combo: usize) -> f64 {
+    if let Some(value) = COMBO_FLOOR_LN_TABLE.get_or_init(|| {
+        let mut table = [0.0_f64; 256];
+        let mut i = 0;
+        while i < table.len() {
+            table[i] = (1.0 + i as f64 * COMBO_FLOOR_SCALE as f64).ln();
+            i += 1;
+        }
+        table
+    })
+    .get(combo)
+    {
+        *value
+    } else {
+        (1.0 + combo as f64 * COMBO_FLOOR_SCALE as f64).ln()
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ComboTable {
@@ -264,7 +284,7 @@ pub fn calculate_attack_s2_tl_with_multiplier(
     if combo > 0.0 {
         garbage *= 1.0 + COMBO_BONUS as f64 * combo;
         if combo > 1.0 {
-            garbage = garbage.max((1.0 + combo * COMBO_FLOOR_SCALE as f64).ln());
+            garbage = garbage.max(combo_floor_ln_value(combo as usize));
         }
     }
 
@@ -636,6 +656,15 @@ mod tests {
             (dmg - expected).abs() < 0.001,
             "expected ~{expected}, got {dmg}"
         );
+    }
+
+    #[test]
+    fn combo_ln_table_bit_identical() {
+        for combo in 0..256usize {
+            let table_value = combo_floor_ln_value(combo);
+            let expected = (1.0 + combo as f64 * COMBO_FLOOR_SCALE as f64).ln();
+            assert_eq!(table_value.to_bits(), expected.to_bits(), "combo={combo}");
+        }
     }
 
     // --- Fix #1: Surge release ---
