@@ -971,6 +971,10 @@ pub(crate) fn expand_node(
         (actions, vec![0.0; fallback_len])
     };
 
+    let depth_factor = (parent.path.len() as f32 + 1.0)
+        .sqrt()
+        .min(ctx.config.max_depth_factor);
+
     for (action, policy_score) in actions.into_iter().zip(policy_scores) {
         let mut result_board = parent.board.clone();
         let lines_cleared = profile_do_move(|| result_board.do_move(&action.mv)) as u8;
@@ -1042,9 +1046,6 @@ pub(crate) fn expand_node(
         );
         let cum_attack = parent.path_attack + attack_val;
         let cum_chain = parent.path_chain + chain_val;
-        let depth_factor = (parent.path.len() as f32 + 1.0)
-            .sqrt()
-            .min(ctx.config.max_depth_factor);
         let child_eval = profile_child_eval(|| {
             evaluate_child_state(
                 &result_board,
