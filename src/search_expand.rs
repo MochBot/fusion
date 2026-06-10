@@ -12,6 +12,7 @@ use crate::state::{
 };
 use crate::transposition::{TranspositionTable, ZobristKeys};
 use smallvec::{smallvec, SmallVec};
+use std::sync::Arc;
 #[cfg(not(target_arch = "wasm32"))]
 use std::{cell::Cell, cell::RefCell, collections::HashSet, time::Instant};
 
@@ -878,8 +879,8 @@ pub(crate) fn gen_and_eval_root(
             None
         };
         let path_clear_events = match clear_event {
-            Some(event) => smallvec![event],
-            None => SmallVec::new(),
+            Some(event) => Arc::new(vec![event]),
+            None => Arc::new(Vec::new()),
         };
         let chain_val = shape_chain_value(next_combo as f32);
         let combo_context = next_combo as f32 - state.combo as f32;
@@ -1030,9 +1031,9 @@ pub(crate) fn expand_node(
         } else {
             None
         };
-        let mut path_clear_events = parent.path_clear_events.clone();
+        let mut path_clear_events = Arc::clone(&parent.path_clear_events);
         if let Some(event) = clear_event {
-            path_clear_events.push(event);
+            Arc::make_mut(&mut path_clear_events).push(event);
         }
         let chain_val = shape_chain_value(next_combo as f32);
         let combo_context = next_combo as f32 - parent.combo as f32;
@@ -1126,13 +1127,16 @@ pub(crate) fn evaluate_with_tt(
 
 #[cfg(test)]
 mod tests {
-    use super::{maybe_limit_policy_guided_actions, CandidateAction};
+    use super::{expand_node, maybe_limit_policy_guided_actions, CandidateAction};
     use crate::attack::AttackConfig;
+    use crate::board::{Board, BOARD_HEIGHT, FULL_ROW};
     use crate::eval::EvalWeights;
-    use crate::header::{Move, Piece, Rotation};
-    use crate::search_config::{SearchConfig, SearchExpansionContext};
+    use crate::header::{Move, Piece, Rotation, SpinType, COL_NB};
+    use crate::search_config::{SearchConfig, SearchExpansionContext, SearchNode};
+    use crate::state::{ClearEvent, ClearType, CoachingState};
     use crate::transposition::get_zobrist_keys;
-    use smallvec::SmallVec;
+    use smallvec::{smallvec, SmallVec};
+    use std::sync::Arc;
 
     fn candidate(piece: Piece) -> CandidateAction {
         CandidateAction {
@@ -1163,6 +1167,287 @@ mod tests {
             policy_value: None,
             runtime_context: None,
         }
+    }
+
+    fn board_from_rows(rows: [u16; BOARD_HEIGHT]) -> Board {
+        let mut board = Board::new();
+        for (y, row) in rows.iter().enumerate() {
+            board.rows[y] = row & FULL_ROW;
+            for x in 0..COL_NB {
+                if board.rows[y] & (1u16 << x) != 0 {
+                    board.cols[x] |= 1u64 << y;
+                }
+            }
+        }
+        board
+    }
+
+    fn prior_clear_event(attack_sent: f32) -> ClearEvent {
+        ClearEvent {
+            clear_type: ClearType::Single,
+            spin_type: SpinType::NoSpin,
+            lines_cleared: 1,
+            attack_sent,
+            b2b_before: 0,
+            b2b_after: 0,
+            combo_before: 0,
+            combo_after: 1,
+            is_surge_release: false,
+            is_garbage_clear: false,
+            is_perfect_clear: false,
+            piece: Piece::T,
+        }
+    }
+
+    fn parent_node(
+        board: Board,
+        current: Piece,
+        queue: SmallVec<[Piece; 16]>,
+        path: SmallVec<[Move; 16]>,
+        path_clear_events: SmallVec<[ClearEvent; 4]>,
+    ) -> SearchNode {
+        SearchNode {
+            board,
+            current: Some(current),
+            queue,
+            score: 0.0,
+            hold: None,
+            b2b: 0,
+            combo: 0,
+            pending_garbage: 0,
+            lines_total: 0,
+            bag_number: 0,
+            pieces_into_bag: 0,
+            coaching: CoachingState::default(),
+            root_move: Move::none(),
+            root_hold_used: false,
+            path,
+            board_score: 0.0,
+            attack_score: 0.0,
+            chain_score: 0.0,
+            context_score: 0.0,
+            path_attack: 0.0,
+            path_chain: 0.0,
+            path_context: 0.0,
+            policy_score: 0.0,
+            value_score: 0.0,
+            fallback_used: false,
+            path_clear_events: Arc::new(path_clear_events.into_vec()),
+        }
+    }
+
+    fn expansion_signature(label: &str, parent: SearchNode) -> String {
+        let mut ctx = context(0, 64);
+        let mut out = Vec::new();
+        expand_node(&parent, &mut ctx, &mut out);
+
+        let mut lines = vec![format!("{label}:{}", out.len())];
+        lines.extend(out.iter().map(|node| {
+            let last_attack = node
+                .path_clear_events
+                .last()
+                .map(|event| event.attack_sent.to_bits().to_string())
+                .unwrap_or_else(|| "-".to_string());
+            format!(
+                "{}:{}:{}:{}:{}",
+                node.path.last().copied().map(Move::raw).unwrap_or(0),
+                node.score.to_bits(),
+                node.path_clear_events.len(),
+                last_attack,
+                node.path.len()
+            )
+        }));
+        lines.join("\n")
+    }
+
+    #[test]
+    fn expand_node_preserves_ordered_child_projection() {
+        let empty_parent = parent_node(
+            Board::new(),
+            Piece::T,
+            smallvec![Piece::I, Piece::O, Piece::S],
+            smallvec![Move::none()],
+            SmallVec::new(),
+        );
+
+        let history_parent = parent_node(
+            Board::new(),
+            Piece::I,
+            smallvec![Piece::T, Piece::O, Piece::S],
+            smallvec![Move::none(), Move::none()],
+            smallvec![prior_clear_event(2.5)],
+        );
+
+        let mut clear_rows = [0u16; BOARD_HEIGHT];
+        clear_rows[0] = FULL_ROW & !(1u16 << 4) & !(1u16 << 5);
+        let clear_parent = parent_node(
+            board_from_rows(clear_rows),
+            Piece::O,
+            smallvec![Piece::T, Piece::I, Piece::S],
+            smallvec![Move::none(), Move::none()],
+            smallvec![prior_clear_event(3.0)],
+        );
+
+        let actual = [
+            expansion_signature("empty", empty_parent),
+            expansion_signature("history", history_parent),
+            expansion_signature("clear", clear_parent),
+        ]
+        .join("\n--\n");
+
+        let expected = "\
+empty:51
+10241:3222483764:0:-:2
+2112:3224580915:0:-:2
+10305:3227516928:0:-:2
+18497:3192704192:0:-:2
+26689:3228355788:0:-:2
+2176:3228775219:0:-:2
+10369:3233598670:0:-:2
+18561:3201092800:0:-:2
+26753:3230662658:0:-:2
+2240:3230452941:0:-:2
+10433:3233598670:0:-:2
+18625:3219547744:0:-:2
+26817:3233598670:0:-:2
+2304:3230452941:0:-:2
+10497:3233598670:0:-:2
+18689:3219547744:0:-:2
+26881:3233598670:0:-:2
+2368:3230452941:0:-:2
+10561:3233598670:0:-:2
+18753:3219547744:0:-:2
+26945:3233598670:0:-:2
+2432:3230452941:0:-:2
+10625:3233598670:0:-:2
+18817:3219547744:0:-:2
+27009:3233598670:0:-:2
+2496:3228775219:0:-:2
+10689:3230662658:0:-:2
+18881:3201092800:0:-:2
+27073:3233598670:0:-:2
+2560:3224580915:0:-:2
+10753:3228355788:0:-:2
+18945:3192704192:0:-:2
+27137:3227516928:0:-:2
+27201:3222483764:0:-:2
+8194:3233808384:0:-:2
+64:3214514586:0:-:2
+8258:3237163826:0:-:2
+128:3217870029:0:-:2
+8322:3241358132:0:-:2
+192:3222064333:0:-:2
+8386:3241358132:0:-:2
+256:3222064333:0:-:2
+8450:3241358132:0:-:2
+320:3222064333:0:-:2
+8514:3241358132:0:-:2
+384:3217870029:0:-:2
+8578:3241358132:0:-:2
+448:3214514586:0:-:2
+8642:3241358132:0:-:2
+8706:3237163826:0:-:2
+8770:3233808384:0:-:2
+--
+history:51
+8194:3233808384:1:1075838976:3
+64:3214514586:1:1075838976:3
+8258:3237163826:1:1075838976:3
+128:3217870029:1:1075838976:3
+8322:3241358132:1:1075838976:3
+192:3222064333:1:1075838976:3
+8386:3241358132:1:1075838976:3
+256:3222064333:1:1075838976:3
+8450:3241358132:1:1075838976:3
+320:3222064333:1:1075838976:3
+8514:3241358132:1:1075838976:3
+384:3217870029:1:1075838976:3
+8578:3241358132:1:1075838976:3
+448:3214514586:1:1075838976:3
+8642:3241358132:1:1075838976:3
+8706:3237163826:1:1075838976:3
+8770:3233808384:1:1075838976:3
+10241:3222483764:1:1075838976:3
+2112:3224580915:1:1075838976:3
+10305:3227516928:1:1075838976:3
+18497:3192704192:1:1075838976:3
+26689:3228355788:1:1075838976:3
+2176:3228775219:1:1075838976:3
+10369:3233598670:1:1075838976:3
+18561:3201092800:1:1075838976:3
+26753:3230662658:1:1075838976:3
+2240:3230452941:1:1075838976:3
+10433:3233598670:1:1075838976:3
+18625:3219547744:1:1075838976:3
+26817:3233598670:1:1075838976:3
+2304:3230452941:1:1075838976:3
+10497:3233598670:1:1075838976:3
+18689:3219547744:1:1075838976:3
+26881:3233598670:1:1075838976:3
+2368:3230452941:1:1075838976:3
+10561:3233598670:1:1075838976:3
+18753:3219547744:1:1075838976:3
+26945:3233598670:1:1075838976:3
+2432:3230452941:1:1075838976:3
+10625:3233598670:1:1075838976:3
+18817:3219547744:1:1075838976:3
+27009:3233598670:1:1075838976:3
+2496:3228775219:1:1075838976:3
+10689:3230662658:1:1075838976:3
+18881:3201092800:1:1075838976:3
+27073:3233598670:1:1075838976:3
+2560:3224580915:1:1075838976:3
+10753:3228355788:1:1075838976:3
+18945:3192704192:1:1075838976:3
+27137:3227516928:1:1075838976:3
+27201:3222483764:1:1075838976:3
+--
+clear:43
+1025:3230033511:1:1077936128:3
+1089:3231711232:1:1077936128:3
+1153:3235486106:1:1077936128:3
+1217:3239470695:1:1077936128:3
+1280:3221564555:2:0:3
+1345:3239470695:1:1077936128:3
+1409:3235486106:1:1077936128:3
+1473:3231711232:1:1077936128:3
+1537:3230033511:1:1077936128:3
+10242:3229194648:1:1077936128:3
+2113:3230452942:1:1077936128:3
+10306:3231920948:1:1077936128:3
+18498:3219547760:1:1077936128:3
+26690:3232340378:1:1077936128:3
+2177:3232969524:1:1077936128:3
+10370:3237792976:1:1077936128:3
+18562:3222903196:1:1077936128:3
+26754:3234018100:1:1077936128:3
+2241:3225839208:1:1077936128:3
+10434:3239575553:1:1077936128:3
+18626:3232550092:1:1077936128:3
+26818:3238107546:1:1077936128:3
+2305:3245028147:1:1077936128:3
+10497:3239994982:1:1077936128:3
+18689:3236954112:1:1077936128:3
+26881:3230033511:1:1077936128:3
+2369:3245028147:1:1077936128:3
+10561:3230033511:1:1077936128:3
+18753:3236954112:1:1077936128:3
+26945:3239994982:1:1077936128:3
+2433:3225839208:1:1077936128:3
+10626:3238107546:1:1077936128:3
+18818:3232550092:1:1077936128:3
+27010:3239575553:1:1077936128:3
+2497:3232969524:1:1077936128:3
+10690:3234018100:1:1077936128:3
+18882:3222903196:1:1077936128:3
+27074:3237792976:1:1077936128:3
+2561:3230452942:1:1077936128:3
+10754:3232340378:1:1077936128:3
+18946:3219547760:1:1077936128:3
+27138:3231920948:1:1077936128:3
+27202:3229194648:1:1077936128:3";
+
+        assert_eq!(actual, expected);
     }
 
     #[test]

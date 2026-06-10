@@ -529,6 +529,7 @@ mod tests {
     use crate::header::{Move, Piece, COL_NB};
     use crate::state::CoachingState;
     use smallvec::{smallvec, SmallVec};
+    use std::sync::Arc;
     fn make_node(
         score: f32,
         fatality: crate::state::FatalityState,
@@ -566,7 +567,7 @@ mod tests {
             policy_score: 0.0,
             value_score: 0.0,
             fallback_used: false,
-            path_clear_events: SmallVec::new(),
+            path_clear_events: Arc::new(Vec::new()),
         }
     }
 
@@ -876,7 +877,7 @@ mod tests {
                 policy_score: 0.0,
                 value_score: 0.0,
                 fallback_used: false,
-                path_clear_events: SmallVec::new(),
+                path_clear_events: Arc::new(Vec::new()),
             },
             SearchNode {
                 board: Board::new(),
@@ -904,7 +905,7 @@ mod tests {
                 policy_score: 0.0,
                 value_score: 0.0,
                 fallback_used: false,
-                path_clear_events: SmallVec::new(),
+                path_clear_events: Arc::new(Vec::new()),
             },
             SearchNode {
                 board: Board::new(),
@@ -932,7 +933,7 @@ mod tests {
                 policy_score: 0.0,
                 value_score: 0.0,
                 fallback_used: false,
-                path_clear_events: SmallVec::new(),
+                path_clear_events: Arc::new(Vec::new()),
             },
         ];
 

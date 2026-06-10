@@ -6,6 +6,7 @@ use crate::policy_value_runtime::{PolicyValueRuntime, PolicyValueRuntimeContext}
 use crate::state::{ClearEvent, CoachingState, GameState};
 use crate::transposition::{TranspositionTable, ZobristKeys};
 use smallvec::SmallVec;
+use std::sync::Arc;
 
 pub struct SearchConfig {
     pub beam_width: usize,
@@ -175,8 +176,7 @@ pub struct SearchNode {
     pub policy_score: f32,
     pub value_score: f32,
     pub fallback_used: bool,
-    /// Per-move clear event history along the search path (capacity >= typical clears per depth).
-    pub path_clear_events: SmallVec<[ClearEvent; 4]>,
+    pub path_clear_events: Arc<Vec<ClearEvent>>,
 }
 
 impl SearchNode {
