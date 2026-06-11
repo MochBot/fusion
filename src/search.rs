@@ -830,6 +830,81 @@ mod tests {
     }
 
     #[test]
+    fn tt_on_matches_tt_off_exactly_on_seeded_states() {
+        // The TT caches the exact f32 returned by evaluate(board, weights), so a
+        // hit must reproduce the recompute bit-for-bit; this pins that search
+        // results are invariant under the cache modulo 64-bit hash collisions.
+        let mut seed;
+        let xs = |s: &mut u64| {
+            *s ^= *s << 13;
+            *s ^= *s >> 7;
+            *s ^= *s << 17;
+            *s
+        };
+        for case in 0..6u64 {
+            seed = 0x7757_0611_2026_0001u64.wrapping_add(case.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+            let mut board = Board::new();
+            let height = 4 + (xs(&mut seed) % 8) as usize;
+            for y in 0..height {
+                let mut row = (xs(&mut seed) & 0x3FF) as u16;
+                row &= !(1u16 << (xs(&mut seed) % 10));
+                board.rows[y] = row;
+            }
+            for y in 0..height {
+                let mut bits = board.rows[y] as u64;
+                while bits != 0 {
+                    let x = bits.trailing_zeros() as usize;
+                    board.cols[x] |= 1u64 << y;
+                    bits &= bits - 1;
+                }
+            }
+            let pieces = [
+                Piece::I,
+                Piece::O,
+                Piece::T,
+                Piece::L,
+                Piece::J,
+                Piece::S,
+                Piece::Z,
+            ];
+            let current = pieces[(xs(&mut seed) % 7) as usize];
+            let queue: Vec<Piece> = (0..5).map(|_| pieces[(xs(&mut seed) % 7) as usize]).collect();
+            let mut state = GameState::new(board, current, queue);
+            state.hold = Some(pieces[(xs(&mut seed) % 7) as usize]);
+
+            let weights = EvalWeights::default();
+            let off = SearchConfig {
+                beam_width: 200,
+                depth: 5,
+                use_tt: false,
+                extend_queue_7bag: false,
+                ..SearchConfig::default()
+            };
+            let on = SearchConfig {
+                beam_width: 200,
+                depth: 5,
+                use_tt: true,
+                extend_queue_7bag: false,
+                ..SearchConfig::default()
+            };
+            let a = find_best_move(&state, &off, &weights);
+            let b = find_best_move(&state, &on, &weights);
+            match (a, b) {
+                (None, None) => {}
+                (Some(a), Some(b)) => {
+                    assert_eq!(a.best_move, b.best_move, "case={case}");
+                    assert_eq!(a.hold_used, b.hold_used, "case={case}");
+                    assert_eq!(a.score.to_bits(), b.score.to_bits(), "case={case}");
+                    let pa: Vec<u16> = a.pv.iter().map(|m| m.raw()).collect();
+                    let pb: Vec<u16> = b.pv.iter().map(|m| m.raw()).collect();
+                    assert_eq!(pa, pb, "case={case}");
+                }
+                _ => panic!("tt presence changed move availability, case={case}"),
+            }
+        }
+    }
+
+    #[test]
     fn test_no_moves_returns_none() {
         // fill the board nearly to the top — no valid placements
         let mut board = Board::new();

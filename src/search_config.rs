@@ -58,7 +58,7 @@ impl Default for SearchConfig {
             depth: 14,
             futility_delta: 15.0,
             time_budget_ms: None,
-            use_tt: false,
+            use_tt: true,
             extend_queue_7bag: true,
             attack_config: AttackConfig::tetra_league(),
             attack_weight: 0.50,
