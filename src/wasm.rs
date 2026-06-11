@@ -1848,44 +1848,17 @@ mod tests {
                 stats.needs_filter_ns += start.elapsed().as_nanos();
 
                 if needs_filter {
-                    if matches!(p, Piece::O | Piece::L | Piece::J)
-                        && (node.board.height() as usize) <= crate::movegen::PACKED_OLJ_MAX_HEIGHT
-                    {
-                        let start = Instant::now();
-                        let rows30: &[u16; crate::reach_packed::PH] = node.board.rows
-                            [..crate::reach_packed::PH]
-                            .try_into()
-                            .unwrap();
-                        let mut packed = MoveBuffer::new();
-                        crate::reach_packed::generate_packed_with_force(
-                            rows30,
-                            p,
-                            false,
-                            &mut packed,
-                        );
-                        packed.sort_by_raw();
-                        stats.packed_ns += start.elapsed().as_nanos();
+                    let start = Instant::now();
+                    let reach =
+                        crate::reach_locks_packed::reachable_locks_packed(&node.board, p, false);
+                    stats.reachable_ns += start.elapsed().as_nanos();
 
-                        let start = Instant::now();
-                        let praws = packed.as_slice();
-                        moves.retain(|m| {
-                            node.board.legal_lock_placement(m)
-                                && praws.binary_search_by(|x| x.raw().cmp(&m.raw())).is_ok()
-                        });
-                        stats.retain_ns += start.elapsed().as_nanos();
-                        stats.packed_calls += 1;
-                    } else {
-                        let start = Instant::now();
-                        let reach = crate::pathfinder::reachable_locks(&node.board, p, false);
-                        stats.reachable_ns += start.elapsed().as_nanos();
-
-                        let start = Instant::now();
-                        moves.retain(|m| {
-                            node.board.legal_lock_placement(m) && reach.move_reachable(m)
-                        });
-                        stats.retain_ns += start.elapsed().as_nanos();
-                        stats.pathfinder_calls += 1;
-                    }
+                    let start = Instant::now();
+                    moves.retain(|m| {
+                        node.board.legal_lock_placement(m) && reach.move_reachable(m)
+                    });
+                    stats.retain_ns += start.elapsed().as_nanos();
+                    stats.packed_calls += 1;
                 }
 
                 for m in moves.as_slice() {

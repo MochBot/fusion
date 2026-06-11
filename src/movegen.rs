@@ -948,33 +948,15 @@ pub fn move_reachable(b: &Board, m: &Move, force: bool) -> bool {
         && !crate::pathfinder::get_input(b, m, false, force).data.is_empty()
 }
 
-pub(crate) const PACKED_OLJ_MAX_HEIGHT: usize = 22;
-
 pub fn generate_playable(b: &Board, moves: &mut MoveBuffer, p: Piece, force: bool) {
     generate(b, moves, p, force);
     if !needs_reachability_filter(b) {
         return;
     }
-    // Packed whole-board reachability is byte-exact vs the scalar BFS for O/L/J up
-    // to PACKED_OLJ_MAX_HEIGHT (proven in packed_oljfilter_matches_scalar_generate_playable).
-    // I/S/Z diverge even on height-2 holey boards, so they keep the exact scalar BFS.
-    if matches!(p, Piece::O | Piece::L | Piece::J)
-        && (b.height() as usize) <= PACKED_OLJ_MAX_HEIGHT
-    {
-        let rows30: &[u16; crate::reach_packed::PH] =
-            b.rows[..crate::reach_packed::PH].try_into().unwrap();
-        let mut packed = MoveBuffer::new();
-        crate::reach_packed::generate_packed_with_force(rows30, p, force, &mut packed);
-        packed.sort_by_raw();
-        let praws = packed.as_slice();
-        moves.retain(|m| {
-            b.legal_lock_placement(m)
-                && praws.binary_search_by(|x| x.raw().cmp(&m.raw())).is_ok()
-        });
-        return;
-    }
-    let reach = crate::reach_locks_packed::try_reachable_locks_packed(b, p, force)
-        .unwrap_or_else(|| crate::pathfinder::reachable_locks(b, p, force));
+    // Strict first-valid-kick reach makes the lock cube order-independent, so
+    // the bit-parallel flood covers every piece at full board height; parity
+    // with the scalar BFS is pinned in reach_locks_packed's seeded corpora.
+    let reach = crate::reach_locks_packed::reachable_locks_packed(b, p, force);
     moves.retain(|m| b.legal_lock_placement(m) && reach.move_reachable(m));
 }
 
@@ -1484,6 +1466,8 @@ pub fn generate_engine(b: &Board, moves: &mut MoveBuffer, p: Piece, force: bool)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const PACKED_OLJ_MAX_HEIGHT: usize = 22;
 
     #[test]
     fn test_generate_i_piece_empty_board() {
