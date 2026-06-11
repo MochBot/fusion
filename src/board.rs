@@ -188,7 +188,23 @@ impl Board {
         }
 
         self.place(m);
-        let clears = self.line_clears();
+        // Only rows the piece occupies can newly fill; callers hand in boards
+        // with no pre-existing full rows (cleared eagerly on every lock).
+        let pc = m.cells();
+        let y = m.y();
+        let mut clears: Bitboard = 0;
+        let mut check = |b: &Self, cy: i32| {
+            if cy >= 0 && (cy as usize) < BOARD_HEIGHT && b.rows[cy as usize] == FULL_ROW {
+                1u64 << cy
+            } else {
+                0
+            }
+        };
+        clears |= check(self, y);
+        clears |= check(self, pc[0].y as i32 + y);
+        clears |= check(self, pc[1].y as i32 + y);
+        clears |= check(self, pc[2].y as i32 + y);
+        debug_assert_eq!(clears, self.line_clears());
         if clears == 0 {
             return 0;
         }
@@ -483,5 +499,72 @@ mod tests {
             }
             assert_eq!(board.cols, oracle, "case={case} l={l:#x}");
         }
+    }
+
+    #[test]
+    fn do_move_clears_match_full_scan_on_seeded_placements() {
+        use crate::move_buffer::MoveBuffer;
+        let mut state = 0xD0_30FE_2026_0611u64;
+        let mut xs = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let pieces = [
+            Piece::I,
+            Piece::O,
+            Piece::T,
+            Piece::L,
+            Piece::J,
+            Piece::S,
+            Piece::Z,
+        ];
+        let mut clearing = 0u32;
+        for case in 0..12000 {
+            let mut board = Board::new();
+            let h = 1 + (xs() % 12) as usize;
+            for y in 0..h {
+                let mut row = (xs() & 0x3FF) as u16;
+                if xs() % 3 != 0 {
+                    row = FULL_ROW;
+                }
+                board.rows[y] = row & !(1u16 << (xs() % 10));
+            }
+            board.rebuild_cols();
+            assert_eq!(
+                board.line_clears(),
+                0,
+                "case={case} seeded board must start clear-free"
+            );
+
+            let p = pieces[(xs() % 7) as usize];
+            let mut moves = MoveBuffer::new();
+            crate::movegen::generate(&board, &mut moves, p, false);
+            if moves.len() == 0 {
+                continue;
+            }
+            let m = moves.as_slice()[(xs() % moves.len() as u64) as usize];
+            if !board.legal_lock_placement(&m) {
+                continue;
+            }
+
+            let mut oracle_board = board.clone();
+            oracle_board.place(&m);
+            let oracle_clears = oracle_board.line_clears();
+            if oracle_clears != 0 {
+                oracle_board.clear_lines(oracle_clears);
+                clearing += 1;
+            }
+
+            let cleared = board.do_move(&m);
+            assert_eq!(cleared, popcount(oracle_clears) as i32, "case={case}");
+            assert_eq!(board.rows, oracle_board.rows, "case={case}");
+            assert_eq!(board.cols, oracle_board.cols, "case={case}");
+        }
+        assert!(
+            clearing > 200,
+            "want real clearing coverage, got {clearing}"
+        );
     }
 }
