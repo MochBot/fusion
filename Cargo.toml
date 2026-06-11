@@ -84,3 +84,9 @@ codegen-units = 1
 # throws "attempted to take ownership of Rust value while it was borrowed".
 panic = "unwind"
 strip = "symbols"
+
+# Native bench profile on equal footing with the C++ reference's -fno-exceptions;
+# never used for wasm artifacts, which require unwind (see above).
+[profile.bench-native]
+inherits = "release"
+panic = "abort"

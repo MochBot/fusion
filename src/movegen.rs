@@ -25,15 +25,187 @@ const fn piece_from_index(p: usize) -> Piece {
     }
 }
 
+#[derive(Clone, Copy)]
+struct WaveTab {
+    r1: u8,
+    rc: u8,
+    n: u8,
+    dx: [i8; 6],
+    dy: [u8; 6],
+}
+
+impl WaveTab {
+    const EMPTY: WaveTab = WaveTab {
+        r1: 0,
+        rc: 0,
+        n: 0,
+        dx: [0; 6],
+        dy: [0; 6],
+    };
+}
+
+// Kick monomorphization: tables are computed at compile time per piece so the
+// wave loop unrolls with literal offsets and constant shift amounts, matching
+// the constexpr-template codegen of the upstream C++ generator.
+const fn build_wave_tables(p_idx: usize) -> [[WaveTab; ROTATION_NB]; 3] {
+    let p = piece_from_index(p_idx);
+    let ki = kick_index(p, ACTIVE_RULES.srs_plus);
+    let ki180 = kick_180_index(p);
+    let mut tabs = [[WaveTab::EMPTY; ROTATION_NB]; 3];
+    let mut d_idx = 0;
+    while d_idx < 3 {
+        let dir = match d_idx {
+            0 => Direction::Cw,
+            1 => Direction::Ccw,
+            _ => Direction::Flip,
+        };
+        let mut ri = 0;
+        while ri < ROTATION_NB {
+            let r = Rotation::from_u8(ri as u8);
+            let r1 = rotate(dir, r);
+            let rc = canonical_r(p, r1);
+            let a = canonical_offset(p, r);
+            let b = canonical_offset(p, r1);
+            let off_x = a.x as i32 - b.x as i32;
+            let off_y = a.y as i32 - b.y as i32;
+            let mut dx = [0i8; 6];
+            let mut dy = [0u8; 6];
+            let n: u8;
+            if d_idx < 2 {
+                let kicks = &KICKS[ki][d_idx][ri];
+                n = kicks.len() as u8;
+                let mut i = 0;
+                while i < kicks.len() {
+                    dx[i] = (kicks[i].x as i32 + off_x) as i8;
+                    dy[i] = (3 + kicks[i].y as i32 + off_y) as u8;
+                    i += 1;
+                }
+            } else {
+                let kicks = &KICKS_180[ki180][ri];
+                n = if ACTIVE_RULES.srs_plus {
+                    kicks.len() as u8
+                } else {
+                    2
+                };
+                let mut i = 0;
+                while i < kicks.len() {
+                    dx[i] = (kicks[i].x as i32 + off_x) as i8;
+                    dy[i] = (3 + kicks[i].y as i32 + off_y) as u8;
+                    i += 1;
+                }
+            }
+            tabs[d_idx][ri] = WaveTab {
+                r1: r1 as u8,
+                rc: rc as u8,
+                n,
+                dx,
+                dy,
+            };
+            ri += 1;
+        }
+        d_idx += 1;
+    }
+    tabs
+}
+
+struct WaveTables<const P: usize>;
+
+impl<const P: usize> WaveTables<P> {
+    const TABS: [[WaveTab; ROTATION_NB]; 3] = build_wave_tables(P);
+}
+
+static ZERO_SMAP: [[Bitboard; 5]; COL_NB] = [[0; 5]; COL_NB];
+
+// Hot path: rotation/canonical/offset/kick lookups are folded into WaveTab once
+// per generate call, so this loop touches only precomputed deltas and masks.
+#[inline(always)]
+#[allow(clippy::too_many_arguments)]
+fn rotation_wave<const CHECK_SPIN: bool, const HAS_SMAP: bool>(
+    w: &WaveTab,
+    x: usize,
+    ri: usize,
+    to_search: &mut [[Bitboard; ROTATION_NB]; COL_NB],
+    searched: &[[Bitboard; ROTATION_NB]; COL_NB],
+    remaining: &mut Bitboard,
+    spin_set: &mut [[[Bitboard; SPIN_NB]; ROTATION_NB]; COL_NB],
+    imm: &[[Bitboard; ROTATION_NB]; COL_NB],
+    cm: &CollisionMap,
+    smap: &[[Bitboard; 5]; COL_NB],
+) {
+    let r1i = w.r1 as usize;
+    let rc = Rotation::from_u8(w.rc);
+    let mut current = to_search[x][ri];
+    let n = w.n as usize;
+
+    for i in 0..n {
+        if current == 0 {
+            break;
+        }
+        let x1 = x as i32 + w.dx[i] as i32;
+        if !is_ok_x(x1) {
+            continue;
+        }
+        let x1u = x1 as usize;
+        let y1 = w.dy[i] as u32;
+
+        let reachable = ((current << y1) >> 3) & !cm.get(x1u, rc);
+        current ^= (reachable << 3) >> y1;
+
+        if reachable == 0 {
+            continue;
+        }
+
+        if CHECK_SPIN {
+            // Immobility spins are a TETR.IO all-spin rule; with allspin off the
+            // T piece follows guideline 3-corner detection only, so the stuck
+            // term const-folds to zero and the whole fallback drops out.
+            let stuck = if ACTIVE_RULES.enable_allspin || !HAS_SMAP {
+                reachable & imm[x1u][w.rc as usize]
+            } else {
+                0
+            };
+            if HAS_SMAP {
+                let spins = reachable & smap[x1u][0];
+                let spin_tagged = spins | stuck;
+                spin_set[x1u][r1i][SpinType::NoSpin as usize] |= reachable ^ spin_tagged;
+                if spin_tagged != 0 {
+                    if i >= 4 {
+                        spin_set[x1u][r1i][SpinType::Full as usize] |= spins;
+                        spin_set[x1u][r1i][SpinType::Mini as usize] |= stuck & !spins;
+                    } else {
+                        spin_set[x1u][r1i][SpinType::Mini as usize] |=
+                            (spins & !smap[x1u][1 + r1i]) | (stuck & !spins);
+                        spin_set[x1u][r1i][SpinType::Full as usize] |=
+                            spins & smap[x1u][1 + r1i];
+                    }
+                }
+            } else {
+                spin_set[x1u][r1i][SpinType::NoSpin as usize] &= !stuck;
+                spin_set[x1u][r1i][SpinType::Mini as usize] |= stuck;
+                spin_set[x1u][r1i][SpinType::NoSpin as usize] |= reachable ^ stuck;
+            }
+        }
+
+        let m = reachable & !searched[x1u][r1i];
+        if m == 0 {
+            continue;
+        }
+
+        to_search[x1u][r1i] |= m;
+        *remaining |= bb(x1 * ROTATION_NB as i32 + w.r1 as i32);
+    }
+}
+
 // const-generic generate_inner — compiler specializes per piece + spin mode
 #[inline(never)]
-fn generate_inner<const P: usize, const CHECK_SPIN: bool>(
+fn generate_inner<const P: usize, const CHECK_SPIN: bool, const HAS_SMAP: bool>(
     cm: &CollisionMap,
     moves: &mut MoveBuffer,
     slow: bool,
     force: bool,
     spin_map: Option<&[[Bitboard; 5]; COL_NB]>,
 ) {
+    let smap = spin_map.unwrap_or(&ZERO_SMAP);
     let p = piece_from_index(P);
     let canonical_sz = canonical_size(p);
     let is_group2 = group2(p);
@@ -121,6 +293,26 @@ fn generate_inner<const P: usize, const CHECK_SPIN: bool>(
         }
     }
 
+    let ndirs = if ACTIVE_RULES.enable_180 { 3 } else { 2 };
+    let mut imm = [[0u64; ROTATION_NB]; COL_NB];
+    if P != 1 {
+        if CHECK_SPIN && (ACTIVE_RULES.enable_allspin || !HAS_SMAP) {
+            for (x, imm_x) in imm.iter_mut().enumerate() {
+                for (rci, slot) in imm_x.iter_mut().enumerate().take(canonical_sz) {
+                    let rc = Rotation::from_u8(rci as u8);
+                    let same = cm.get(x, rc);
+                    let left = if x > 0 { cm.get(x - 1, rc) } else { !0u64 };
+                    let right = if x < COL_NB - 1 {
+                        cm.get(x + 1, rc)
+                    } else {
+                        !0u64
+                    };
+                    *slot = left & right & (same >> 1) & ((same << 1) | 1);
+                }
+            }
+        }
+    }
+
     while remaining != 0 {
         let index = ctz(remaining);
         let x = (index >> 2) as usize;
@@ -188,122 +380,53 @@ fn generate_inner<const P: usize, const CHECK_SPIN: bool>(
         }
 
         if P != 1 {
-            // P != O
-            let do_rotate =
-                |kicks_rot: &[[Coordinates; 5]; ROTATION_NB],
-                 d: Direction,
-                 to_search: &mut [[Bitboard; ROTATION_NB]; COL_NB],
-                 searched: &[[Bitboard; ROTATION_NB]; COL_NB],
-                 remaining: &mut Bitboard,
-                 spin_set: &mut [[[Bitboard; SPIN_NB]; ROTATION_NB]; COL_NB],
-                 cm: &CollisionMap,
-                 spin_map: Option<&[[Bitboard; 5]; COL_NB]>| {
-                    let kicks = &kicks_rot[ri];
-                    let r1 = rotate(d, r);
-                    let rc = canonical_r(p, r1);
-                    let off = canonical_offset(p, r) - canonical_offset(p, r1);
-                    let n = if !ACTIVE_RULES.srs_plus && kicks.len() == 6 {
-                        2
-                    } else {
-                        kicks.len()
-                    };
-
-                    let mut current = to_search[x][ri];
-
-                    for (i, kick) in kicks.iter().enumerate().take(n) {
-                        if current == 0 {
-                            break;
-                        }
-                        let x1 = x as i32 + kick.x as i32 + off.x as i32;
-                        if !is_ok_x(x1) {
-                            continue;
-                        }
-                        let x1u = x1 as usize;
-
-                        let threshold: i32 = 3;
-                        let y1 = threshold + kick.y as i32 + off.y as i32;
-
-                        let reachable = ((current << y1) >> threshold) & !cm.get(x1u, rc);
-                        current ^= (reachable << threshold) >> y1;
-
-                        if reachable == 0 {
-                            continue;
-                        }
-
-                        if CHECK_SPIN {
-                            let r1i = r1 as usize;
-                            if let Some(smap) = spin_map {
-                                let stuck = immobile_bits(cm, x1u, rc, reachable);
-                                let spins = reachable & smap[x1u][0];
-                                let spin_tagged = spins | stuck;
-                                spin_set[x1u][r1i][SpinType::NoSpin as usize] |=
-                                    reachable ^ spin_tagged;
-                                if spin_tagged != 0 {
-                                    if i >= 4 {
-                                        spin_set[x1u][r1i][SpinType::Full as usize] |= spins;
-                                        spin_set[x1u][r1i][SpinType::Mini as usize] |=
-                                            stuck & !spins;
-                                    } else {
-                                        spin_set[x1u][r1i][SpinType::Mini as usize] |=
-                                            (spins & !smap[x1u][1 + r1i]) | (stuck & !spins);
-                                        spin_set[x1u][r1i][SpinType::Full as usize] |=
-                                            spins & smap[x1u][1 + r1i];
-                                    }
-                                }
-                            } else {
-                                let stuck = immobile_bits(cm, x1u, rc, reachable);
-                                spin_set[x1u][r1i][SpinType::NoSpin as usize] &= !stuck;
-                                spin_set[x1u][r1i][SpinType::Mini as usize] |= stuck;
-                                spin_set[x1u][r1i][SpinType::NoSpin as usize] |= reachable ^ stuck;
-                            }
-                        }
-
-                        let m = reachable & !searched[x1u][r1 as usize];
-                        if m == 0 {
-                            continue;
-                        }
-
-                        to_search[x1u][r1 as usize] |= m;
-                        *remaining |= remaining_index(x1, r1);
+            macro_rules! run_waves {
+                ($ri:literal) => {{
+                    rotation_wave::<CHECK_SPIN, HAS_SMAP>(
+                        &WaveTables::<P>::TABS[0][$ri],
+                        x,
+                        ri,
+                        &mut to_search,
+                        &searched,
+                        &mut remaining,
+                        &mut spin_set,
+                        &imm,
+                        cm,
+                        smap,
+                    );
+                    rotation_wave::<CHECK_SPIN, HAS_SMAP>(
+                        &WaveTables::<P>::TABS[1][$ri],
+                        x,
+                        ri,
+                        &mut to_search,
+                        &searched,
+                        &mut remaining,
+                        &mut spin_set,
+                        &imm,
+                        cm,
+                        smap,
+                    );
+                    if ndirs == 3 {
+                        rotation_wave::<CHECK_SPIN, HAS_SMAP>(
+                            &WaveTables::<P>::TABS[2][$ri],
+                            x,
+                            ri,
+                            &mut to_search,
+                            &searched,
+                            &mut remaining,
+                            &mut spin_set,
+                            &imm,
+                            cm,
+                            smap,
+                        );
                     }
-                };
-
-            let ki = kick_index(p, ACTIVE_RULES.srs_plus);
-            do_rotate(
-                &KICKS[ki][Direction::Cw as usize],
-                Direction::Cw,
-                &mut to_search,
-                &searched,
-                &mut remaining,
-                &mut spin_set,
-                cm,
-                spin_map,
-            );
-            do_rotate(
-                &KICKS[ki][Direction::Ccw as usize],
-                Direction::Ccw,
-                &mut to_search,
-                &searched,
-                &mut remaining,
-                &mut spin_set,
-                cm,
-                spin_map,
-            );
-
-            if ACTIVE_RULES.enable_180 {
-                let ki180 = kick_180_index(p);
-                do_rotate_180::<P, CHECK_SPIN>(&mut RotateContext {
-                    kicks_rot: &KICKS_180[ki180],
-                    current_search: to_search[x][ri],
-                    x,
-                    r,
-                    to_search: &mut to_search,
-                    searched: &searched,
-                    remaining: &mut remaining,
-                    spin_set: &mut spin_set,
-                    cm,
-                    spin_map,
-                });
+                }};
+            }
+            match ri {
+                0 => run_waves!(0),
+                1 => run_waves!(1),
+                2 => run_waves!(2),
+                _ => run_waves!(3),
             }
         }
 
@@ -365,19 +488,6 @@ fn generate_inner<const P: usize, const CHECK_SPIN: bool>(
     }
 }
 
-struct RotateContext<'a> {
-    kicks_rot: &'a [[Coordinates; 6]; ROTATION_NB],
-    current_search: Bitboard,
-    x: usize,
-    r: Rotation,
-    to_search: &'a mut [[Bitboard; ROTATION_NB]; COL_NB],
-    searched: &'a [[Bitboard; ROTATION_NB]; COL_NB],
-    remaining: &'a mut Bitboard,
-    spin_set: &'a mut [[[Bitboard; SPIN_NB]; ROTATION_NB]; COL_NB],
-    cm: &'a CollisionMap,
-    spin_map: Option<&'a [[Bitboard; 5]; COL_NB]>,
-}
-
 fn immobile_bits(cm: &CollisionMap, x: usize, r: Rotation, reachable: Bitboard) -> Bitboard {
     let blocked_left = if x > 0 { cm.get(x - 1, r) } else { !0u64 };
     let blocked_right = if x < COL_NB - 1 {
@@ -389,80 +499,6 @@ fn immobile_bits(cm: &CollisionMap, x: usize, r: Rotation, reachable: Bitboard) 
     let blocked_up = same_col >> 1;
     let blocked_down = (same_col << 1) | 1;
     reachable & blocked_left & blocked_right & blocked_down & blocked_up
-}
-
-fn do_rotate_180<const P: usize, const CHECK_SPIN: bool>(ctx: &mut RotateContext<'_>) {
-    let p = piece_from_index(P);
-    let ri = ctx.r as usize;
-    let r1 = rotate(Direction::Flip, ctx.r);
-    let rc = canonical_r(p, r1);
-    let off = canonical_offset(p, ctx.r) - canonical_offset(p, r1);
-    let kicks = &ctx.kicks_rot[ri];
-    let n = if !ACTIVE_RULES.srs_plus && kicks.len() == 6 {
-        2
-    } else {
-        kicks.len()
-    };
-
-    let remaining_index =
-        |x: i32, r: Rotation| -> Bitboard { bb(x * ROTATION_NB as i32 + r as i32) };
-
-    let mut current = ctx.current_search;
-
-    for (i, kick) in kicks.iter().enumerate().take(n) {
-        if current == 0 {
-            break;
-        }
-        let x1 = ctx.x as i32 + kick.x as i32 + off.x as i32;
-        if !is_ok_x(x1) {
-            continue;
-        }
-        let x1u = x1 as usize;
-
-        let threshold: i32 = 3;
-        let y1 = threshold + kick.y as i32 + off.y as i32;
-
-        let reachable = ((current << y1) >> threshold) & !ctx.cm.get(x1u, rc);
-        current ^= (reachable << threshold) >> y1;
-
-        if reachable == 0 {
-            continue;
-        }
-
-        if CHECK_SPIN {
-            let r1i = r1 as usize;
-            if let Some(smap) = ctx.spin_map {
-                let stuck = immobile_bits(ctx.cm, x1u, rc, reachable);
-                let spins = reachable & smap[x1u][0];
-                let spin_tagged = spins | stuck;
-                ctx.spin_set[x1u][r1i][SpinType::NoSpin as usize] |= reachable ^ spin_tagged;
-                if spin_tagged != 0 {
-                    if i >= 4 {
-                        ctx.spin_set[x1u][r1i][SpinType::Full as usize] |= spins;
-                        ctx.spin_set[x1u][r1i][SpinType::Mini as usize] |= stuck & !spins;
-                    } else {
-                        ctx.spin_set[x1u][r1i][SpinType::Mini as usize] |=
-                            (spins & !smap[x1u][1 + r1i]) | (stuck & !spins);
-                        ctx.spin_set[x1u][r1i][SpinType::Full as usize] |=
-                            spins & smap[x1u][1 + r1i];
-                    }
-                }
-            } else {
-                let stuck = immobile_bits(ctx.cm, x1u, rc, reachable);
-                ctx.spin_set[x1u][r1i][SpinType::NoSpin as usize] &= !stuck;
-                ctx.spin_set[x1u][r1i][SpinType::Mini as usize] |= stuck;
-                ctx.spin_set[x1u][r1i][SpinType::NoSpin as usize] |= reachable ^ stuck;
-            }
-        }
-
-        let m = reachable & !ctx.searched[x1u][r1 as usize];
-        if m == 0 {
-            continue;
-        }
-
-        ctx.to_search[x1u][r1 as usize] |= m;
-        *ctx.remaining |= remaining_index(x1, r1);
-    }
 }
 
 fn generate16<const P: usize>(cols: &[Bitboard; COL_NB], moves: &mut MoveBuffer) {
@@ -1384,13 +1420,15 @@ pub fn generate_engine(b: &Board, moves: &mut MoveBuffer, p: Piece, force: bool)
                         let cw_r = rotate(Direction::Cw, r);
                         spin_map[x][1 + ri] = spins & corners[ri] & corners[cw_r as usize];
                         let legal = !cm.get(x, r) & ((cm.get(x, r) << 1) | 1);
-                        check_spin |= (spins & legal) != 0 || immobile_bits(&cm, x, r, legal) != 0;
+                        check_spin |= (spins & legal) != 0
+                            || (ACTIVE_RULES.enable_allspin
+                                && immobile_bits(&cm, x, r, legal) != 0);
                     }
                 }
             }
 
             if check_spin {
-                generate_inner::<{ Piece::T as usize }, true>(
+                generate_inner::<{ Piece::T as usize }, true, true>(
                     &cm,
                     moves,
                     slow,
@@ -1408,7 +1446,7 @@ pub fn generate_engine(b: &Board, moves: &mut MoveBuffer, p: Piece, force: bool)
                     Piece::Z => generate16::<{ Piece::Z as usize }>(&cols, moves),
                 }
             } else {
-                generate_inner::<{ Piece::T as usize }, false>(&cm, moves, slow, force, None);
+                generate_inner::<{ Piece::T as usize }, false, false>(&cm, moves, slow, force, None);
             }
         }
         _ => {
@@ -1416,45 +1454,45 @@ pub fn generate_engine(b: &Board, moves: &mut MoveBuffer, p: Piece, force: bool)
             if allspin_eligible {
                 match p {
                     Piece::I => {
-                        generate_inner::<{ Piece::I as usize }, true>(&cm, moves, slow, force, None)
+                        generate_inner::<{ Piece::I as usize }, true, false>(&cm, moves, slow, force, None)
                     }
                     Piece::L => {
-                        generate_inner::<{ Piece::L as usize }, true>(&cm, moves, slow, force, None)
+                        generate_inner::<{ Piece::L as usize }, true, false>(&cm, moves, slow, force, None)
                     }
                     Piece::J => {
-                        generate_inner::<{ Piece::J as usize }, true>(&cm, moves, slow, force, None)
+                        generate_inner::<{ Piece::J as usize }, true, false>(&cm, moves, slow, force, None)
                     }
                     Piece::S => {
-                        generate_inner::<{ Piece::S as usize }, true>(&cm, moves, slow, force, None)
+                        generate_inner::<{ Piece::S as usize }, true, false>(&cm, moves, slow, force, None)
                     }
                     Piece::Z => {
-                        generate_inner::<{ Piece::Z as usize }, true>(&cm, moves, slow, force, None)
+                        generate_inner::<{ Piece::Z as usize }, true, false>(&cm, moves, slow, force, None)
                     }
-                    _ => generate_inner::<{ Piece::T as usize }, false>(
+                    _ => generate_inner::<{ Piece::T as usize }, false, false>(
                         &cm, moves, slow, force, None,
                     ),
                 }
             } else {
                 match p {
-                    Piece::I => generate_inner::<{ Piece::I as usize }, false>(
+                    Piece::I => generate_inner::<{ Piece::I as usize }, false, false>(
                         &cm, moves, slow, force, None,
                     ),
-                    Piece::O => generate_inner::<{ Piece::O as usize }, false>(
+                    Piece::O => generate_inner::<{ Piece::O as usize }, false, false>(
                         &cm, moves, slow, force, None,
                     ),
-                    Piece::L => generate_inner::<{ Piece::L as usize }, false>(
+                    Piece::L => generate_inner::<{ Piece::L as usize }, false, false>(
                         &cm, moves, slow, force, None,
                     ),
-                    Piece::J => generate_inner::<{ Piece::J as usize }, false>(
+                    Piece::J => generate_inner::<{ Piece::J as usize }, false, false>(
                         &cm, moves, slow, force, None,
                     ),
-                    Piece::S => generate_inner::<{ Piece::S as usize }, false>(
+                    Piece::S => generate_inner::<{ Piece::S as usize }, false, false>(
                         &cm, moves, slow, force, None,
                     ),
-                    Piece::Z => generate_inner::<{ Piece::Z as usize }, false>(
+                    Piece::Z => generate_inner::<{ Piece::Z as usize }, false, false>(
                         &cm, moves, slow, force, None,
                     ),
-                    Piece::T => generate_inner::<{ Piece::T as usize }, false>(
+                    Piece::T => generate_inner::<{ Piece::T as usize }, false, false>(
                         &cm, moves, slow, force, None,
                     ),
                 }
@@ -1519,6 +1557,31 @@ mod tests {
             assert!(ml.size() > 0, "No moves for {:?}", p);
         }
     }
+
+    // Negative pin: immobile T cells WITHOUT three filled corners exist (e.g.
+    // rows below, x=1, South, y=1), so the stuck/imm machinery in the T wave
+    // cannot be dropped to match upstream cobra's TSPIN generator. Counts still
+    // agree with cobra because such placements emit exactly once either way;
+    // only the Mini-vs-NoSpin label differs, and TETR.IO immobility rules
+    // require the Mini label.
+    #[test]
+    fn t_immobile_without_three_corners_exists() {
+        let b = board_from_rows(&[29, 816, 138, 598, 703, 312, 918, 491]);
+        let cm = crate::gen::CollisionMap::new(&b.cols, Piece::T);
+        let x = 1usize;
+        let corners = [
+            b.cols[x - 1] >> 1,
+            b.cols[x + 1] >> 1,
+            (b.cols[x + 1] << 1) | 1,
+            (b.cols[x - 1] << 1) | 1,
+        ];
+        let spins = (corners[0] & corners[1] & (corners[2] | corners[3]))
+            | (corners[2] & corners[3] & (corners[0] | corners[1]));
+        let r = Rotation::from_u8(2);
+        let stuck = immobile_bits(&cm, x, r, !cm.get(x, r));
+        assert_ne!(stuck & !spins, 0);
+    }
+
 
     // col 5 is an empty 4-deep well capped by a single filled cell at row 4; a
     // vertical I locked in the well (rows 0..3) is physically unreachable (the cap

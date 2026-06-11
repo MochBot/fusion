@@ -1,4 +1,7 @@
 /target/
+/target-prof/
+/target-pgo/
+/target-native/
 
 # Replay artifacts (prevent JJ snapshot size warnings)
 *.ttrm
