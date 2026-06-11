@@ -218,6 +218,7 @@ pub(crate) struct CollisionMap {
 }
 
 impl CollisionMap {
+    #[inline(always)]
     pub(crate) fn new(cols: &[Bitboard; COL_NB], p: Piece) -> Self {
         let cs = canonical_size(p);
         let mut board = [[0u64; 4]; COL_NB];

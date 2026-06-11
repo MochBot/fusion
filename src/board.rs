@@ -132,7 +132,18 @@ impl Board {
         for y in write..BOARD_HEIGHT {
             self.rows[y] = 0;
         }
-        self.rebuild_cols();
+        // Compress each cleared row out of the column bitsets directly,
+        // highest row first so lower bit positions stay valid; this replaces
+        // the full rows scan of rebuild_cols on the do_move hot path.
+        let mut rem = l;
+        while rem != 0 {
+            let y = 63 - rem.leading_zeros();
+            let low = (1u64 << y) - 1;
+            for c in self.cols.iter_mut() {
+                *c = (*c & low) | ((*c >> 1) & !low);
+            }
+            rem &= !(1u64 << y);
+        }
     }
 
     pub fn place(&mut self, m: &Move) {
@@ -434,5 +445,43 @@ mod tests {
 
         assert_eq!(clears, 0);
         assert_eq!(board.rows, before);
+    }
+
+    #[test]
+    fn clear_lines_cols_match_rebuild_on_seeded_boards() {
+        let mut state = 0x5EED_C1EA_2026_0611u64;
+        let mut xs = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for case in 0..4000 {
+            let mut board = Board::new();
+            let h = 2 + (xs() % 16) as usize;
+            for y in 0..h {
+                board.rows[y] = (xs() & 0x3FF) as u16;
+            }
+            let full = 1 + (xs() % 3) as usize;
+            for _ in 0..full {
+                let y = (xs() % h as u64) as usize;
+                board.rows[y] = FULL_ROW;
+            }
+            board.rebuild_cols();
+            let l = board.line_clears();
+            assert_ne!(l, 0, "case={case}");
+            board.clear_lines(l);
+
+            let mut oracle = [0u64; COL_NB];
+            for y in 0..BOARD_HEIGHT {
+                let mut bits = board.rows[y] as u64;
+                while bits != 0 {
+                    let x = bits.trailing_zeros() as usize;
+                    oracle[x] |= 1u64 << y;
+                    bits &= bits - 1;
+                }
+            }
+            assert_eq!(board.cols, oracle, "case={case} l={l:#x}");
+        }
     }
 }

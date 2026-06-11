@@ -501,6 +501,52 @@ fn immobile_bits(cm: &CollisionMap, x: usize, r: Rotation, reachable: Bitboard) 
     reachable & blocked_left & blocked_right & blocked_down & blocked_up
 }
 
+// 16-lane mirror of rotation_wave: same const kick table, but sources and
+// destinations live in 16-bit rotation lanes of one packed word per column.
+// All waves of a pop read the same `current_all`; writes are unions, so the
+// per-rotation processing order is interchangeable with the legacy
+// per-direction order.
+#[inline(always)]
+fn wave16(
+    w: &WaveTab,
+    x: usize,
+    src_bits: Bitboard,
+    current_all: Bitboard,
+    to_search: &mut [Bitboard; COL_NB],
+    searched: &[Bitboard; COL_NB],
+    remaining: &mut u32,
+    cm16: &CollisionMap16,
+) {
+    let sd = (w.r1 as usize) * 16;
+    let mut src = src_bits;
+    for i in 0..w.n as usize {
+        if src == 0 {
+            break;
+        }
+        let x1 = x as i32 + w.dx[i] as i32;
+        if !is_ok_x(x1) {
+            continue;
+        }
+        let x1u = x1 as usize;
+        let sv = w.dy[i] as u32;
+
+        let mut m = (src << sv) >> 3;
+        m &= !(cm16.get(x1u) >> sd) & 0xFFFFu64;
+        src ^= (m << 3) >> sv;
+
+        let mut visited = searched[x1u];
+        if x1u == x {
+            visited |= current_all;
+        }
+        m &= !(visited >> sd);
+
+        if m != 0 {
+            to_search[x1u] |= m << sd;
+            *remaining |= 1 << x1u;
+        }
+    }
+}
+
 fn generate16<const P: usize>(cols: &[Bitboard; COL_NB], moves: &mut MoveBuffer) {
     let p = piece_from_index(P);
     // all const — compiler resolves at monomorphization
@@ -627,162 +673,293 @@ fn generate16<const P: usize>(cols: &[Bitboard; COL_NB], moves: &mut MoveBuffer)
         }
 
         // rotate
-        if p != Piece::O {
-            let do_process = |kicks_rot: &[[Coordinates; 5]; ROTATION_NB],
-                              d: Direction,
-                              current: &mut Bitboard,
-                              to_search: &mut [Bitboard; COL_NB],
-                              searched: &[Bitboard; COL_NB],
-                              remaining: &mut u32,
-                              cm16: &CollisionMap16,
-                              x: usize| {
-                for (ri, kicks) in kicks_rot.iter().enumerate() {
-                    let r: Rotation = Rotation::from_u8(ri as u8);
-                    let shift_src = ri * 16;
-                    let src_bits = (*current >> shift_src) & 0xFFFFu64;
-                    if src_bits == 0 {
-                        continue;
-                    }
-
-                    let r1 = rotate(d, r);
-                    let shift_dest = (r1 as usize) * 16;
-                    let off = canonical_offset(p, r) - canonical_offset(p, r1);
-                    let n = if !ACTIVE_RULES.srs_plus && kicks.len() == 6 {
-                        2
-                    } else {
-                        kicks.len()
-                    };
-
-                    let mut src = src_bits;
-                    for kick in kicks.iter().take(n) {
-                        if src == 0 {
-                            break;
-                        }
-                        let x1 = x as i32 + kick.x as i32 + off.x as i32;
-                        if !is_ok_x(x1) {
-                            continue;
-                        }
-                        let x1u = x1 as usize;
-
-                        let threshold: i32 = 3;
-                        let shift_val = threshold + kick.y as i32 + off.y as i32;
-
-                        let mut m = (src << shift_val) >> threshold;
-                        m &= !(cm16.get(x1u) >> shift_dest) & 0xFFFFu64;
-                        src ^= (m << threshold) >> shift_val;
-
-                        let mut visited = searched[x1u];
-                        if x1u == x {
-                            visited |= *current;
-                        }
-                        m &= !(visited >> shift_dest);
-
-                        if m != 0 {
-                            to_search[x1u] |= m << shift_dest;
-                            *remaining |= 1 << x1u;
+        if P != 1 {
+            macro_rules! run_waves16 {
+                ($ri:literal) => {{
+                    let src_bits = (current >> ($ri * 16)) & 0xFFFFu64;
+                    if src_bits != 0 {
+                        wave16(
+                            &WaveTables::<P>::TABS[0][$ri],
+                            x,
+                            src_bits,
+                            current,
+                            &mut to_search,
+                            &searched,
+                            &mut remaining,
+                            &cm,
+                        );
+                        wave16(
+                            &WaveTables::<P>::TABS[1][$ri],
+                            x,
+                            src_bits,
+                            current,
+                            &mut to_search,
+                            &searched,
+                            &mut remaining,
+                            &cm,
+                        );
+                        if ACTIVE_RULES.enable_180 {
+                            wave16(
+                                &WaveTables::<P>::TABS[2][$ri],
+                                x,
+                                src_bits,
+                                current,
+                                &mut to_search,
+                                &searched,
+                                &mut remaining,
+                                &cm,
+                            );
                         }
                     }
-                }
-            };
-
-            let ki = kick_index(p, ACTIVE_RULES.srs_plus);
-            do_process(
-                &KICKS[ki][Direction::Cw as usize],
-                Direction::Cw,
-                &mut current,
-                &mut to_search,
-                &searched,
-                &mut remaining,
-                &cm,
-                x,
-            );
-            do_process(
-                &KICKS[ki][Direction::Ccw as usize],
-                Direction::Ccw,
-                &mut current,
-                &mut to_search,
-                &searched,
-                &mut remaining,
-                &cm,
-                x,
-            );
-
-            if ACTIVE_RULES.enable_180 {
-                let ki180 = kick_180_index(p);
-                do_process_180::<P>(&mut ProcessContext {
-                    kicks_rot: &KICKS_180[ki180],
-                    d: Direction::Flip,
-                    current: &mut current,
-                    to_search: &mut to_search,
-                    searched: &searched,
-                    remaining: &mut remaining,
-                    cm16: &cm,
-                    x,
-                });
+                }};
             }
+            run_waves16!(0);
+            run_waves16!(1);
+            run_waves16!(2);
+            run_waves16!(3);
         }
 
         searched[x] |= current;
     }
 }
 
-struct ProcessContext<'a> {
-    kicks_rot: &'a [[Coordinates; 6]; ROTATION_NB],
-    d: Direction,
-    current: &'a mut Bitboard,
-    to_search: &'a mut [Bitboard; COL_NB],
-    searched: &'a [Bitboard; COL_NB],
-    remaining: &'a mut u32,
-    cm16: &'a CollisionMap16,
-    x: usize,
+#[cfg(test)]
+struct SpinMasks16 {
+    spins: [Bitboard; COL_NB],
+    front: [Bitboard; COL_NB],
+    imm: [Bitboard; COL_NB],
 }
 
-fn do_process_180<const P: usize>(ctx: &mut ProcessContext<'_>) {
-    let p = piece_from_index(P);
-    for (ri, kicks) in ctx.kicks_rot.iter().enumerate() {
-        let r: Rotation = Rotation::from_u8(ri as u8);
-        let shift_src = ri * 16;
-        let src_bits = (*ctx.current >> shift_src) & 0xFFFFu64;
-        if src_bits == 0 {
-            continue;
+#[cfg(test)]
+const LANE_REP: Bitboard = 0x0001_0001_0001_0001;
+#[cfg(test)]
+const LANE_TOP: Bitboard = 0x7FFF_7FFF_7FFF_7FFF;
+
+// 16-bit-lane mirror of the T dispatch's spin_map/check_spin builder; valid for
+// h <= 13 boards where corner, lock, and immobility bits above row 15 are all
+// provably zero, so lane-masked shifts agree with the 64-bit forms. Kept as a
+// test-only oracle: routing production dispatch through this precheck measured
+// 9.5% slower at perft D7 (deep low boards are mostly spin-eligible, so the
+// 16-bit pass became a duplicate build instead of a save).
+#[cfg(test)]
+fn t_spin_masks16(cols: &[Bitboard; COL_NB], cm: &CollisionMap16) -> (SpinMasks16, bool) {
+    let mut masks = SpinMasks16 {
+        spins: [0; COL_NB],
+        front: [0; COL_NB],
+        imm: [0; COL_NB],
+    };
+    let mut check_spin = false;
+    for x in 0..COL_NB {
+        let c = [
+            if x > 0 { (cols[x - 1] >> 1) & 0xFFFF } else { 0xFFFF },
+            if x < COL_NB - 1 {
+                (cols[x + 1] >> 1) & 0xFFFF
+            } else {
+                0xFFFF
+            },
+            if x < COL_NB - 1 {
+                ((cols[x + 1] << 1) | 1) & 0xFFFF
+            } else {
+                0xFFFF
+            },
+            if x > 0 { ((cols[x - 1] << 1) | 1) & 0xFFFF } else { 0xFFFF },
+        ];
+        let spins = (c[0] & c[1] & (c[2] | c[3])) | (c[2] & c[3] & (c[0] | c[1]));
+        masks.spins[x] = spins.wrapping_mul(LANE_REP);
+        let mut front = 0u64;
+        for (ri, &cri) in c.iter().enumerate() {
+            let cw = rotate(Direction::Cw, Rotation::from_u8(ri as u8)) as usize;
+            front |= (spins & cri & c[cw]) << (ri * 16);
+        }
+        masks.front[x] = front;
+
+        let w = cm.get(x);
+        let left = if x > 0 { cm.get(x - 1) } else { !0u64 };
+        let right = if x < COL_NB - 1 { cm.get(x + 1) } else { !0u64 };
+        let down = ((w & LANE_TOP) << 1) | LANE_REP;
+        masks.imm[x] = left & right & ((w >> 1) & LANE_TOP) & down;
+
+        let legal = !w & down;
+        check_spin |= (masks.spins[x] & legal) != 0
+            || (ACTIVE_RULES.enable_allspin && (masks.imm[x] & legal) != 0);
+    }
+    (masks, check_spin)
+}
+
+// Packed-16 T generator with spin tracking — UNSOUND for production, kept as
+// the reference half of the order-dependence pin test. Reach, move_set, and
+// rotation labels are order-independent, but generate_inner's shift arrivals
+// label NoSpin only when the target is unsearched (first-enqueue attribution),
+// so column-granular batching shifts label attribution and changes emission
+// counts (see generate16_spin_shift_labels_are_order_dependent).
+#[cfg(test)]
+fn generate16_spin(cm: &CollisionMap16, masks: &SpinMasks16, moves: &mut MoveBuffer) {
+    let p = Piece::T;
+    let mut remaining: u32 = 0;
+    let mut to_search = [0u64; COL_NB];
+    let mut searched = [0u64; COL_NB];
+    let mut move_set = [0u64; COL_NB];
+    let mut ns = [0u64; COL_NB];
+    let mut mi = [0u64; COL_NB];
+    let mut fu = [0u64; COL_NB];
+
+    for x in 0..COL_NB {
+        let mut surface = cm.get(x);
+        searched[x] = surface;
+        surface |= (surface >> 1) & 0x7FFF_7FFF_7FFF_7FFFu64;
+        surface |= (surface >> 2) & 0x3FFF_3FFF_3FFF_3FFFu64;
+        surface |= (surface >> 4) & 0x0FFF_0FFF_0FFF_0FFFu64;
+        surface |= (surface >> 8) & 0x00FF_00FF_00FF_00FFu64;
+        let s = !surface;
+        searched[x] |= s;
+        to_search[x] = s;
+        ns[x] = s;
+        if s != 0 {
+            remaining |= 1 << x;
+        }
+    }
+
+    while remaining != 0 {
+        let x = remaining.trailing_zeros() as usize;
+        remaining &= remaining - 1;
+
+        let mut current = to_search[x];
+        to_search[x] = 0;
+        let cmw = cm.get(x);
+
+        {
+            let free = !cmw;
+            let mut m = (current >> 1) & LANE_TOP & free;
+            while (m & current) != m {
+                current |= m;
+                m |= (m >> 1) & LANE_TOP & free;
+            }
+            ns[x] |= m;
         }
 
-        let r1 = rotate(ctx.d, r);
-        let shift_dest = (r1 as usize) * 16;
-        let off = canonical_offset(p, r) - canonical_offset(p, r1);
-        let n = if !ACTIVE_RULES.srs_plus && kicks.len() == 6 {
-            2
-        } else {
-            kicks.len()
-        };
+        move_set[x] |= current & (((cmw & LANE_TOP) << 1) | LANE_REP);
 
-        let mut src = src_bits;
-        for kick in kicks.iter().take(n) {
-            if src == 0 {
-                break;
+        {
+            let mut do_shift = |x1: usize| {
+                let m = current & !searched[x1];
+                if m != 0 {
+                    to_search[x1] |= m;
+                    ns[x1] |= m;
+                    remaining |= 1 << x1;
+                }
+            };
+            if x > 0 {
+                do_shift(x - 1);
             }
-            let x1 = ctx.x as i32 + kick.x as i32 + off.x as i32;
-            if !is_ok_x(x1) {
+            if x < COL_NB - 1 {
+                do_shift(x + 1);
+            }
+        }
+
+        {
+            let mut do_waves = |kicks: &[Coordinates], ri: usize, d: Direction| {
+                let src_bits = (current >> (ri * 16)) & 0xFFFF;
+                if src_bits == 0 {
+                    return;
+                }
+                let r = Rotation::from_u8(ri as u8);
+                let r1 = rotate(d, r);
+                let r1i = r1 as usize;
+                let sd = (r1i * 16) as u32;
+                let off = canonical_offset(p, r) - canonical_offset(p, r1);
+
+                let mut src = src_bits;
+                for (i, kick) in kicks.iter().enumerate() {
+                    if src == 0 {
+                        break;
+                    }
+                    let x1 = x as i32 + kick.x as i32 + off.x as i32;
+                    if !is_ok_x(x1) {
+                        continue;
+                    }
+                    let x1u = x1 as usize;
+                    let shift_val = 3 + kick.y as i32 + off.y as i32;
+
+                    let mut m = (src << shift_val) >> 3;
+                    m &= !(cm.get(x1u) >> sd) & 0xFFFF;
+                    src ^= (m << 3) >> shift_val;
+                    if m == 0 {
+                        continue;
+                    }
+
+                    let spins = m & ((masks.spins[x1u] >> sd) & 0xFFFF);
+                    let stuck = if ACTIVE_RULES.enable_allspin {
+                        m & ((masks.imm[x1u] >> sd) & 0xFFFF)
+                    } else {
+                        0
+                    };
+                    let tagged = spins | stuck;
+                    ns[x1u] |= (m ^ tagged) << sd;
+                    if tagged != 0 {
+                        if i >= 4 {
+                            fu[x1u] |= spins << sd;
+                            mi[x1u] |= (stuck & !spins) << sd;
+                        } else {
+                            let front = (masks.front[x1u] >> sd) & 0xFFFF;
+                            mi[x1u] |= ((spins & !front) | (stuck & !spins)) << sd;
+                            fu[x1u] |= (spins & front) << sd;
+                        }
+                    }
+
+                    let mut visited = searched[x1u];
+                    if x1u == x {
+                        visited |= current;
+                    }
+                    let mq = m & !((visited >> sd) & 0xFFFF);
+                    if mq != 0 {
+                        to_search[x1u] |= mq << sd;
+                        remaining |= 1 << x1u;
+                    }
+                }
+            };
+
+            let ki = kick_index(p, ACTIVE_RULES.srs_plus);
+            for ri in 0..ROTATION_NB {
+                do_waves(&KICKS[ki][Direction::Cw as usize][ri], ri, Direction::Cw);
+            }
+            for ri in 0..ROTATION_NB {
+                do_waves(&KICKS[ki][Direction::Ccw as usize][ri], ri, Direction::Ccw);
+            }
+            if ACTIVE_RULES.enable_180 {
+                let ki180 = kick_180_index(p);
+                let n180 = if ACTIVE_RULES.srs_plus { 6 } else { 2 };
+                for ri in 0..ROTATION_NB {
+                    do_waves(&KICKS_180[ki180][ri][..n180], ri, Direction::Flip);
+                }
+            }
+        }
+
+        searched[x] |= current;
+    }
+
+    for x in 0..COL_NB {
+        for ri in 0..ROTATION_NB {
+            let sd = (ri * 16) as u32;
+            let legal = (move_set[x] >> sd) & 0xFFFF;
+            if legal == 0 {
                 continue;
             }
-            let x1u = x1 as usize;
+            let r = Rotation::from_u8(ri as u8);
+            let mut full = legal & (fu[x] >> sd);
+            let mut mini = legal & (mi[x] >> sd);
+            let mut nospin = legal & (ns[x] >> sd);
 
-            let threshold: i32 = 3;
-            let shift_val = threshold + kick.y as i32 + off.y as i32;
-
-            let mut m = (src << shift_val) >> threshold;
-            m &= !(ctx.cm16.get(x1u) >> shift_dest) & 0xFFFFu64;
-            src ^= (m << threshold) >> shift_val;
-
-            let mut visited = ctx.searched[x1u];
-            if x1u == ctx.x {
-                visited |= *ctx.current;
+            while full != 0 {
+                moves.push(Move::new_tspin(r, x as i32, ctz(full) as i32, true));
+                full &= full - 1;
             }
-            m &= !(visited >> shift_dest);
-
-            if m != 0 {
-                ctx.to_search[x1u] |= m << shift_dest;
-                *ctx.remaining |= 1 << x1u;
+            while mini != 0 {
+                moves.push(Move::new_tspin(r, x as i32, ctz(mini) as i32, false));
+                mini &= mini - 1;
+            }
+            while nospin != 0 {
+                moves.push(Move::new(p, r, x as i32, ctz(nospin) as i32, false));
+                nospin &= nospin - 1;
             }
         }
     }
@@ -1506,6 +1683,122 @@ mod tests {
     use super::*;
 
     const PACKED_OLJ_MAX_HEIGHT: usize = 22;
+
+    fn t_dispatch_64(cols: &[Bitboard; COL_NB]) -> (CollisionMap, [[u64; 5]; COL_NB], bool) {
+        let cm = CollisionMap::new(cols, Piece::T);
+        let mut check_spin = false;
+        let mut spin_map = [[0u64; 5]; COL_NB];
+        for x in 0..COL_NB {
+            let corners = [
+                if x > 0 { cols[x - 1] >> 1 } else { !0u64 },
+                if x < COL_NB - 1 {
+                    cols[x + 1] >> 1
+                } else {
+                    !0u64
+                },
+                if x < COL_NB - 1 {
+                    (cols[x + 1] << 1) | 1
+                } else {
+                    !0u64
+                },
+                if x > 0 { (cols[x - 1] << 1) | 1 } else { !0u64 },
+            ];
+            let spins = (corners[0] & corners[1] & (corners[2] | corners[3]))
+                | (corners[2] & corners[3] & (corners[0] | corners[1]));
+            spin_map[x][0] = spins;
+            for ri in 0..ROTATION_NB {
+                let r: Rotation = Rotation::from_u8(ri as u8);
+                if in_bounds(Piece::T, r, x as i32) {
+                    let cw_r = rotate(Direction::Cw, r);
+                    spin_map[x][1 + ri] = spins & corners[ri] & corners[cw_r as usize];
+                    let legal = !cm.get(x, r) & ((cm.get(x, r) << 1) | 1);
+                    check_spin |= (spins & legal) != 0
+                        || (ACTIVE_RULES.enable_allspin && immobile_bits(&cm, x, r, legal) != 0);
+                }
+            }
+        }
+        (cm, spin_map, check_spin)
+    }
+
+    #[test]
+    fn t_spin_masks16_precheck_matches_64bit_dispatch() {
+        fn xs(s: &mut u64) -> u64 {
+            let mut x = *s;
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            *s = x;
+            x
+        }
+        let mut st = 0x7515_0611_2026_0001u64;
+        let mut spin_cases = 0u64;
+        for case in 0..4000u64 {
+            let h = 1 + (xs(&mut st) % 12) as usize;
+            let mut rows = vec![0u16; h];
+            for r in rows.iter_mut() {
+                *r = (xs(&mut st) as u16) & 0x3FF;
+                *r &= !(1u16 << (xs(&mut st) % 10));
+            }
+            if let Some(l) = rows.last_mut() {
+                if *l == 0 {
+                    *l = 1u16 << (xs(&mut st) % 10);
+                }
+            }
+            let b = board_from_rows(&rows);
+            let cols = b.compute_cols();
+            let hbits = {
+                let mut m = 0u64;
+                for c in cols.iter() {
+                    m |= c;
+                }
+                crate::header::bitlen(m)
+            };
+            if hbits > 13 {
+                continue;
+            }
+
+            let (_, _, check64) = t_dispatch_64(&cols);
+            let cm16 = CollisionMap16::new(&cols, Piece::T);
+            let (_, check16) = t_spin_masks16(&cols, &cm16);
+            assert_eq!(check16, check64, "precheck case={case} rows={rows:?}");
+            if check64 {
+                spin_cases += 1;
+            }
+        }
+        assert!(spin_cases > 200, "corpus too weak: {spin_cases}");
+    }
+
+    #[test]
+    fn generate16_spin_shift_labels_are_order_dependent() {
+        // Negative pin: column-granular batching attributes first-enqueue
+        // differently, so the packed generator gains a NoSpin variant at
+        // (South, x=4, y=6) that generate_inner's pop order suppresses. This
+        // is why generate16_spin must never be promoted to production.
+        let rows = [640u16, 607, 422, 772, 585, 270, 902, 429, 777, 709];
+        let b = board_from_rows(&rows);
+        let cols = b.compute_cols();
+        let (cm, spin_map, check64) = t_dispatch_64(&cols);
+        assert!(check64);
+        let cm16 = CollisionMap16::new(&cols, Piece::T);
+        let (masks, _) = t_spin_masks16(&cols, &cm16);
+        let mut a = MoveBuffer::new();
+        generate_inner::<{ Piece::T as usize }, true, true>(
+            &cm,
+            &mut a,
+            false,
+            false,
+            Some(&spin_map),
+        );
+        let mut p = MoveBuffer::new();
+        generate16_spin(&cm16, &masks, &mut p);
+        assert_eq!(a.len(), 50);
+        assert_eq!(p.len(), 51);
+        let extra = Move::new(Piece::T, Rotation::South, 4, 6, false);
+        let in_a = a.as_slice().iter().filter(|m| m.raw() == extra.raw()).count();
+        let in_p = p.as_slice().iter().filter(|m| m.raw() == extra.raw()).count();
+        assert_eq!(in_a, 0);
+        assert_eq!(in_p, 1);
+    }
 
     #[test]
     fn test_generate_i_piece_empty_board() {
