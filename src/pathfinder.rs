@@ -311,10 +311,10 @@ fn get_input_inner(
                     };
 
                     let s_idx = if can_spin { s as usize } else { 0 };
-                    let rt_c_idx = rt_c as usize;
+                    let rt_idx = rt as usize;
 
-                    if searched[s_idx][x1u][rt_c_idx] & bb(y1) == 0 {
-                        searched[s_idx][x1u][rt_c_idx] |= bb(y1);
+                    if searched[s_idx][x1u][rt_idx] & bb(y1) == 0 {
+                        searched[s_idx][x1u][rt_idx] |= bb(y1);
                         let node_idx = vec.len() as u16;
                         vec.push(PathNode { input, prev: m.i });
                         queue.push_back(GhostMove {
@@ -350,12 +350,12 @@ fn get_input_inner(
             } else {
                 0
             };
-            let rc_idx = canonical_r(p, r) as usize;
+            let r_idx = r as usize;
 
-            if searched[s_idx][x1u][rc_idx] & bb(y as i32) != 0 {
+            if searched[s_idx][x1u][r_idx] & bb(y as i32) != 0 {
                 continue;
             }
-            searched[s_idx][x1u][rc_idx] |= bb(y as i32);
+            searched[s_idx][x1u][r_idx] |= bb(y as i32);
 
             let input = if dx < 0 {
                 Input::ShiftLeft
@@ -399,12 +399,12 @@ fn get_input_inner(
                 } else {
                     0
                 };
-                let rc_idx = canonical_r(p, r) as usize;
+                let r_idx = r as usize;
 
-                if searched[s_idx][x1u][rc_idx] & bb(y as i32) != 0 {
+                if searched[s_idx][x1u][r_idx] & bb(y as i32) != 0 {
                     continue;
                 }
-                searched[s_idx][x1u][rc_idx] |= bb(y as i32);
+                searched[s_idx][x1u][r_idx] |= bb(y as i32);
 
                 let input = if dx < 0 {
                     Input::DasLeft
@@ -433,9 +433,9 @@ fn get_input_inner(
                 } else {
                     0
                 };
-                let rc_idx = rc as usize;
-                if searched[s_idx][x][rc_idx] & bb(y1 as i32) == 0 {
-                    searched[s_idx][x][rc_idx] |= bb(y1 as i32);
+                let r_idx = r as usize;
+                if searched[s_idx][x][r_idx] & bb(y1 as i32) == 0 {
+                    searched[s_idx][x][r_idx] |= bb(y1 as i32);
                     let node_idx = vec.len() as u16;
                     vec.push(PathNode {
                         input: Input::SoftDrop,
@@ -618,10 +618,10 @@ pub(crate) fn reachable_locks(board: &Board, p: Piece, force: bool) -> ReachLock
                         };
 
                         let s_idx = if can_spin { s as usize } else { 0 };
-                        let rt_c_idx = rt_c as usize;
+                        let rt_idx = rt as usize;
 
-                        if searched[s_idx][x1u][rt_c_idx] & bb(y1) == 0 {
-                            searched[s_idx][x1u][rt_c_idx] |= bb(y1);
+                        if searched[s_idx][x1u][rt_idx] & bb(y1) == 0 {
+                            searched[s_idx][x1u][rt_idx] |= bb(y1);
                             queue.push(GhostMove {
                                 r: rt,
                                 x: x1 as i8,
@@ -654,12 +654,12 @@ pub(crate) fn reachable_locks(board: &Board, p: Piece, force: bool) -> ReachLock
                 } else {
                     0
                 };
-                let rc_idx = canonical_r(p, r) as usize;
+                let r_idx = r as usize;
 
-                if searched[s_idx][x1u][rc_idx] & bb(y as i32) != 0 {
+                if searched[s_idx][x1u][r_idx] & bb(y as i32) != 0 {
                     continue;
                 }
-                searched[s_idx][x1u][rc_idx] |= bb(y as i32);
+                searched[s_idx][x1u][r_idx] |= bb(y as i32);
 
                 queue.push(GhostMove {
                     r,
@@ -679,9 +679,9 @@ pub(crate) fn reachable_locks(board: &Board, p: Piece, force: bool) -> ReachLock
                     } else {
                         0
                     };
-                    let rc_idx = rc as usize;
-                    if searched[s_idx][x][rc_idx] & bb(y1 as i32) == 0 {
-                        searched[s_idx][x][rc_idx] |= bb(y1 as i32);
+                    let r_idx = r as usize;
+                    if searched[s_idx][x][r_idx] & bb(y1 as i32) == 0 {
+                        searched[s_idx][x][r_idx] |= bb(y1 as i32);
                         queue.push(GhostMove {
                             r,
                             x: m.x,
@@ -1073,10 +1073,10 @@ mod tests {
                         };
 
                         let s_idx = if can_spin { s as usize } else { 0 };
-                        let rt_c_idx = rt_c as usize;
+                        let rt_idx = rt as usize;
 
-                        if searched[s_idx][x1u][rt_c_idx] & bb(y1) == 0 {
-                            searched[s_idx][x1u][rt_c_idx] |= bb(y1);
+                        if searched[s_idx][x1u][rt_idx] & bb(y1) == 0 {
+                            searched[s_idx][x1u][rt_idx] |= bb(y1);
                             queue.push_back(GhostMove {
                                 r: rt,
                                 x: x1 as i8,
@@ -1109,12 +1109,12 @@ mod tests {
                 } else {
                     0
                 };
-                let rc_idx = canonical_r(p, r) as usize;
+                let r_idx = r as usize;
 
-                if searched[s_idx][x1u][rc_idx] & bb(y as i32) != 0 {
+                if searched[s_idx][x1u][r_idx] & bb(y as i32) != 0 {
                     continue;
                 }
-                searched[s_idx][x1u][rc_idx] |= bb(y as i32);
+                searched[s_idx][x1u][r_idx] |= bb(y as i32);
 
                 queue.push_back(GhostMove {
                     r,
@@ -1134,9 +1134,9 @@ mod tests {
                     } else {
                         0
                     };
-                    let rc_idx = rc as usize;
-                    if searched[s_idx][x][rc_idx] & bb(y1 as i32) == 0 {
-                        searched[s_idx][x][rc_idx] |= bb(y1 as i32);
+                    let r_idx = r as usize;
+                    if searched[s_idx][x][r_idx] & bb(y1 as i32) == 0 {
+                        searched[s_idx][x][r_idx] |= bb(y1 as i32);
                         queue.push_back(GhostMove {
                             r,
                             x: m.x,
@@ -1254,6 +1254,154 @@ mod tests {
             "expected the strict kick fix to change at least one cube on the corpus"
         );
         println!("legacy-vs-strict cubes differing: {diffs} (first: {})", first.unwrap());
+    }
+
+    #[derive(Default)]
+    struct DiffCounts {
+        cubes_compared: u64,
+        cubes_differing: u64,
+        phantom_removed: u64,
+        label_loss: u64,
+        label_gain: u64,
+        reach_gain: u64,
+        bug: u64,
+        bug_examples: Vec<String>,
+    }
+
+    // Strict-vs-legacy diff classification. Every changed lock bit must be a
+    // phantom removal (no strict input path), a label loss whose physical
+    // placement survives, or a label gain backed by a strict input path;
+    // anything else is a regression in the strict rewrite.
+    fn classify_diffs_on_corpus(n_boards: u64, seed: u64) -> DiffCounts {
+        let mut st = seed;
+        let mut counts = DiffCounts::default();
+        let mut boards = 0u64;
+        while boards < n_boards {
+            let Some(rows) = seeded_holey_rows(&mut st) else {
+                continue;
+            };
+            let b = board_from_rows(&rows);
+            boards += 1;
+            for &p in &ALL_PIECES {
+                for force in [false, true] {
+                    let legacy = reachable_locks_legacy(&b, p, force);
+                    let strict = reachable_locks(&b, p, force).locks;
+                    counts.cubes_compared += 1;
+                    if legacy == strict {
+                        continue;
+                    }
+                    counts.cubes_differing += 1;
+                    for s_idx in 0..SPIN_NB {
+                        for x in 0..COL_NB {
+                            for ri in 0..ROTATION_NB {
+                                let l = legacy[s_idx][x][ri];
+                                let s = strict[s_idx][x][ri];
+                                if l == s {
+                                    continue;
+                                }
+                                let phys_strict = strict[0][x][ri]
+                                    | strict[1][x][ri]
+                                    | strict[2][x][ri];
+                                let phys_legacy = legacy[0][x][ri]
+                                    | legacy[1][x][ri]
+                                    | legacy[2][x][ri];
+
+                                let mut gone = l & !s;
+                                while gone != 0 {
+                                    let y = ctz(gone) as i32;
+                                    gone &= gone - 1;
+                                    let has_path = move_for_lock(p, s_idx, x as i32, y, ri)
+                                        .map(|mv| {
+                                            !get_input(&b, &mv, false, force).data.is_empty()
+                                        })
+                                        .unwrap_or(false);
+                                    if has_path {
+                                        counts.bug += 1;
+                                        if counts.bug_examples.len() < 5 {
+                                            counts.bug_examples.push(format!(
+                                                "dropped-but-reachable p={p:?} force={force} \
+                                                 s={s_idx} x={x} y={y} ri={ri} rows={rows:?}"
+                                            ));
+                                        }
+                                    } else if phys_strict & bb(y) != 0 {
+                                        counts.label_loss += 1;
+                                    } else {
+                                        counts.phantom_removed += 1;
+                                    }
+                                }
+
+                                let mut gained = s & !l;
+                                while gained != 0 {
+                                    let y = ctz(gained) as i32;
+                                    gained &= gained - 1;
+                                    let replays = move_for_lock(p, s_idx, x as i32, y, ri)
+                                        .map(|mv| {
+                                            let inputs = get_input(&b, &mv, false, force);
+                                            !inputs.data.is_empty()
+                                                && simulate_inputs(&b, p, force, &inputs)
+                                                    == Some((
+                                                        x as i32,
+                                                        y,
+                                                        Rotation::from_u8(ri as u8),
+                                                        SpinType::from_u8(s_idx as u8),
+                                                    ))
+                                        })
+                                        .unwrap_or(false);
+                                    if !replays {
+                                        counts.bug += 1;
+                                        if counts.bug_examples.len() < 5 {
+                                            counts.bug_examples.push(format!(
+                                                "unexplained-gain p={p:?} force={force} \
+                                                 s={s_idx} x={x} y={y} ri={ri} rows={rows:?}"
+                                            ));
+                                        }
+                                    } else if phys_legacy & bb(y) != 0 {
+                                        counts.label_gain += 1;
+                                    } else {
+                                        counts.reach_gain += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        counts
+    }
+
+    fn report_diff_counts(counts: &DiffCounts) {
+        println!(
+            "cubes_compared={} cubes_differing={} phantom_removed={} label_loss={} \
+             label_gain={} reach_gain={} bug={}",
+            counts.cubes_compared,
+            counts.cubes_differing,
+            counts.phantom_removed,
+            counts.label_loss,
+            counts.label_gain,
+            counts.reach_gain,
+            counts.bug
+        );
+        for e in &counts.bug_examples {
+            println!("BUG: {e}");
+        }
+    }
+
+    #[test]
+    fn diff_classification_zero_bugs_on_seeded_boards() {
+        let counts = classify_diffs_on_corpus(2_000, 0xA11C_E5E5_2026_0610u64);
+        report_diff_counts(&counts);
+        assert_eq!(counts.bug, 0, "{:?}", counts.bug_examples);
+        assert!(counts.cubes_differing > 0);
+    }
+
+    #[test]
+    #[ignore]
+    fn diff_classification_zero_bugs_on_100k_boards() {
+        let counts = classify_diffs_on_corpus(100_000, 0xA11C_E5E5_2026_0610u64);
+        report_diff_counts(&counts);
+        assert_eq!(counts.bug, 0, "{:?}", counts.bug_examples);
+        assert!(counts.cubes_differing > 0);
     }
 
     fn simulate_inputs(
@@ -1515,4 +1663,5 @@ mod tests {
         assert!(!inputs.data.is_empty());
         assert_eq!(*inputs.data.last().unwrap(), Input::HardDrop);
     }
+
 }
