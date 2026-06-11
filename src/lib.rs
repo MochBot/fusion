@@ -13,6 +13,7 @@ pub mod move_encoding_ffi;
 pub mod movegen;
 pub mod pathfinder;
 pub mod perft;
+pub mod reach_locks_packed;
 pub mod reach_packed;
 pub mod policy_value_runtime;
 pub mod replay_validation;

@@ -442,11 +442,19 @@ fn get_input_inner(
 }
 
 pub(crate) struct ReachLocks {
-    piece: Piece,
-    locks: [[[u64; ROTATION_NB]; COL_NB]; SPIN_NB],
+    pub(crate) piece: Piece,
+    pub(crate) locks: [[[u64; ROTATION_NB]; COL_NB]; SPIN_NB],
 }
 
 impl ReachLocks {
+    #[inline]
+    pub(crate) fn from_locks(
+        piece: Piece,
+        locks: [[[u64; ROTATION_NB]; COL_NB]; SPIN_NB],
+    ) -> Self {
+        Self { piece, locks }
+    }
+
     #[inline]
     pub(crate) fn move_reachable(&self, m: &Move) -> bool {
         let x = m.x();

@@ -973,7 +973,8 @@ pub fn generate_playable(b: &Board, moves: &mut MoveBuffer, p: Piece, force: boo
         });
         return;
     }
-    let reach = crate::pathfinder::reachable_locks(b, p, force);
+    let reach = crate::reach_locks_packed::try_reachable_locks_packed(b, p, force)
+        .unwrap_or_else(|| crate::pathfinder::reachable_locks(b, p, force));
     moves.retain(|m| b.legal_lock_placement(m) && reach.move_reachable(m));
 }
 
