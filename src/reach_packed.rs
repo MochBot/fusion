@@ -787,7 +787,7 @@ macro_rules! impl_packed {
 
         #[inline]
         #[allow(clippy::too_many_arguments)]
-fn apply_rotate(
+        fn apply_rotate(
             search: &mut [Pb; ROTATION_NB],
             usable: &[Pb; ROTATION_NB],
             mini: &mut [Pb; ROTATION_NB],
@@ -842,7 +842,7 @@ fn apply_rotate(
         // canonical_offset is zero, so the target rotation r1 indexes usable directly.
         #[inline]
         #[allow(clippy::too_many_arguments)]
-fn apply_rotate_t(
+        fn apply_rotate_t(
             search: &mut [Pb; ROTATION_NB],
             usable: &[Pb; ROTATION_NB],
             mini: &mut [Pb; ROTATION_NB],
@@ -1593,7 +1593,7 @@ mod force_seed_tests {
 
     fn engine_raw(board: &Board, piece: Piece) -> Vec<u16> {
         let mut moves = MoveBuffer::new();
-        generate_engine(board, &mut moves, piece, true);
+        generate_engine::<true>(board, &mut moves, piece, true);
         moves.as_slice().iter().map(|mv| mv.raw()).collect()
     }
 

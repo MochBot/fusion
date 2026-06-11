@@ -175,8 +175,7 @@ fn rotation_wave<const CHECK_SPIN: bool, const HAS_SMAP: bool>(
                     } else {
                         spin_set[x1u][r1i][SpinType::Mini as usize] |=
                             (spins & !smap[x1u][1 + r1i]) | (stuck & !spins);
-                        spin_set[x1u][r1i][SpinType::Full as usize] |=
-                            spins & smap[x1u][1 + r1i];
+                        spin_set[x1u][r1i][SpinType::Full as usize] |= spins & smap[x1u][1 + r1i];
                     }
                 }
             } else {
@@ -198,13 +197,19 @@ fn rotation_wave<const CHECK_SPIN: bool, const HAS_SMAP: bool>(
 
 // const-generic generate_inner — compiler specializes per piece + spin mode
 #[inline(never)]
-fn generate_inner<const P: usize, const CHECK_SPIN: bool, const HAS_SMAP: bool>(
+fn generate_inner<
+    const P: usize,
+    const CHECK_SPIN: bool,
+    const HAS_SMAP: bool,
+    const EMIT: bool,
+>(
     cm: &CollisionMap,
     moves: &mut MoveBuffer,
     slow: bool,
     force: bool,
     spin_map: Option<&[[Bitboard; 5]; COL_NB]>,
-) {
+) -> u32 {
+    let mut count: u32 = 0;
     let smap = spin_map.unwrap_or(&ZERO_SMAP);
     let p = piece_from_index(P);
     let canonical_sz = canonical_size(p);
@@ -240,7 +245,7 @@ fn generate_inner<const P: usize, const CHECK_SPIN: bool, const HAS_SMAP: bool>(
             !cm.get(SPAWN_COL, Rotation::North) & bb(ACTIVE_RULES.spawn_row)
         };
         if spawn == 0 {
-            return;
+            return count;
         }
 
         to_search[SPAWN_COL][Rotation::North as usize] = spawn;
@@ -282,14 +287,18 @@ fn generate_inner<const P: usize, const CHECK_SPIN: bool, const HAS_SMAP: bool>(
                 if CHECK_SPIN {
                     spin_set[x][ri][SpinType::NoSpin as usize] = surface;
                 } else {
-                    moves.push(Move::new(p, r, x as i32, y as i32, false));
+                    if EMIT {
+                        moves.push(Move::new(p, r, x as i32, y as i32, false));
+                    } else {
+                        count += 1;
+                    }
                     total += popcount(!cm.get(x, r) & ((cm.get(x, r) << 1) | 1)) as i32 - 1;
                 }
             }
         }
 
         if !CHECK_SPIN && total == 0 {
-            return;
+            return count;
         }
     }
 
@@ -349,13 +358,17 @@ fn generate_inner<const P: usize, const CHECK_SPIN: bool, const HAS_SMAP: bool>(
             if m != 0 {
                 move_set[x][r1i] |= m;
                 total -= popcount(m) as i32;
-                let mut bits = m;
-                while bits != 0 {
-                    moves.push(Move::new(p, r1, x as i32, ctz(bits) as i32, false));
-                    bits &= bits - 1;
+                if EMIT {
+                    let mut bits = m;
+                    while bits != 0 {
+                        moves.push(Move::new(p, r1, x as i32, ctz(bits) as i32, false));
+                        bits &= bits - 1;
+                    }
+                } else {
+                    count += popcount(m);
                 }
                 if total == 0 {
-                    return;
+                    return count;
                 }
             }
         }
@@ -458,34 +471,39 @@ fn generate_inner<const P: usize, const CHECK_SPIN: bool, const HAS_SMAP: bool>(
                     (0, mini, nospin)
                 };
 
-                while full != 0 {
-                    let y = ctz(full) as i32;
-                    if P == { Piece::T as usize } {
-                        moves.push(Move::new_tspin(r, x as i32, y, true));
-                    } else {
-                        moves.push(Move::new_allspin_mini(p, r, x as i32, y));
+                if EMIT {
+                    while full != 0 {
+                        let y = ctz(full) as i32;
+                        if P == { Piece::T as usize } {
+                            moves.push(Move::new_tspin(r, x as i32, y, true));
+                        } else {
+                            moves.push(Move::new_allspin_mini(p, r, x as i32, y));
+                        }
+                        full &= full - 1;
                     }
-                    full &= full - 1;
-                }
 
-                while mini != 0 {
-                    let y = ctz(mini) as i32;
-                    if P == { Piece::T as usize } {
-                        moves.push(Move::new_tspin(r, x as i32, y, false));
-                    } else {
-                        moves.push(Move::new_allspin_mini(p, r, x as i32, y));
+                    while mini != 0 {
+                        let y = ctz(mini) as i32;
+                        if P == { Piece::T as usize } {
+                            moves.push(Move::new_tspin(r, x as i32, y, false));
+                        } else {
+                            moves.push(Move::new_allspin_mini(p, r, x as i32, y));
+                        }
+                        mini &= mini - 1;
                     }
-                    mini &= mini - 1;
-                }
 
-                while nospin != 0 {
-                    let y = ctz(nospin) as i32;
-                    moves.push(Move::new(p, r, x as i32, y, false));
-                    nospin &= nospin - 1;
+                    while nospin != 0 {
+                        let y = ctz(nospin) as i32;
+                        moves.push(Move::new(p, r, x as i32, y, false));
+                        nospin &= nospin - 1;
+                    }
+                } else {
+                    count += popcount(full) + popcount(mini) + popcount(nospin);
                 }
             }
         }
     }
+    count
 }
 
 fn immobile_bits(cm: &CollisionMap, x: usize, r: Rotation, reachable: Bitboard) -> Bitboard {
@@ -547,7 +565,11 @@ fn wave16(
     }
 }
 
-fn generate16<const P: usize>(cols: &[Bitboard; COL_NB], moves: &mut MoveBuffer) {
+fn generate16<const P: usize, const EMIT: bool>(
+    cols: &[Bitboard; COL_NB],
+    moves: &mut MoveBuffer,
+) -> u32 {
+    let mut count: u32 = 0;
     let p = piece_from_index(P);
     // all const — compiler resolves at monomorphization
     let canonical_sz = canonical_size(p);
@@ -592,20 +614,25 @@ fn generate16<const P: usize>(cols: &[Bitboard; COL_NB], moves: &mut MoveBuffer)
 
         move_set[x] = !surface & ((surface << 1) | f_mask) & canonical_mask;
 
-        let mut m = move_set[x];
+        let m = move_set[x];
         total += popcount(!cm.get(x) & ((cm.get(x) << 1) | f_mask) & canonical_mask) as i32
             - popcount(m) as i32;
 
-        while m != 0 {
-            let y = ctz(m);
-            let r: Rotation = Rotation::from_u8((y / 16) as u8);
-            moves.push(Move::new(p, r, x as i32, (y % 16) as i32, false));
-            m &= m - 1;
+        if EMIT {
+            let mut bits = m;
+            while bits != 0 {
+                let y = ctz(bits);
+                let r: Rotation = Rotation::from_u8((y / 16) as u8);
+                moves.push(Move::new(p, r, x as i32, (y % 16) as i32, false));
+                bits &= bits - 1;
+            }
+        } else {
+            count += popcount(m);
         }
     }
 
     if total == 0 {
-        return;
+        return count;
     }
 
     while remaining != 0 {
@@ -641,16 +668,20 @@ fn generate16<const P: usize>(cols: &[Bitboard; COL_NB], moves: &mut MoveBuffer)
                 move_set[x] |= m;
                 total -= popcount(m) as i32;
 
-                let mut bits = m;
-                while bits != 0 {
-                    let y = ctz(bits);
-                    let r: Rotation = Rotation::from_u8((y / 16) as u8);
-                    moves.push(Move::new(p, r, x as i32, (y % 16) as i32, false));
-                    bits &= bits - 1;
+                if EMIT {
+                    let mut bits = m;
+                    while bits != 0 {
+                        let y = ctz(bits);
+                        let r: Rotation = Rotation::from_u8((y / 16) as u8);
+                        moves.push(Move::new(p, r, x as i32, (y % 16) as i32, false));
+                        bits &= bits - 1;
+                    }
+                } else {
+                    count += popcount(m);
                 }
 
                 if total == 0 {
-                    return;
+                    return count;
                 }
             }
         }
@@ -721,6 +752,7 @@ fn generate16<const P: usize>(cols: &[Bitboard; COL_NB], moves: &mut MoveBuffer)
 
         searched[x] |= current;
     }
+    count
 }
 
 #[cfg(test)]
@@ -751,7 +783,11 @@ fn t_spin_masks16(cols: &[Bitboard; COL_NB], cm: &CollisionMap16) -> (SpinMasks1
     let mut check_spin = false;
     for x in 0..COL_NB {
         let c = [
-            if x > 0 { (cols[x - 1] >> 1) & 0xFFFF } else { 0xFFFF },
+            if x > 0 {
+                (cols[x - 1] >> 1) & 0xFFFF
+            } else {
+                0xFFFF
+            },
             if x < COL_NB - 1 {
                 (cols[x + 1] >> 1) & 0xFFFF
             } else {
@@ -762,7 +798,11 @@ fn t_spin_masks16(cols: &[Bitboard; COL_NB], cm: &CollisionMap16) -> (SpinMasks1
             } else {
                 0xFFFF
             },
-            if x > 0 { ((cols[x - 1] << 1) | 1) & 0xFFFF } else { 0xFFFF },
+            if x > 0 {
+                ((cols[x - 1] << 1) | 1) & 0xFFFF
+            } else {
+                0xFFFF
+            },
         ];
         let spins = (c[0] & c[1] & (c[2] | c[3])) | (c[2] & c[3] & (c[0] | c[1]));
         masks.spins[x] = spins.wrapping_mul(LANE_REP);
@@ -1073,7 +1113,7 @@ fn request_allows_packed(b: &Board, request: MovegenRequest) -> bool {
 pub fn generate_with_request(b: &Board, moves: &mut MoveBuffer, request: MovegenRequest) {
     #[cfg(not(feature = "packed_movegen"))]
     {
-        generate_engine(b, moves, request.piece, request.force);
+        generate_engine::<true>(b, moves, request.piece, request.force);
     }
 
     #[cfg(feature = "packed_movegen")]
@@ -1092,7 +1132,7 @@ pub fn generate_with_request(b: &Board, moves: &mut MoveBuffer, request: Movegen
         }
 
         if !used_packed {
-            generate_engine(b, moves, request.piece, request.force);
+            generate_engine::<true>(b, moves, request.piece, request.force);
         }
 
         if request.order == MovegenOrder::CanonicalRaw {
@@ -1110,6 +1150,14 @@ pub fn generate_search(b: &Board, moves: &mut MoveBuffer, p: Piece) {
             .with_consumer(MovegenConsumer::Search)
             .with_order(MovegenOrder::ScalarCompatible),
     );
+}
+
+/// Move count without materialization: runs the same dispatch and BFS as
+/// `generate`, but popcounts the emission masks instead of writing moves.
+/// Mirrors upstream cobra's popcount-leaf perft harness semantics.
+pub fn count_moves(b: &Board, p: Piece, force: bool) -> u32 {
+    let mut scratch = MoveBuffer::new();
+    generate_engine::<false>(b, &mut scratch, p, force)
 }
 
 // -- generate: 1:1 port of generate() dispatch --
@@ -1154,11 +1202,16 @@ pub fn needs_reachability_filter(b: &Board) -> bool {
 /// metadata; physical reachability is about the occupied cells.
 pub fn move_reachable(b: &Board, m: &Move, force: bool) -> bool {
     let bare = Move::new(m.piece(), m.rotation(), m.x(), m.y(), false);
-    if !crate::pathfinder::get_input(b, &bare, false, force).data.is_empty() {
+    if !crate::pathfinder::get_input(b, &bare, false, force)
+        .data
+        .is_empty()
+    {
         return true;
     }
     m.spin() != SpinType::NoSpin
-        && !crate::pathfinder::get_input(b, m, false, force).data.is_empty()
+        && !crate::pathfinder::get_input(b, m, false, force)
+            .data
+            .is_empty()
 }
 
 pub fn generate_playable(b: &Board, moves: &mut MoveBuffer, p: Piece, force: bool) {
@@ -1187,14 +1240,25 @@ fn cols_from_rows(rows: &[u16; crate::board::BOARD_HEIGHT]) -> [Bitboard; COL_NB
     cols
 }
 
-pub fn debug_collision_map(rows: &[u16; crate::board::BOARD_HEIGHT], p: Piece) -> [[Bitboard; 4]; COL_NB] {
+pub fn debug_collision_map(
+    rows: &[u16; crate::board::BOARD_HEIGHT],
+    p: Piece,
+) -> [[Bitboard; 4]; COL_NB] {
     crate::gen::CollisionMap::new(&cols_from_rows(rows), p).board
 }
 
 /// GPU-parity hook. Flat dims: KICKS[3][2][4][5][2], KICKS_180[2][4][6][2], canon_r[7][4], canon_off[7][4][2].
 pub fn debug_movegen_tables() -> (Vec<i32>, Vec<i32>, Vec<u32>, Vec<i32>) {
     use crate::gen::{canonical_offset, canonical_r, KICKS, KICKS_180};
-    let pieces = [Piece::I, Piece::O, Piece::T, Piece::L, Piece::J, Piece::S, Piece::Z];
+    let pieces = [
+        Piece::I,
+        Piece::O,
+        Piece::T,
+        Piece::L,
+        Piece::J,
+        Piece::S,
+        Piece::Z,
+    ];
     let mut kicks = Vec::new();
     for set in KICKS.iter() {
         for dir in set.iter() {
@@ -1230,7 +1294,10 @@ pub fn debug_movegen_tables() -> (Vec<i32>, Vec<i32>, Vec<u32>, Vec<i32>) {
 }
 
 /// GPU-parity hook (non-production): engine move set as (x, y, rotation_u8, spin_u8).
-pub fn debug_move_set(rows: &[u16; crate::board::BOARD_HEIGHT], p: Piece) -> Vec<(i32, i32, u8, u8)> {
+pub fn debug_move_set(
+    rows: &[u16; crate::board::BOARD_HEIGHT],
+    p: Piece,
+) -> Vec<(i32, i32, u8, u8)> {
     let mut b = Board::new();
     b.rows = *rows;
     b.cols = cols_from_rows(rows);
@@ -1255,7 +1322,13 @@ pub fn debug_beam_best(rows0: &[u16; crate::board::BOARD_HEIGHT], pieces: &[u8],
         combo: i32,
         pending: i32,
     }
-    let mut cur: Vec<N> = vec![N { rows: *rows0, acc: 0, b2b: 0, combo: 0, pending: 0 }];
+    let mut cur: Vec<N> = vec![N {
+        rows: *rows0,
+        acc: 0,
+        b2b: 0,
+        combo: 0,
+        pending: 0,
+    }];
     for &pe in pieces {
         let p = piece_from_index(pe as usize);
         let mut nxt: Vec<N> = Vec::new();
@@ -1354,7 +1427,13 @@ pub fn debug_beam_frontier(
         combo: i32,
         pending: i32,
     }
-    let mut cur: Vec<N> = vec![N { rows: *rows0, acc: 0, b2b: 0, combo: 0, pending: 0 }];
+    let mut cur: Vec<N> = vec![N {
+        rows: *rows0,
+        acc: 0,
+        b2b: 0,
+        combo: 0,
+        pending: 0,
+    }];
     for &pe in pieces {
         let p = piece_from_index(pe as usize);
         let mut nxt: Vec<N> = Vec::new();
@@ -1400,7 +1479,13 @@ pub fn debug_beam_frontier(
                 }
                 let is_empty = cr.iter().all(|&r| r == 0);
                 let at = crate::attack::calculate_attack_s2_tl_with_multiplier(
-                    lines, m.spin(), node.b2b, node.combo, is_empty, 0, 1.0,
+                    lines,
+                    m.spin(),
+                    node.b2b,
+                    node.combo,
+                    is_empty,
+                    0,
+                    1.0,
                 );
                 nxt.push(N {
                     rows: cr,
@@ -1448,7 +1533,13 @@ pub fn debug_beam_best_trace(
         combo: i32,
         pending: i32,
     }
-    let mut cur: Vec<N> = vec![N { rows: *rows0, acc: 0, b2b: 0, combo: 0, pending: 0 }];
+    let mut cur: Vec<N> = vec![N {
+        rows: *rows0,
+        acc: 0,
+        b2b: 0,
+        combo: 0,
+        pending: 0,
+    }];
     let mut trace = Vec::new();
     for &pe in pieces {
         let p = piece_from_index(pe as usize);
@@ -1495,7 +1586,13 @@ pub fn debug_beam_best_trace(
                 }
                 let is_empty = cr.iter().all(|&r| r == 0);
                 let at = crate::attack::calculate_attack_s2_tl_with_multiplier(
-                    lines, m.spin(), node.b2b, node.combo, is_empty, 0, 1.0,
+                    lines,
+                    m.spin(),
+                    node.b2b,
+                    node.combo,
+                    is_empty,
+                    0,
+                    1.0,
                 );
                 nxt.push(N {
                     rows: cr,
@@ -1534,7 +1631,12 @@ pub fn debug_beam_best_trace(
 /// Pure engine path (per-column collision-map BFS / generate16), bypassing the
 /// packed hybrid. `generate` dispatches here for O/T/force/tall boards; also
 /// exposed so benchmarks and the parity harness can compare engine vs packed.
-pub fn generate_engine(b: &Board, moves: &mut MoveBuffer, p: Piece, force: bool) {
+pub fn generate_engine<const EMIT: bool>(
+    b: &Board,
+    moves: &mut MoveBuffer,
+    p: Piece,
+    force: bool,
+) -> u32 {
     debug_assert!(ACTIVE_RULES.spawn_row > 0);
 
     // precompute columns once — avoids repeated 40-row iteration in col()
@@ -1553,16 +1655,15 @@ pub fn generate_engine(b: &Board, moves: &mut MoveBuffer, p: Piece, force: bool)
 
     let allspin_eligible = p != Piece::T && p != Piece::O && ACTIVE_RULES.enable_allspin;
     if low && (p != Piece::T || !ACTIVE_RULES.enable_tspin) && !allspin_eligible {
-        match p {
-            Piece::I => generate16::<{ Piece::I as usize }>(&cols, moves),
-            Piece::O => generate16::<{ Piece::O as usize }>(&cols, moves),
-            Piece::T => generate16::<{ Piece::T as usize }>(&cols, moves),
-            Piece::L => generate16::<{ Piece::L as usize }>(&cols, moves),
-            Piece::J => generate16::<{ Piece::J as usize }>(&cols, moves),
-            Piece::S => generate16::<{ Piece::S as usize }>(&cols, moves),
-            Piece::Z => generate16::<{ Piece::Z as usize }>(&cols, moves),
-        }
-        return;
+        return match p {
+            Piece::I => generate16::<{ Piece::I as usize }, EMIT>(&cols, moves),
+            Piece::O => generate16::<{ Piece::O as usize }, EMIT>(&cols, moves),
+            Piece::T => generate16::<{ Piece::T as usize }, EMIT>(&cols, moves),
+            Piece::L => generate16::<{ Piece::L as usize }, EMIT>(&cols, moves),
+            Piece::J => generate16::<{ Piece::J as usize }, EMIT>(&cols, moves),
+            Piece::S => generate16::<{ Piece::S as usize }, EMIT>(&cols, moves),
+            Piece::Z => generate16::<{ Piece::Z as usize }, EMIT>(&cols, moves),
+        };
     }
 
     match p {
@@ -1605,71 +1706,73 @@ pub fn generate_engine(b: &Board, moves: &mut MoveBuffer, p: Piece, force: bool)
             }
 
             if check_spin {
-                generate_inner::<{ Piece::T as usize }, true, true>(
+                generate_inner::<{ Piece::T as usize }, true, true, EMIT>(
                     &cm,
                     moves,
                     slow,
                     force,
                     Some(&spin_map),
-                );
+                )
             } else if low {
                 match p {
-                    Piece::I => generate16::<{ Piece::I as usize }>(&cols, moves),
-                    Piece::O => generate16::<{ Piece::O as usize }>(&cols, moves),
-                    Piece::T => generate16::<{ Piece::T as usize }>(&cols, moves),
-                    Piece::L => generate16::<{ Piece::L as usize }>(&cols, moves),
-                    Piece::J => generate16::<{ Piece::J as usize }>(&cols, moves),
-                    Piece::S => generate16::<{ Piece::S as usize }>(&cols, moves),
-                    Piece::Z => generate16::<{ Piece::Z as usize }>(&cols, moves),
+                    Piece::I => generate16::<{ Piece::I as usize }, EMIT>(&cols, moves),
+                    Piece::O => generate16::<{ Piece::O as usize }, EMIT>(&cols, moves),
+                    Piece::T => generate16::<{ Piece::T as usize }, EMIT>(&cols, moves),
+                    Piece::L => generate16::<{ Piece::L as usize }, EMIT>(&cols, moves),
+                    Piece::J => generate16::<{ Piece::J as usize }, EMIT>(&cols, moves),
+                    Piece::S => generate16::<{ Piece::S as usize }, EMIT>(&cols, moves),
+                    Piece::Z => generate16::<{ Piece::Z as usize }, EMIT>(&cols, moves),
                 }
             } else {
-                generate_inner::<{ Piece::T as usize }, false, false>(&cm, moves, slow, force, None);
+                generate_inner::<{ Piece::T as usize }, false, false, EMIT>(
+                    &cm, moves, slow, force, None,
+                )
             }
         }
         _ => {
             let cm = CollisionMap::new(&cols, p);
             if allspin_eligible {
                 match p {
-                    Piece::I => {
-                        generate_inner::<{ Piece::I as usize }, true, false>(&cm, moves, slow, force, None)
-                    }
-                    Piece::L => {
-                        generate_inner::<{ Piece::L as usize }, true, false>(&cm, moves, slow, force, None)
-                    }
-                    Piece::J => {
-                        generate_inner::<{ Piece::J as usize }, true, false>(&cm, moves, slow, force, None)
-                    }
-                    Piece::S => {
-                        generate_inner::<{ Piece::S as usize }, true, false>(&cm, moves, slow, force, None)
-                    }
-                    Piece::Z => {
-                        generate_inner::<{ Piece::Z as usize }, true, false>(&cm, moves, slow, force, None)
-                    }
-                    _ => generate_inner::<{ Piece::T as usize }, false, false>(
+                    Piece::I => generate_inner::<{ Piece::I as usize }, true, false, EMIT>(
+                        &cm, moves, slow, force, None,
+                    ),
+                    Piece::L => generate_inner::<{ Piece::L as usize }, true, false, EMIT>(
+                        &cm, moves, slow, force, None,
+                    ),
+                    Piece::J => generate_inner::<{ Piece::J as usize }, true, false, EMIT>(
+                        &cm, moves, slow, force, None,
+                    ),
+                    Piece::S => generate_inner::<{ Piece::S as usize }, true, false, EMIT>(
+                        &cm, moves, slow, force, None,
+                    ),
+                    Piece::Z => generate_inner::<{ Piece::Z as usize }, true, false, EMIT>(
+                        &cm, moves, slow, force, None,
+                    ),
+                    _ => generate_inner::<{ Piece::T as usize }, false, false, EMIT>(
                         &cm, moves, slow, force, None,
                     ),
                 }
             } else {
                 match p {
-                    Piece::I => generate_inner::<{ Piece::I as usize }, false, false>(
+                    Piece::I => generate_inner::<{ Piece::I as usize }, false, false, EMIT>(
                         &cm, moves, slow, force, None,
                     ),
-                    Piece::O => generate_inner::<{ Piece::O as usize }, false, false>(
+                    Piece::O => generate_inner::<{ Piece::O as usize }, false, false, EMIT>(
                         &cm, moves, slow, force, None,
                     ),
-                    Piece::L => generate_inner::<{ Piece::L as usize }, false, false>(
+                    Piece::L => generate_inner::<{ Piece::L as usize }, false, false, EMIT>(
                         &cm, moves, slow, force, None,
                     ),
-                    Piece::J => generate_inner::<{ Piece::J as usize }, false, false>(
+                    Piece::J => generate_inner::<{ Piece::J as usize }, false, false, EMIT>(
                         &cm, moves, slow, force, None,
                     ),
-                    Piece::S => generate_inner::<{ Piece::S as usize }, false, false>(
+                    Piece::S => generate_inner::<{ Piece::S as usize }, false, false, EMIT>(
                         &cm, moves, slow, force, None,
                     ),
-                    Piece::Z => generate_inner::<{ Piece::Z as usize }, false, false>(
+                    Piece::Z => generate_inner::<{ Piece::Z as usize }, false, false, EMIT>(
                         &cm, moves, slow, force, None,
                     ),
-                    Piece::T => generate_inner::<{ Piece::T as usize }, false, false>(
+                    Piece::T => generate_inner::<{ Piece::T as usize }, false, false, EMIT>(
                         &cm, moves, slow, force, None,
                     ),
                 }
@@ -1683,6 +1786,55 @@ mod tests {
     use super::*;
 
     const PACKED_OLJ_MAX_HEIGHT: usize = 22;
+
+    #[test]
+    fn count_moves_matches_generate_len_on_seeded_boards() {
+        let mut seed = 0xC0DE_2026_0611_BEEFu64;
+        let mut xs = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let pieces = [
+            Piece::I,
+            Piece::O,
+            Piece::T,
+            Piece::L,
+            Piece::J,
+            Piece::S,
+            Piece::Z,
+        ];
+        for case in 0..4000u32 {
+            let h = 1 + (xs() % 24) as usize;
+            let mut b = Board::new();
+            for y in 0..h {
+                let mut row = (xs() & 0x3FF) as u16;
+                row &= !(1u16 << (xs() % 10));
+                b.rows[y] = row;
+            }
+            for y in 0..h {
+                let mut bits = b.rows[y] as u64;
+                while bits != 0 {
+                    let x = bits.trailing_zeros() as usize;
+                    b.cols[x] |= 1u64 << y;
+                    bits &= bits - 1;
+                }
+            }
+            for &p in &pieces {
+                for force in [false, true] {
+                    let mut moves = MoveBuffer::new();
+                    generate(&b, &mut moves, p, force);
+                    let counted = count_moves(&b, p, force);
+                    assert_eq!(
+                        counted,
+                        moves.len() as u32,
+                        "case={case} piece={p:?} force={force} h={h}"
+                    );
+                }
+            }
+        }
+    }
 
     fn t_dispatch_64(cols: &[Bitboard; COL_NB]) -> (CollisionMap, [[u64; 5]; COL_NB], bool) {
         let cm = CollisionMap::new(cols, Piece::T);
@@ -1782,7 +1934,7 @@ mod tests {
         let cm16 = CollisionMap16::new(&cols, Piece::T);
         let (masks, _) = t_spin_masks16(&cols, &cm16);
         let mut a = MoveBuffer::new();
-        generate_inner::<{ Piece::T as usize }, true, true>(
+        generate_inner::<{ Piece::T as usize }, true, true, true>(
             &cm,
             &mut a,
             false,
@@ -1794,8 +1946,16 @@ mod tests {
         assert_eq!(a.len(), 50);
         assert_eq!(p.len(), 51);
         let extra = Move::new(Piece::T, Rotation::South, 4, 6, false);
-        let in_a = a.as_slice().iter().filter(|m| m.raw() == extra.raw()).count();
-        let in_p = p.as_slice().iter().filter(|m| m.raw() == extra.raw()).count();
+        let in_a = a
+            .as_slice()
+            .iter()
+            .filter(|m| m.raw() == extra.raw())
+            .count();
+        let in_p = p
+            .as_slice()
+            .iter()
+            .filter(|m| m.raw() == extra.raw())
+            .count();
         assert_eq!(in_a, 0);
         assert_eq!(in_p, 1);
     }
@@ -1874,7 +2034,6 @@ mod tests {
         let stuck = immobile_bits(&cm, x, r, !cm.get(x, r));
         assert_ne!(stuck & !spins, 0);
     }
-
 
     // col 5 is an empty 4-deep well capped by a single filled cell at row 4; a
     // vertical I locked in the well (rows 0..3) is physically unreachable (the cap
@@ -2123,7 +2282,7 @@ mod tests {
 
     fn raw_moves_for_engine(board: &Board, piece: Piece, force: bool) -> Vec<u16> {
         let mut moves = MoveBuffer::new();
-        generate_engine(board, &mut moves, piece, force);
+        generate_engine::<true>(board, &mut moves, piece, force);
         moves.as_slice().iter().map(|m| m.raw()).collect()
     }
 
@@ -2232,7 +2391,7 @@ mod tests {
                 let got: Vec<u16> = via.as_slice().iter().map(|m| m.raw()).collect();
 
                 let mut eng = MoveBuffer::new();
-                generate_engine(&b, &mut eng, p, false);
+                generate_engine::<true>(&b, &mut eng, p, false);
                 let mut want: Vec<u16> = eng.as_slice().iter().map(|m| m.raw()).collect();
                 want.sort_unstable();
 
@@ -2289,7 +2448,8 @@ mod tests {
                         let want = move_reachable(&b, m, force);
                         let got = reach.move_reachable(m);
                         assert_eq!(
-                            got, want,
+                            got,
+                            want,
                             "reach!=oracle p={p:?} force={force} m=({},{},{:?},{:?}) rows={rows:?}",
                             m.x(),
                             m.y(),
@@ -2417,7 +2577,9 @@ mod tests {
                     pset.dedup();
                     let mut hb = MoveBuffer::new();
                     generate(&b, &mut hb, p, force);
-                    hb.retain(|m| b.legal_lock_placement(m) && pset.binary_search(&m.raw()).is_ok());
+                    hb.retain(|m| {
+                        b.legal_lock_placement(m) && pset.binary_search(&m.raw()).is_ok()
+                    });
                     let hybrid: Vec<u16> = hb.as_slice().iter().map(|m| m.raw()).collect();
 
                     if hybrid != scalar {
@@ -2430,17 +2592,26 @@ mod tests {
             }
         }
         let total: u64 = per_height_mismatch.iter().sum();
-        let maxh = (0..64).rev().find(|&h| per_height_holed[h] > 0).unwrap_or(0);
+        let maxh = (0..64)
+            .rev()
+            .find(|&h| per_height_holed[h] > 0)
+            .unwrap_or(0);
         eprintln!("OLJ packed parity: max_holed_height={maxh} total_mismatch={total}");
         for h in 0..=maxh {
             if per_height_mismatch[h] > 0 {
-                eprintln!("  height {h}: {} mismatches / {} holed", per_height_mismatch[h], per_height_holed[h]);
+                eprintln!(
+                    "  height {h}: {} mismatches / {} holed",
+                    per_height_mismatch[h], per_height_holed[h]
+                );
             }
         }
         if let Some(f) = &first {
             eprintln!("  first: {f}");
         }
-        assert_eq!(total, 0, "packed OLJ filter diverges from scalar (see per-height above)");
+        assert_eq!(
+            total, 0,
+            "packed OLJ filter diverges from scalar (see per-height above)"
+        );
     }
 
     /// Real-distribution parity: decode boards from an actual production `.ctx`
@@ -2496,7 +2667,8 @@ mod tests {
                 holed += 1;
                 let height = b.height() as usize;
                 for &p in &pieces {
-                    if matches!(p, Piece::O | Piece::L | Piece::J) && height <= PACKED_OLJ_MAX_HEIGHT
+                    if matches!(p, Piece::O | Piece::L | Piece::J)
+                        && height <= PACKED_OLJ_MAX_HEIGHT
                     {
                         olj_le22 += 1;
                     }

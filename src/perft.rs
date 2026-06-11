@@ -26,15 +26,16 @@ pub fn perft(board: &Board, queue_offset: usize, depth: usize) -> u64 {
     }
 
     let piece = queue_piece(queue_offset);
+
+    // bulk counting: at depth 1, popcount emission masks without materializing
+    if depth == 1 {
+        return u64::from(crate::movegen::count_moves(board, piece, false));
+    }
+
     let ml = MoveList::new(board, piece);
 
     if ml.is_empty() {
         return 0;
-    }
-
-    // bulk counting: at depth 1, just return move count
-    if depth == 1 {
-        return ml.size() as u64;
     }
 
     let mut nodes: u64 = 0;
