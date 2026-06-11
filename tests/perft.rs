@@ -36,7 +36,8 @@ fn perft(board: &Board, queue: &[Piece], depth: usize) -> u64 {
 // D1-D4 baselines match cobra-movegen d7054ef, queue IOLJSZT, empty board.
 // D5-D7 are Fusion baselines: all-spin emission adds spin-labeled move
 // variants once boards develop overhangs, so deep counts exceed upstream's
-// T-spin-only totals (upstream: D5 3500883, D6 67088390, D7 2705999255).
+// T-spin-only totals. Verified: with enable_allspin=false this engine
+// reproduces upstream exactly (D5 3500883, D6 67088390, D7 2705999255).
 
 #[test]
 fn test_perft_d1() {
