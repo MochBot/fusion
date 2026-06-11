@@ -2,11 +2,17 @@ use crate::attack::AttackConfig;
 use crate::board::Board;
 use crate::eval::EvalWeights;
 use crate::header::{Move, Piece};
+use crate::move_buffer::MoveBuffer;
 use crate::policy_value_runtime::{PolicyValueRuntime, PolicyValueRuntimeContext};
 use crate::state::{ClearEvent, CoachingState, GameState};
 use crate::transposition::{TranspositionTable, ZobristKeys};
 use smallvec::SmallVec;
+use std::cell::RefCell;
 use std::sync::Arc;
+
+thread_local! {
+    static SEARCH_MOVE_SCRATCH: RefCell<MoveBuffer> = RefCell::new(MoveBuffer::new());
+}
 
 pub struct SearchConfig {
     pub beam_width: usize,
@@ -125,6 +131,17 @@ pub(crate) struct SearchExpansionContext<'a> {
     pub tt: &'a mut Option<TranspositionTable>,
     pub policy_value: Option<&'a PolicyValueRuntime>,
     pub runtime_context: Option<&'a PolicyValueRuntimeContext>,
+}
+
+impl SearchExpansionContext<'_> {
+    #[inline]
+    pub(crate) fn with_move_scratch<T>(&mut self, f: impl FnOnce(&mut MoveBuffer) -> T) -> T {
+        SEARCH_MOVE_SCRATCH.with(|scratch| {
+            let mut moves = scratch.borrow_mut();
+            moves.clear();
+            f(&mut moves)
+        })
+    }
 }
 
 /// Parameters for a single beam search iteration.

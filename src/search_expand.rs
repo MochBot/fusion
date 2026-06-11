@@ -3,7 +3,6 @@ use crate::attack::{calculate_attack_full, AttackContext};
 use crate::board::{Board, BOARD_HEIGHT};
 use crate::eval::{evaluate, EvalWeights};
 use crate::header::{Move, Piece};
-use crate::move_buffer::MoveBuffer;
 use crate::movegen::generate_search;
 use crate::search_config::{SearchExpansionContext, SearchNode};
 use crate::state::{
@@ -503,6 +502,7 @@ fn split_next_queue(queue: &[Piece], consumed: usize) -> (Option<Piece>, SmallVe
 }
 
 fn push_actions(
+    ctx: &mut SearchExpansionContext<'_>,
     actions: &mut Vec<CandidateAction>,
     board: &Board,
     piece: Piece,
@@ -511,25 +511,27 @@ fn push_actions(
     next_current: Option<Piece>,
     next_queue: SmallVec<[Piece; 16]>,
 ) {
-    let mut moves = MoveBuffer::new();
-    record_movegen_call();
-    profile_action_generation(|| generate_search(board, &mut moves, piece));
-    profile_legal_filter(|| {
-        for mv in moves.as_slice() {
-            if board.legal_lock_placement(mv) {
-                actions.push(CandidateAction {
-                    mv: *mv,
-                    hold_used,
-                    next_hold,
-                    next_current,
-                    next_queue: next_queue.clone(),
-                });
+    ctx.with_move_scratch(|moves| {
+        record_movegen_call();
+        profile_action_generation(|| generate_search(board, moves, piece));
+        profile_legal_filter(|| {
+            for mv in moves.as_slice() {
+                if board.legal_lock_placement(mv) {
+                    actions.push(CandidateAction {
+                        mv: *mv,
+                        hold_used,
+                        next_hold,
+                        next_current,
+                        next_queue: next_queue.clone(),
+                    });
+                }
             }
-        }
+        });
     });
 }
 
 fn enumerate_actions(
+    ctx: &mut SearchExpansionContext<'_>,
     board: &Board,
     current: Option<Piece>,
     hold: Option<Piece>,
@@ -541,6 +543,7 @@ fn enumerate_actions(
     if let Some(current_piece) = current {
         let (next_current, next_queue) = split_next_queue(queue, 0);
         push_actions(
+            ctx,
             &mut actions,
             board,
             current_piece,
@@ -553,6 +556,7 @@ fn enumerate_actions(
         if let Some(held_piece) = hold {
             let (next_current, next_queue) = split_next_queue(queue, 0);
             push_actions(
+                ctx,
                 &mut actions,
                 board,
                 held_piece,
@@ -564,6 +568,7 @@ fn enumerate_actions(
         } else if let Some(&queue_piece) = queue.first() {
             let (next_current, next_queue) = split_next_queue(queue, 1);
             push_actions(
+                ctx,
                 &mut actions,
                 board,
                 queue_piece,
@@ -619,11 +624,11 @@ fn infer_for_state(
     bag_number: u32,
     pieces_into_bag: u8,
     coaching: CoachingState,
-    ctx: &SearchExpansionContext<'_>,
+    ctx: &mut SearchExpansionContext<'_>,
 ) -> Option<(Vec<CandidateAction>, Vec<f32>, f32)> {
     ctx.policy_value?;
     ctx.runtime_context?;
-    let actions = enumerate_actions(board, current, hold, queue);
+    let actions = enumerate_actions(ctx, board, current, hold, queue);
     let (policy_logits, value) = infer_for_actions(
         board,
         current,
@@ -796,7 +801,13 @@ pub(crate) fn gen_and_eval_root(
     nodes: &mut Vec<SearchNode>,
 ) {
     record_expanded_node();
-    let actions = enumerate_actions(&state.board, Some(state.current), state.hold, &state.queue);
+    let actions = enumerate_actions(
+        ctx,
+        &state.board,
+        Some(state.current),
+        state.hold,
+        &state.queue,
+    );
     let fallback_len = actions.len();
     let (actions, policy_scores) = if let Some((policy_scores, _)) = infer_for_actions(
         &state.board,
@@ -945,6 +956,7 @@ pub(crate) fn expand_node(
 ) {
     record_expanded_node();
     let actions = enumerate_actions(
+        ctx,
         &parent.board,
         parent.current,
         parent.hold,
