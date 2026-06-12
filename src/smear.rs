@@ -468,6 +468,21 @@ pub const fn h_place(p: usize) -> i32 {
     2 + (p == PI_I) as i32 - (p == PI_O) as i32
 }
 
+/// Rows a freshly placed piece can add above its anchor: 1 + the highest cell
+/// dy of the canonical-rotation cells (the anchor itself sits at dy 0).
+pub const fn top_extent(p: usize, rc: usize) -> i32 {
+    let cells = PCELLS[p][rc];
+    let mut top = 0i32;
+    let mut i = 0;
+    while i < 3 {
+        if cells[i].1 as i32 > top {
+            top = cells[i].1 as i32;
+        }
+        i += 1;
+    }
+    top + 1
+}
+
 type K5 = [(i8, i8); 5];
 
 // SRS kick tables (CW, CCW), upstream layout: rows indexed by source rotation.
@@ -1010,13 +1025,89 @@ fn step_cast<const P: usize, const N: usize, const M: usize>(
     perft_rec(&nb, q, depth)
 }
 
+// Fused final level: children are leaves, so skip the full-board normalize,
+// the max_y rescan, and the per-child piece/band dispatch chain. The child
+// height is exact: a clear-free placement tops out at y + top_extent, and the
+// rare clearing placement falls back to a rescan of the small banded board.
+fn last_level<const P2: usize, const N: usize, const M: usize>(
+    b1: &SBoard<N>,
+    ml: &SMoves<N>,
+    p: usize,
+    h: i32,
+) -> u64 {
+    let mut nodes = 0u64;
+    let cs = csize(p);
+    let mut rc = 0;
+    while rc < cs {
+        let te = top_extent(p, rc);
+        ml.m[rc].for_each_set_bit(|x, y| {
+            let mut b2: SBoard<M> = b1.cast();
+            let clears = b2.do_move(p, rc, x, y);
+            let h2 = if clears == 0 {
+                let t = y + te;
+                if t > h {
+                    t
+                } else {
+                    h
+                }
+            } else {
+                b2.max_y()
+            };
+            // Underestimating h2 would let count_locks pick fast init while the
+            // spawn cell is blocked, silently overcounting. Pin exactness in debug.
+            debug_assert_eq!(h2, b2.max_y());
+            nodes += match band_words(h2 + h_gen(P2)) {
+                1 => count_locks::<P2, 1>(&b2.cast(), h2, 0),
+                2 => count_locks::<P2, 2>(&b2.cast(), h2, 0),
+                3 => count_locks::<P2, 3>(&b2.cast(), h2, 0),
+                4 => count_locks::<P2, 4>(&b2.cast(), h2, 0),
+                _ => count_locks::<P2, 8>(&b2.cast(), h2, 0),
+            } as u64;
+        });
+        rc += 1;
+    }
+    nodes
+}
+
+#[inline(always)]
+fn last_dispatch<const N: usize, const M: usize>(
+    b1: &SBoard<N>,
+    ml: &SMoves<N>,
+    p: usize,
+    p2: usize,
+    h: i32,
+) -> u64 {
+    match p2 {
+        0 => last_level::<0, N, M>(b1, ml, p, h),
+        1 => last_level::<1, N, M>(b1, ml, p, h),
+        2 => last_level::<2, N, M>(b1, ml, p, h),
+        3 => last_level::<3, N, M>(b1, ml, p, h),
+        4 => last_level::<4, N, M>(b1, ml, p, h),
+        5 => last_level::<5, N, M>(b1, ml, p, h),
+        _ => last_level::<6, N, M>(b1, ml, p, h),
+    }
+}
+
 fn inner<const P: usize, const N: usize>(b: &SBoard<8>, q: &[usize], depth: usize, h: i32) -> u64 {
     let b1: SBoard<N> = b.cast();
     let ml = generate::<P, N>(&b1, h, 0);
     let h2w = band_words(h + h_place(P));
+    let rest = &q[1..];
+    if depth == 2 {
+        let p2 = rest[0];
+        return if h2w == N {
+            last_dispatch::<N, N>(&b1, &ml, P, p2, h)
+        } else {
+            match h2w {
+                2 => last_dispatch::<N, 2>(&b1, &ml, P, p2, h),
+                3 => last_dispatch::<N, 3>(&b1, &ml, P, p2, h),
+                4 => last_dispatch::<N, 4>(&b1, &ml, P, p2, h),
+                _ => last_dispatch::<N, 8>(&b1, &ml, P, p2, h),
+            }
+        };
+    }
     let mut nodes = 0u64;
     let cs = csize(P);
-    let rest = &q[1..];
     let mut rc = 0;
     while rc < cs {
         ml.m[rc].for_each_set_bit(|x, y| {
@@ -1565,6 +1656,129 @@ mod tests {
         for (q, want) in cases {
             let queue = parse_queue(q).unwrap();
             assert_eq!(perft(&queue), want, "queue {}", q);
+        }
+    }
+
+    // Frozen verbatim copy of the pre-fusion perft driver, kept as the
+    // behavioral oracle for driver refactor parity tests. Do not optimize.
+    fn reference_leaf<const P: usize, const N: usize>(b: &SBoard<8>, h: i32) -> u64 {
+        let b1: SBoard<N> = b.cast();
+        count_locks::<P, N>(&b1, h, 0) as u64
+    }
+
+    fn reference_step_cast<const P: usize, const N: usize, const M: usize>(
+        b1: &SBoard<N>,
+        rc: usize,
+        x: i32,
+        y: i32,
+        q: &[usize],
+        depth: usize,
+    ) -> u64 {
+        let mut b2: SBoard<M> = b1.cast();
+        b2.do_move(P, rc, x, y);
+        let nb: SBoard<8> = b2.cast();
+        reference_perft_rec(&nb, q, depth)
+    }
+
+    fn reference_inner<const P: usize, const N: usize>(
+        b: &SBoard<8>,
+        q: &[usize],
+        depth: usize,
+        h: i32,
+    ) -> u64 {
+        let b1: SBoard<N> = b.cast();
+        let ml = generate::<P, N>(&b1, h, 0);
+        let h2w = band_words(h + h_place(P));
+        let mut nodes = 0u64;
+        let cs = csize(P);
+        let rest = &q[1..];
+        let mut rc = 0;
+        while rc < cs {
+            ml.m[rc].for_each_set_bit(|x, y| {
+                nodes += if h2w == N {
+                    reference_step_cast::<P, N, N>(&b1, rc, x, y, rest, depth - 1)
+                } else {
+                    match h2w {
+                        2 => reference_step_cast::<P, N, 2>(&b1, rc, x, y, rest, depth - 1),
+                        3 => reference_step_cast::<P, N, 3>(&b1, rc, x, y, rest, depth - 1),
+                        4 => reference_step_cast::<P, N, 4>(&b1, rc, x, y, rest, depth - 1),
+                        _ => reference_step_cast::<P, N, 8>(&b1, rc, x, y, rest, depth - 1),
+                    }
+                };
+            });
+            rc += 1;
+        }
+        nodes
+    }
+
+    fn reference_with_piece<const P: usize>(b: &SBoard<8>, q: &[usize], depth: usize) -> u64 {
+        let h = b.max_y();
+        let h1w = band_words(h + h_gen(P));
+        if depth == 1 {
+            return match h1w {
+                1 => reference_leaf::<P, 1>(b, h),
+                2 => reference_leaf::<P, 2>(b, h),
+                3 => reference_leaf::<P, 3>(b, h),
+                4 => reference_leaf::<P, 4>(b, h),
+                _ => reference_leaf::<P, 8>(b, h),
+            };
+        }
+        match h1w {
+            1 => reference_inner::<P, 1>(b, q, depth, h),
+            2 => reference_inner::<P, 2>(b, q, depth, h),
+            3 => reference_inner::<P, 3>(b, q, depth, h),
+            4 => reference_inner::<P, 4>(b, q, depth, h),
+            _ => reference_inner::<P, 8>(b, q, depth, h),
+        }
+    }
+
+    fn reference_perft_rec(b: &SBoard<8>, q: &[usize], depth: usize) -> u64 {
+        match q[0] {
+            0 => reference_with_piece::<0>(b, q, depth),
+            1 => reference_with_piece::<1>(b, q, depth),
+            2 => reference_with_piece::<2>(b, q, depth),
+            3 => reference_with_piece::<3>(b, q, depth),
+            4 => reference_with_piece::<4>(b, q, depth),
+            5 => reference_with_piece::<5>(b, q, depth),
+            _ => reference_with_piece::<6>(b, q, depth),
+        }
+    }
+
+    #[test]
+    fn random_queue_perft_matches_reference_driver() {
+        let mut state = 0x0001_B0A7_2026_0612u64;
+        let mut queues: Vec<Vec<usize>> = vec![
+            vec![PI_T, PI_T, PI_T, PI_T],
+            vec![PI_I, PI_Z, PI_S, PI_T],
+            vec![PI_O, PI_O, PI_O, PI_O],
+            vec![PI_L, PI_J, PI_S, PI_Z],
+            vec![PI_S, PI_Z, PI_S, PI_Z],
+            vec![PI_J, PI_I, PI_T, PI_L],
+        ];
+        for case in 0..30 {
+            let depth = 1 + (case % 4);
+            let q: Vec<usize> = (0..depth).map(|_| (xs(&mut state) % 7) as usize).collect();
+            queues.push(q);
+        }
+        for q in &queues {
+            let b = SBoard::<8>::EMPTY;
+            let want = reference_perft_rec(&b, q, q.len());
+            assert_eq!(perft(q), want, "queue {:?}", q);
+        }
+    }
+
+    #[test]
+    fn top_extent_matches_pcells_scan() {
+        for p in 0..7 {
+            for rc in 0..csize(p) {
+                let mut top = 0i32;
+                for (_, dy) in PCELLS[p][rc] {
+                    if dy as i32 > top {
+                        top = dy as i32;
+                    }
+                }
+                assert_eq!(top_extent(p, rc), top + 1, "p={} rc={}", p, rc);
+            }
         }
     }
 }
