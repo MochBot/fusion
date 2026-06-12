@@ -711,6 +711,27 @@ fn kick_step<const P: usize, const D: usize, const R: usize, const I: usize, con
 /// Generate all reachable lock positions for piece `P` on an `N`-word band.
 /// `y` is the stack height (`max_y`), `force` extends the spawn scan upward.
 pub fn generate<const P: usize, const N: usize>(b: &SBoard<N>, y: i32, force: i32) -> SMoves<N> {
+    gen_impl::<P, N, true>(b, y, force).0
+}
+
+/// Count reachable lock positions without materializing the move boards.
+/// Identical closure to `generate`; used by perft leaves where only the
+/// popcount is consumed, which keeps four fewer boards live across the BFS.
+pub fn count_locks<const P: usize, const N: usize>(b: &SBoard<N>, y: i32, force: i32) -> u32 {
+    gen_impl::<P, N, false>(b, y, force).1
+}
+
+// Shared closure body. Tracks `missing[rc] = cands[rc] & !reached` instead of
+// the reached move boards themselves: every harvest becomes a single andnot
+// and every "all candidates covered?" test becomes an any() test, while the
+// landable map stops being live across the BFS (count mode folds it into a
+// scalar total; emit mode rebuilds `moves = cands & !missing` at the exits).
+// The unused half of the return pair is dead code per EMIT instantiation.
+fn gen_impl<const P: usize, const N: usize, const EMIT: bool>(
+    b: &SBoard<N>,
+    y: i32,
+    force: i32,
+) -> (SMoves<N>, u32) {
     const { assert!(P < 7) };
     let h: i32 = TLINES * N as i32;
     let cs = csize(P);
@@ -718,103 +739,144 @@ pub fn generate<const P: usize, const N: usize>(b: &SBoard<N>, y: i32, force: i3
     let all_done: u32 = (1u32 << ss) - 1;
 
     let usable = usable_map::<P, N>(b);
-    let cands = landable_map(&usable, cs);
 
-    let mut moves = [SBoard::<N>::EMPTY; 4];
+    let mut missing = [SBoard::<N>::EMPTY; 4];
     let mut search = [SBoard::<N>::EMPTY; 4];
     let mut remaining: u32 = 0;
     let mut done: u32;
+    let mut total: u32 = 0;
 
-    if h > SPAWN_Y && y > SPAWN_Y - h_spawn(P) {
-        // Slow init: the stack reaches the spawn area, so reachability has to
-        // start from the actual spawn cell (scanning upward by `force`).
-        let threshold = (SPAWN_Y + force + 1).min(h);
-        let mut s = SPAWN_Y;
-        while s < threshold && !usable[0].get(SPAWN_X, s) {
-            s += 1;
-        }
-        if s == threshold {
-            return SMoves::EMPTY;
-        }
-        search[0].set(SPAWN_X, s);
-        remaining = (1u32 << cs) - 1;
-        done = all_done & !1;
-    } else {
-        // Fast init: smear the blocked map downward so `search` starts as the
-        // sky-droppable set. Sky-drop reachability is a sound subset of full
-        // reachability, so if it already covers every landable candidate the
-        // tuck/seed/BFS phases cannot change the answer; most open boards
-        // (the bulk of perft leaves) exit here before any tuck work.
-        let ceiling = h - h_gen(P);
-        let mut r = 0;
-        while r < cs {
-            let mut surface = usable[r].not();
-            if ceiling >= 1 {
-                surface = surface.or(&surface.shifted(0, -1));
+    macro_rules! finish {
+        () => {{
+            if EMIT {
+                let cands = landable_map(&usable, cs);
+                let mut m = [SBoard::<N>::EMPTY; 4];
+                let mut r = 0;
+                while r < cs {
+                    m[r] = cands[r].andnot(&missing[r]);
+                    r += 1;
+                }
+                return (SMoves { m }, 0);
+            } else {
+                let mut miss = 0u32;
+                let mut r = 0;
+                while r < cs {
+                    miss += missing[r].popcount();
+                    r += 1;
+                }
+                return (SMoves::EMPTY, total - miss);
             }
-            if ceiling >= 2 {
-                surface = surface.or(&surface.shifted(0, -2));
-            }
-            if ceiling >= 4 {
-                surface = surface.or(&surface.shifted(0, -4));
-            }
-            if ceiling >= 8 {
-                surface = surface.or(&surface.shifted(0, -8));
-            }
-            if ceiling >= 16 {
-                surface = surface.or(&surface.shifted(0, -16));
-            }
-            search[r] = surface.not();
-            moves[r] = search[r].and(&cands[r]);
-            if moves[r] != cands[r] {
-                remaining |= 1 << r;
-            }
-            r += 1;
-        }
-        if remaining == 0 {
-            return SMoves { m: moves };
-        }
+        }};
+    }
 
-        // Two rounds of horizontal tucks, then the kick-0 rotation seeds.
-        let mut r = 0;
-        while r < cs {
-            let mut s = search[r];
-            s = s.or(&s.shifted(-1, 0).or(&s.shifted(1, 0)).and(&usable[r]));
-            s = s.or(&s.shifted(-1, 0).or(&s.shifted(1, 0)).and(&usable[r]));
-            search[r] = s;
-            r += 1;
-        }
-
-        if group3(P) {
-            // Sequential on purpose, matching upstream: later rotations may
-            // pick up seeds added to earlier ones. Any sound seed superset
-            // yields the same closure.
+    {
+        let cands = landable_map(&usable, cs);
+        if !EMIT {
             let mut r = 0;
-            while r < 4 {
-                let r1 = (r + 1) & 3;
-                let r2 = (r + 3) & 3;
-                search[r] = search[r].or(&search[r1].or(&search[r2]).and(&usable[r]));
+            while r < cs {
+                total += cands[r].popcount();
                 r += 1;
             }
         }
 
-        remaining = 0;
-        let mut r = 0;
-        while r < cs {
-            moves[r] = search[r].and(&cands[r]);
-            if moves[r] != cands[r] {
-                remaining |= 1 << r;
+        if h > SPAWN_Y && y > SPAWN_Y - h_spawn(P) {
+            // Slow init: the stack reaches the spawn area, so reachability has
+            // to start from the actual spawn cell (scanning upward by `force`).
+            let threshold = (SPAWN_Y + force + 1).min(h);
+            let mut s = SPAWN_Y;
+            while s < threshold && !usable[0].get(SPAWN_X, s) {
+                s += 1;
             }
-            r += 1;
+            if s == threshold {
+                return (SMoves::EMPTY, 0);
+            }
+            search[0].set(SPAWN_X, s);
+            let mut r = 0;
+            while r < cs {
+                missing[r] = cands[r];
+                if missing[r].any() {
+                    remaining |= 1 << r;
+                }
+                r += 1;
+            }
+            done = all_done & !1;
+        } else {
+            // Fast init: smear the blocked map downward so `search` starts as
+            // the sky-droppable set. Sky-drop reachability is a sound subset of
+            // full reachability, so if it already covers every landable
+            // candidate the tuck/seed/BFS phases cannot change the answer;
+            // most open boards (the bulk of perft leaves) exit here.
+            let ceiling = h - h_gen(P);
+            let mut r = 0;
+            while r < cs {
+                let mut surface = usable[r].not();
+                if ceiling >= 1 {
+                    surface = surface.or(&surface.shifted(0, -1));
+                }
+                if ceiling >= 2 {
+                    surface = surface.or(&surface.shifted(0, -2));
+                }
+                if ceiling >= 4 {
+                    surface = surface.or(&surface.shifted(0, -4));
+                }
+                if ceiling >= 8 {
+                    surface = surface.or(&surface.shifted(0, -8));
+                }
+                if ceiling >= 16 {
+                    surface = surface.or(&surface.shifted(0, -16));
+                }
+                search[r] = surface.not();
+                missing[r] = cands[r].andnot(&search[r]);
+                if missing[r].any() {
+                    remaining |= 1 << r;
+                }
+                r += 1;
+            }
+            if remaining == 0 {
+                finish!();
+            }
+
+            // Two rounds of horizontal tucks, then the kick-0 rotation seeds.
+            let mut r = 0;
+            while r < cs {
+                let mut s = search[r];
+                s = s.or(&s.shifted(-1, 0).or(&s.shifted(1, 0)).and(&usable[r]));
+                s = s.or(&s.shifted(-1, 0).or(&s.shifted(1, 0)).and(&usable[r]));
+                search[r] = s;
+                r += 1;
+            }
+
+            if group3(P) {
+                // Sequential on purpose, matching upstream: later rotations may
+                // pick up seeds added to earlier ones. Any sound seed superset
+                // yields the same closure.
+                let mut r = 0;
+                while r < 4 {
+                    let r1 = (r + 1) & 3;
+                    let r2 = (r + 3) & 3;
+                    search[r] = search[r].or(&search[r1].or(&search[r2]).and(&usable[r]));
+                    r += 1;
+                }
+            }
+
+            remaining = 0;
+            let mut r = 0;
+            while r < cs {
+                missing[r] = missing[r].andnot(&search[r]);
+                if missing[r].any() {
+                    remaining |= 1 << r;
+                }
+                r += 1;
+            }
+            if remaining == 0 {
+                finish!();
+            }
+            if group2(P) {
+                search[2] = search[0];
+                search[3] = search[1];
+            }
+            done = 0;
         }
-        if remaining == 0 {
-            return SMoves { m: moves };
-        }
-        if group2(P) {
-            search[2] = search[0];
-            search[3] = search[1];
-        }
-        done = 0;
     }
 
     // BFS over nominal rotations with masked first-valid-kick waves.
@@ -846,8 +908,8 @@ pub fn generate<const P: usize, const N: usize>(b: &SBoard<N>, y: i32, force: i3
                     search[r1] = search[r1].or(&res);
                     unsearched[r1] = unsearched[r1].andnot(&res);
                     done &= !(1u32 << r1);
-                    moves[r1c] = moves[r1c].or(&res.and(&cands[r1c]));
-                    if moves[r1c] != cands[r1c] {
+                    missing[r1c] = missing[r1c].andnot(&res);
+                    if missing[r1c].any() {
                         remaining |= 1 << r1c;
                     } else {
                         remaining &= !(1u32 << r1c);
@@ -876,8 +938,8 @@ pub fn generate<const P: usize, const N: usize>(b: &SBoard<N>, y: i32, force: i3
                     unsearched[$r] = unsearched[$r].xor(&temp);
                 }
 
-                moves[rc] = moves[rc].or(&search[$r].and(&cands[rc]));
-                if moves[rc] != cands[rc] {
+                missing[rc] = missing[rc].andnot(&search[$r]);
+                if missing[rc].any() {
                     remaining |= 1 << rc;
                 } else {
                     remaining &= !(1u32 << rc);
@@ -909,7 +971,7 @@ pub fn generate<const P: usize, const N: usize>(b: &SBoard<N>, y: i32, force: i3
         process_rot!(3);
     }
 
-    SMoves { m: moves }
+    finish!();
 }
 
 // ---------------------------------------------------------------------------
@@ -931,7 +993,7 @@ const fn band_words(h: i32) -> usize {
 
 fn leaf<const P: usize, const N: usize>(b: &SBoard<8>, h: i32) -> u64 {
     let b1: SBoard<N> = b.cast();
-    generate::<P, N>(&b1, h, 0).popcount(csize(P)) as u64
+    count_locks::<P, N>(&b1, h, 0) as u64
 }
 
 fn step_cast<const P: usize, const N: usize, const M: usize>(
@@ -1033,6 +1095,210 @@ pub fn parse_queue(s: &str) -> Option<Vec<usize>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Frozen verbatim copy of the pre-missing-tracking `generate`, kept as the
+    // behavioral oracle for the refactor parity tests. Do not optimize or fix.
+    pub fn generate_reference<const P: usize, const N: usize>(b: &SBoard<N>, y: i32, force: i32) -> SMoves<N> {
+        const { assert!(P < 7) };
+        let h: i32 = TLINES * N as i32;
+        let cs = csize(P);
+        let ss = ssize(P);
+        let all_done: u32 = (1u32 << ss) - 1;
+
+        let usable = usable_map::<P, N>(b);
+        let cands = landable_map(&usable, cs);
+
+        let mut moves = [SBoard::<N>::EMPTY; 4];
+        let mut search = [SBoard::<N>::EMPTY; 4];
+        let mut remaining: u32 = 0;
+        let mut done: u32;
+
+        if h > SPAWN_Y && y > SPAWN_Y - h_spawn(P) {
+            // Slow init: the stack reaches the spawn area, so reachability has to
+            // start from the actual spawn cell (scanning upward by `force`).
+            let threshold = (SPAWN_Y + force + 1).min(h);
+            let mut s = SPAWN_Y;
+            while s < threshold && !usable[0].get(SPAWN_X, s) {
+                s += 1;
+            }
+            if s == threshold {
+                return SMoves::EMPTY;
+            }
+            search[0].set(SPAWN_X, s);
+            remaining = (1u32 << cs) - 1;
+            done = all_done & !1;
+        } else {
+            // Fast init: smear the blocked map downward so `search` starts as the
+            // sky-droppable set. Sky-drop reachability is a sound subset of full
+            // reachability, so if it already covers every landable candidate the
+            // tuck/seed/BFS phases cannot change the answer; most open boards
+            // (the bulk of perft leaves) exit here before any tuck work.
+            let ceiling = h - h_gen(P);
+            let mut r = 0;
+            while r < cs {
+                let mut surface = usable[r].not();
+                if ceiling >= 1 {
+                    surface = surface.or(&surface.shifted(0, -1));
+                }
+                if ceiling >= 2 {
+                    surface = surface.or(&surface.shifted(0, -2));
+                }
+                if ceiling >= 4 {
+                    surface = surface.or(&surface.shifted(0, -4));
+                }
+                if ceiling >= 8 {
+                    surface = surface.or(&surface.shifted(0, -8));
+                }
+                if ceiling >= 16 {
+                    surface = surface.or(&surface.shifted(0, -16));
+                }
+                search[r] = surface.not();
+                moves[r] = search[r].and(&cands[r]);
+                if moves[r] != cands[r] {
+                    remaining |= 1 << r;
+                }
+                r += 1;
+            }
+            if remaining == 0 {
+                return SMoves { m: moves };
+            }
+
+            // Two rounds of horizontal tucks, then the kick-0 rotation seeds.
+            let mut r = 0;
+            while r < cs {
+                let mut s = search[r];
+                s = s.or(&s.shifted(-1, 0).or(&s.shifted(1, 0)).and(&usable[r]));
+                s = s.or(&s.shifted(-1, 0).or(&s.shifted(1, 0)).and(&usable[r]));
+                search[r] = s;
+                r += 1;
+            }
+
+            if group3(P) {
+                // Sequential on purpose, matching upstream: later rotations may
+                // pick up seeds added to earlier ones. Any sound seed superset
+                // yields the same closure.
+                let mut r = 0;
+                while r < 4 {
+                    let r1 = (r + 1) & 3;
+                    let r2 = (r + 3) & 3;
+                    search[r] = search[r].or(&search[r1].or(&search[r2]).and(&usable[r]));
+                    r += 1;
+                }
+            }
+
+            remaining = 0;
+            let mut r = 0;
+            while r < cs {
+                moves[r] = search[r].and(&cands[r]);
+                if moves[r] != cands[r] {
+                    remaining |= 1 << r;
+                }
+                r += 1;
+            }
+            if remaining == 0 {
+                return SMoves { m: moves };
+            }
+            if group2(P) {
+                search[2] = search[0];
+                search[3] = search[1];
+            }
+            done = 0;
+        }
+
+        // BFS over nominal rotations with masked first-valid-kick waves.
+        let mut unsearched = [SBoard::<N>::EMPTY; 4];
+        let mut rs = 0;
+        while rs < ss {
+            unsearched[rs] = search[rs].not().and(&usable[canon_r(P, rs)]);
+            rs += 1;
+        }
+
+        macro_rules! rot_kick {
+            ($r:literal, $d:literal, $probe:ident) => {{
+                let r1 = KickTab::<P, $d, $r>::R1;
+                let r1c = KickTab::<P, $d, $r>::R1C;
+                // The wave's entire effect is gated by `res = result & unsearched[r1]`,
+                // and the result is contained in the source set dilated by the kick
+                // envelope, so an empty probe intersection proves a no-op wave.
+                // Measured on depth-7 IOLJSZT: 73% of waves hit this skip.
+                if $probe.and(&unsearched[r1]).any() {
+                    let mut temp = search[$r];
+                    let mut result = SBoard::<N>::EMPTY;
+                    kick_step::<P, $d, $r, 0, N>(&mut temp, &mut result, &usable[r1c]);
+                    kick_step::<P, $d, $r, 1, N>(&mut temp, &mut result, &usable[r1c]);
+                    kick_step::<P, $d, $r, 2, N>(&mut temp, &mut result, &usable[r1c]);
+                    kick_step::<P, $d, $r, 3, N>(&mut temp, &mut result, &usable[r1c]);
+                    kick_step::<P, $d, $r, 4, N>(&mut temp, &mut result, &usable[r1c]);
+                    let res = result.and(&unsearched[r1]);
+                    if res.any() {
+                        search[r1] = search[r1].or(&res);
+                        unsearched[r1] = unsearched[r1].andnot(&res);
+                        done &= !(1u32 << r1);
+                        moves[r1c] = moves[r1c].or(&res.and(&cands[r1c]));
+                        if moves[r1c] != cands[r1c] {
+                            remaining |= 1 << r1c;
+                        } else {
+                            remaining &= !(1u32 << r1c);
+                        }
+                    }
+                }
+            }};
+        }
+
+        macro_rules! process_rot {
+            ($r:literal) => {
+                if $r < ss && done & (1 << $r) == 0 {
+                    done |= 1 << $r;
+                    let rc = canon_r(P, $r);
+
+                    loop {
+                        let temp = search[$r]
+                            .shifted(-1, 0)
+                            .or(&search[$r].shifted(1, 0))
+                            .or(&search[$r].shifted(0, -1))
+                            .and(&unsearched[$r]);
+                        if !temp.any() {
+                            break;
+                        }
+                        search[$r] = search[$r].or(&temp);
+                        unsearched[$r] = unsearched[$r].xor(&temp);
+                    }
+
+                    moves[rc] = moves[rc].or(&search[$r].and(&cands[rc]));
+                    if moves[rc] != cands[rc] {
+                        remaining |= 1 << rc;
+                    } else {
+                        remaining &= !(1u32 << rc);
+                    }
+
+                    if remaining == 0 {
+                        done = all_done;
+                    } else {
+                        if P != PI_O {
+                            let probe = env_probe(&search[$r], EnvTab::<P, $r>::E);
+                            rot_kick!($r, 0, probe);
+                            rot_kick!($r, 1, probe);
+                            if remaining == 0 {
+                                done = all_done;
+                            }
+                        }
+                        if done != all_done {
+                            search[$r] = SBoard::EMPTY;
+                        }
+                    }
+                }
+            };
+        }
+
+        while done != all_done {
+            process_rot!(0);
+            process_rot!(1);
+            process_rot!(2);
+            process_rot!(3);
+        }
+
+        SMoves { m: moves }
+    }
 
     // Naive reference model: plain bool grid, same coordinate conventions.
     #[derive(Clone)]
@@ -1236,6 +1502,42 @@ mod tests {
                 }
             }
         }
+    }
+
+    fn gen_parity_case<const P: usize, const N: usize>(state: &mut u64, fill_rows: i32) {
+        let b = random_board::<N>(state, fill_rows);
+        let y = b.max_y();
+        for force in [0, 2] {
+            let want = generate_reference::<P, N>(&b, y, force);
+            let got = generate::<P, N>(&b, y, force);
+            assert_eq!(got.m, want.m, "emit P={} N={} force={}", P, N, force);
+            let count = count_locks::<P, N>(&b, y, force);
+            assert_eq!(count, want.popcount(csize(P)), "count P={} N={} force={}", P, N, force);
+        }
+    }
+
+    fn gen_parity_piece<const P: usize>(state: &mut u64) {
+        for case in 0..400 {
+            // Mix shallow and tall fills so both the fast and slow inits and
+            // every early exit are exercised across the band sizes.
+            let rows = 1 + (case % 11);
+            gen_parity_case::<P, 1>(state, rows.min(4));
+            gen_parity_case::<P, 2>(state, rows);
+            gen_parity_case::<P, 4>(state, rows * 2);
+            gen_parity_case::<P, 8>(state, rows * 3);
+        }
+    }
+
+    #[test]
+    fn refactored_generate_matches_reference_on_seeded_boards() {
+        let mut state = 0x5EED_BEEF_2026_0612u64;
+        gen_parity_piece::<0>(&mut state);
+        gen_parity_piece::<1>(&mut state);
+        gen_parity_piece::<2>(&mut state);
+        gen_parity_piece::<3>(&mut state);
+        gen_parity_piece::<4>(&mut state);
+        gen_parity_piece::<5>(&mut state);
+        gen_parity_piece::<6>(&mut state);
     }
 
     #[test]
