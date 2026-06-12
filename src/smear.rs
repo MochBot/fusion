@@ -860,11 +860,15 @@ fn gen_impl<const P: usize, const N: usize, const EMIT: bool>(
                 }
                 return (SMoves { m }, 0);
             } else {
+                // `remaining` bit r is set iff missing[r] is non-empty, so
+                // popcounting only those rotations is exact and skips all
+                // four boards on fully covered exits.
                 let mut miss = 0u32;
-                let mut r = 0;
-                while r < cs {
+                let mut rem = remaining;
+                while rem != 0 {
+                    let r = rem.trailing_zeros() as usize;
                     miss += missing[r].popcount();
-                    r += 1;
+                    rem &= rem - 1;
                 }
                 return (SMoves::EMPTY, total - miss);
             }
