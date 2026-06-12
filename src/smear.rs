@@ -785,11 +785,17 @@ fn usable_map<const P: usize, const N: usize>(b: &SBoard<N>) -> [SBoard<N>; 4] {
 #[inline(always)]
 fn landable_map<const N: usize>(u: &[SBoard<N>; 4], cs: usize) -> [SBoard<N>; 4] {
     let mut c = [SBoard::EMPTY; 4];
-    let mut r = 0;
-    while r < cs {
-        c[r] = u[r].andnot(&u[r].shifted(0, 1));
-        r += 1;
+    macro_rules! land {
+        ($r:literal) => {
+            if $r < cs {
+                c[$r] = u[$r].andnot(&u[$r].shifted(0, 1));
+            }
+        };
     }
+    land!(0);
+    land!(1);
+    land!(2);
+    land!(3);
     c
 }
 
@@ -848,28 +854,54 @@ fn gen_impl<const P: usize, const N: usize, const EMIT: bool>(
     let mut done: u32;
     let mut total: u32 = 0;
 
+    // A variable array index pins the whole array to stack memory (SROA cannot
+    // split an alloca that is indexed dynamically), turning every board op in
+    // the closure into load/store traffic. Each per-rotation loop is therefore
+    // unrolled with const indices.
+    macro_rules! unroll_rc {
+        ($r:ident, $limit:expr, $body:block) => {{
+            {
+                #[allow(non_upper_case_globals)]
+                const $r: usize = 0;
+                if $r < $limit $body
+            }
+            {
+                #[allow(non_upper_case_globals)]
+                const $r: usize = 1;
+                if $r < $limit $body
+            }
+            {
+                #[allow(non_upper_case_globals)]
+                const $r: usize = 2;
+                if $r < $limit $body
+            }
+            {
+                #[allow(non_upper_case_globals)]
+                const $r: usize = 3;
+                if $r < $limit $body
+            }
+        }};
+    }
+
     macro_rules! finish {
         () => {{
             if EMIT {
                 let cands = landable_map(&usable, cs);
                 let mut m = [SBoard::<N>::EMPTY; 4];
-                let mut r = 0;
-                while r < cs {
+                unroll_rc!(r, cs, {
                     m[r] = cands[r].andnot(&missing[r]);
-                    r += 1;
-                }
+                });
                 return (SMoves { m }, 0);
             } else {
                 // `remaining` bit r is set iff missing[r] is non-empty, so
                 // popcounting only those rotations is exact and skips all
                 // four boards on fully covered exits.
                 let mut miss = 0u32;
-                let mut rem = remaining;
-                while rem != 0 {
-                    let r = rem.trailing_zeros() as usize;
-                    miss += missing[r].popcount();
-                    rem &= rem - 1;
-                }
+                unroll_rc!(r, 4, {
+                    if remaining & (1 << r) != 0 {
+                        miss += missing[r].popcount();
+                    }
+                });
                 return (SMoves::EMPTY, total - miss);
             }
         }};
@@ -878,11 +910,9 @@ fn gen_impl<const P: usize, const N: usize, const EMIT: bool>(
     {
         let cands = landable_map(&usable, cs);
         if !EMIT {
-            let mut r = 0;
-            while r < cs {
+            unroll_rc!(r, cs, {
                 total += cands[r].popcount();
-                r += 1;
-            }
+            });
         }
 
         if h > SPAWN_Y && y > SPAWN_Y - h_spawn(P) {
@@ -897,14 +927,12 @@ fn gen_impl<const P: usize, const N: usize, const EMIT: bool>(
                 return (SMoves::EMPTY, 0);
             }
             search[0].set(SPAWN_X, s);
-            let mut r = 0;
-            while r < cs {
+            unroll_rc!(r, cs, {
                 missing[r] = cands[r];
                 if missing[r].any() {
                     remaining |= 1 << r;
                 }
-                r += 1;
-            }
+            });
             done = all_done & !1;
         } else {
             // Fast init: smear the blocked map downward so `search` starts as
@@ -913,8 +941,7 @@ fn gen_impl<const P: usize, const N: usize, const EMIT: bool>(
             // candidate the tuck/seed/BFS phases cannot change the answer;
             // most open boards (the bulk of perft leaves) exit here.
             let ceiling = h - h_gen(P);
-            let mut r = 0;
-            while r < cs {
+            unroll_rc!(r, cs, {
                 let mut surface = usable[r].not();
                 if ceiling >= 1 {
                     surface = surface.or(&surface.shifted(0, -1));
@@ -936,44 +963,36 @@ fn gen_impl<const P: usize, const N: usize, const EMIT: bool>(
                 if missing[r].any() {
                     remaining |= 1 << r;
                 }
-                r += 1;
-            }
+            });
             if remaining == 0 {
                 finish!();
             }
 
             // Two rounds of horizontal tucks, then the kick-0 rotation seeds.
-            let mut r = 0;
-            while r < cs {
+            unroll_rc!(r, cs, {
                 let mut s = search[r];
                 s = s.or(&s.shifted(-1, 0).or(&s.shifted(1, 0)).and(&usable[r]));
                 s = s.or(&s.shifted(-1, 0).or(&s.shifted(1, 0)).and(&usable[r]));
                 search[r] = s;
-                r += 1;
-            }
+            });
 
             if group3(P) {
                 // Sequential on purpose, matching upstream: later rotations may
                 // pick up seeds added to earlier ones. Any sound seed superset
                 // yields the same closure.
-                let mut r = 0;
-                while r < 4 {
-                    let r1 = (r + 1) & 3;
-                    let r2 = (r + 3) & 3;
-                    search[r] = search[r].or(&search[r1].or(&search[r2]).and(&usable[r]));
-                    r += 1;
-                }
+                unroll_rc!(r, 4, {
+                    search[r] =
+                        search[r].or(&search[(r + 1) & 3].or(&search[(r + 3) & 3]).and(&usable[r]));
+                });
             }
 
             remaining = 0;
-            let mut r = 0;
-            while r < cs {
+            unroll_rc!(r, cs, {
                 missing[r] = missing[r].andnot(&search[r]);
                 if missing[r].any() {
                     remaining |= 1 << r;
                 }
-                r += 1;
-            }
+            });
             if remaining == 0 {
                 finish!();
             }
@@ -987,16 +1006,14 @@ fn gen_impl<const P: usize, const N: usize, const EMIT: bool>(
 
     // BFS over nominal rotations with masked first-valid-kick waves.
     let mut unsearched = [SBoard::<N>::EMPTY; 4];
-    let mut rs = 0;
-    while rs < ss {
-        unsearched[rs] = search[rs].not().and(&usable[canon_r(P, rs)]);
-        rs += 1;
-    }
+    unroll_rc!(rs, ss, {
+        unsearched[rs] = search[rs].not().and(&usable[const { canon_r(P, rs) }]);
+    });
 
     macro_rules! rot_kick {
         ($r:literal, $d:literal, $probe:ident) => {{
-            let r1 = KickTab::<P, $d, $r>::R1;
-            let r1c = KickTab::<P, $d, $r>::R1C;
+            let r1 = const { KickTab::<P, $d, $r>::R1 };
+            let r1c = const { KickTab::<P, $d, $r>::R1C };
             // The wave's entire effect is gated by `res = result & unsearched[r1]`,
             // and the result is contained in the source set dilated by the kick
             // envelope, so an empty probe intersection proves a no-op wave.
@@ -1029,7 +1046,7 @@ fn gen_impl<const P: usize, const N: usize, const EMIT: bool>(
         ($r:literal) => {
             if $r < ss && done & (1 << $r) == 0 {
                 done |= 1 << $r;
-                let rc = canon_r(P, $r);
+                let rc = const { canon_r(P, $r) };
 
                 loop {
                     let temp = search[$r]
