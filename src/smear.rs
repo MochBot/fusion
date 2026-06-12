@@ -164,7 +164,13 @@ impl<const N: usize> SBoard<N> {
         let mut i = 0;
         while i < N {
             let w = out[i];
-            out[i] = if dx > 0 { w << dx } else if dx < 0 { w >> -dx } else { w } & m;
+            out[i] = if dx > 0 {
+                w << dx
+            } else if dx < 0 {
+                w >> -dx
+            } else {
+                w
+            } & m;
             i += 1;
         }
         Self { d: out }
@@ -735,23 +741,28 @@ pub fn generate<const P: usize, const N: usize>(b: &SBoard<N>, y: i32, force: i3
         ($r:literal, $d:literal) => {{
             let r1 = KickTab::<P, $d, $r>::R1;
             let r1c = KickTab::<P, $d, $r>::R1C;
-            let mut temp = search[$r];
-            let mut result = SBoard::<N>::EMPTY;
-            kick_step::<P, $d, $r, 0, N>(&mut temp, &mut result, &usable[r1c]);
-            kick_step::<P, $d, $r, 1, N>(&mut temp, &mut result, &usable[r1c]);
-            kick_step::<P, $d, $r, 2, N>(&mut temp, &mut result, &usable[r1c]);
-            kick_step::<P, $d, $r, 3, N>(&mut temp, &mut result, &usable[r1c]);
-            kick_step::<P, $d, $r, 4, N>(&mut temp, &mut result, &usable[r1c]);
-            let res = result.and(&unsearched[r1]);
-            if res.any() {
-                search[r1] = search[r1].or(&res);
-                unsearched[r1] = unsearched[r1].andnot(&res);
-                done &= !(1u32 << r1);
-                moves[r1c] = moves[r1c].or(&res.and(&cands[r1c]));
-                if moves[r1c] != cands[r1c] {
-                    remaining |= 1 << r1c;
-                } else {
-                    remaining &= !(1u32 << r1c);
+            // The wave's entire effect is gated by `res = result & unsearched[r1]`,
+            // so a fully-searched target rotation makes the five kick steps a no-op.
+            // Measured on depth-7 IOLJSZT: 37% of waves hit this skip.
+            if unsearched[r1].any() {
+                let mut temp = search[$r];
+                let mut result = SBoard::<N>::EMPTY;
+                kick_step::<P, $d, $r, 0, N>(&mut temp, &mut result, &usable[r1c]);
+                kick_step::<P, $d, $r, 1, N>(&mut temp, &mut result, &usable[r1c]);
+                kick_step::<P, $d, $r, 2, N>(&mut temp, &mut result, &usable[r1c]);
+                kick_step::<P, $d, $r, 3, N>(&mut temp, &mut result, &usable[r1c]);
+                kick_step::<P, $d, $r, 4, N>(&mut temp, &mut result, &usable[r1c]);
+                let res = result.and(&unsearched[r1]);
+                if res.any() {
+                    search[r1] = search[r1].or(&res);
+                    unsearched[r1] = unsearched[r1].andnot(&res);
+                    done &= !(1u32 << r1);
+                    moves[r1c] = moves[r1c].or(&res.and(&cands[r1c]));
+                    if moves[r1c] != cands[r1c] {
+                        remaining |= 1 << r1c;
+                    } else {
+                        remaining &= !(1u32 << r1c);
+                    }
                 }
             }
         }};
@@ -1085,9 +1096,9 @@ mod tests {
         for (i, c) in PCELLS[p][rc].iter().enumerate() {
             cells[i + 1] = (x + c.0 as i32, y + c.1 as i32);
         }
-        cells.iter().all(|&(cx, cy)| {
-            (0..10).contains(&cx) && cy >= 0 && (cy >= g.h || !g.get(cx, cy))
-        })
+        cells
+            .iter()
+            .all(|&(cx, cy)| (0..10).contains(&cx) && cy >= 0 && (cy >= g.h || !g.get(cx, cy)))
     }
 
     #[test]
@@ -1158,10 +1169,7 @@ mod tests {
     #[test]
     #[ignore] // release-only: ~70M and ~2.6B node runs
     fn perft_matches_upstream_golden_counts_deep() {
-        let cases: [(&str, u64); 2] = [
-            ("IOLJSZ", 67_002_200),
-            ("IOLJSZT", 2_647_076_135),
-        ];
+        let cases: [(&str, u64); 2] = [("IOLJSZ", 67_002_200), ("IOLJSZT", 2_647_076_135)];
         for (q, want) in cases {
             let queue = parse_queue(q).unwrap();
             assert_eq!(perft(&queue), want, "queue {}", q);
