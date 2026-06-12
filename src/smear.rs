@@ -1306,6 +1306,66 @@ pub fn parse_queue(s: &str) -> Option<Vec<usize>> {
         .collect()
 }
 
+/// Multithreaded perft over disjoint subtree work items.
+///
+/// Splits the first plies into child boards sequentially, then fans the
+/// disjoint subtrees out across a rayon pool. Each subtree runs the
+/// unchanged sequential driver, so the total is identical to `perft` -
+/// addition over disjoint subtrees is order-independent.
+#[cfg(feature = "rayon")]
+pub fn perft_mt(queue: &[usize]) -> u64 {
+    use rayon::prelude::*;
+    assert!(!queue.is_empty() && queue.iter().all(|&p| p < 7));
+    let depth = queue.len();
+    if depth <= 2 {
+        // Splitting overhead exceeds the work at trivial depths.
+        return perft(queue);
+    }
+    // Three split plies gives a few thousand work items at depth 7
+    // (IOL = 5266), fine-grained enough for work stealing to balance
+    // uneven subtree sizes while collection stays negligible.
+    let split = (depth - 1).min(3);
+    let mut work: Vec<(SBoard<8>, i32)> = vec![(SBoard::<8>::EMPTY, 0)];
+    for &p in &queue[..split] {
+        let mut next = Vec::with_capacity(work.len() * 24);
+        for (b, h) in &work {
+            collect_children(b, *h, p, &mut next);
+        }
+        work = next;
+    }
+    let rest = &queue[split..];
+    work.par_iter()
+        .map(|(b, h)| perft_rec(b, rest, depth - split, *h))
+        .sum()
+}
+
+/// Enumerate the child boards of `b` for piece `p` with exact heights.
+/// Cold path: runs once per work-list ply, so plain full-band ops suffice.
+#[cfg(feature = "rayon")]
+fn collect_children(b: &SBoard<8>, h: i32, p: usize, out: &mut Vec<(SBoard<8>, i32)>) {
+    fn go<const P: usize>(b: &SBoard<8>, h: i32, out: &mut Vec<(SBoard<8>, i32)>) {
+        let ml = generate::<P, 8>(b, h, 0);
+        let mut rc = 0;
+        while rc < csize(P) {
+            ml.m[rc].for_each_set_bit(|x, y| {
+                let mut b2 = *b;
+                b2.do_move(P, rc, x, y);
+                out.push((b2, b2.max_y()));
+            });
+            rc += 1;
+        }
+    }
+    match p {
+        0 => go::<0>(b, h, out),
+        1 => go::<1>(b, h, out),
+        2 => go::<2>(b, h, out),
+        3 => go::<3>(b, h, out),
+        4 => go::<4>(b, h, out),
+        5 => go::<5>(b, h, out),
+        _ => go::<6>(b, h, out),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1794,6 +1854,30 @@ mod tests {
         gen_parity_piece::<4>(&mut state);
         gen_parity_piece::<5>(&mut state);
         gen_parity_piece::<6>(&mut state);
+    }
+
+    #[cfg(feature = "rayon")]
+    #[test]
+    fn parallel_perft_matches_sequential() {
+        // Depth <= 2 exercises the sequential fallback; deeper queues
+        // exercise the split-and-sum path against the sequential driver.
+        let fixed: [&[usize]; 6] = [
+            &[PI_T],
+            &[PI_I, PI_O],
+            &[PI_T, PI_T, PI_T],
+            &[PI_I, PI_Z, PI_S, PI_T],
+            &[PI_L, PI_J, PI_S, PI_Z, PI_O],
+            &[PI_S, PI_Z, PI_S, PI_Z],
+        ];
+        for q in fixed {
+            assert_eq!(perft_mt(q), perft(q), "queue {q:?}");
+        }
+        let mut st = 0x0001_B0A7_2026_0612u64;
+        for _ in 0..30 {
+            let len = 1 + (xs(&mut st) % 5) as usize;
+            let q: Vec<usize> = (0..len).map(|_| (xs(&mut st) % 7) as usize).collect();
+            assert_eq!(perft_mt(&q), perft(&q), "queue {q:?}");
+        }
     }
 
     #[test]

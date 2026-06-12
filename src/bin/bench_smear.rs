@@ -7,6 +7,16 @@
 use direct_cobra_copy::smear;
 use std::time::Instant;
 
+/// Dispatch to the multithreaded driver when requested and available.
+fn run(queue: &[usize], mt: bool) -> u64 {
+    #[cfg(feature = "rayon")]
+    if mt {
+        return smear::perft_mt(queue);
+    }
+    let _ = mt;
+    smear::perft(queue)
+}
+
 fn main() {
     let arg = std::env::args().nth(1).unwrap_or_else(|| "IOLJSZT".into());
     let queue = match smear::parse_queue(&arg) {
@@ -17,8 +27,9 @@ fn main() {
         }
     };
 
+    let mt = std::env::args().nth(2).is_some_and(|s| s == "mt");
     let start = Instant::now();
-    let nodes = smear::perft(&queue);
+    let nodes = run(&queue, mt);
     let ms = start.elapsed().as_millis() as u64;
     println!(
         "Depth: {} Nodes: {} Time: {}ms NPS: {}",
