@@ -301,6 +301,32 @@ impl<const N: usize> SBoard<N> {
         }
     }
 
+    /// `do_move` for boards with no pre-existing full rows: ORs a precomputed
+    /// two-word cell pattern and probes only the touched words for full rows.
+    /// Every locked board has its clears resolved eagerly, so the
+    /// precondition holds on all perft paths; the no-clear branch asserts it
+    /// in debug builds.
+    #[inline(always)]
+    pub fn do_move_masked(&mut self, p: usize, rc: usize, x: i32, y: i32) -> u32 {
+        let (lo, hi, boff, xb) = PMASK[p][rc][(y % TLINES) as usize];
+        let s = (x - xb as i32) as u32;
+        let w = (y / TLINES + boff as i32) as usize;
+        self.d[w] |= lo << s;
+        let mut probe = self.d[w] & ((self.d[w] & !COL9) + COL0) & COL9;
+        if hi != 0 {
+            self.d[w + 1] |= hi << s;
+            probe |= self.d[w + 1] & ((self.d[w + 1] & !COL9) + COL0) & COL9;
+        }
+        if probe == 0 {
+            debug_assert!(!self.line_clears().any());
+            return 0;
+        }
+        let clears = self.line_clears();
+        let n = clears.popcount();
+        self.clear_lines(&clears);
+        n
+    }
+
     /// One past the highest occupied row, or 0 for an empty board.
     #[inline(always)]
     pub fn max_y(&self) -> i32 {
@@ -387,6 +413,67 @@ const fn build_pcells() -> [[[(i8, i8); 3]; 4]; 7] {
 }
 
 pub const PCELLS: [[[(i8, i8); 3]; 4]; 7] = build_pcells();
+
+// Placement masks for `do_move_masked`: per (piece, rotation, y % TLINES) a
+// two-word bit pattern of all four cells, anchored at column `xbase`, plus
+// the word offset of the lower pattern word relative to `y / TLINES`. Cell
+// dy spans at most -1..=1, so the pattern always fits two adjacent words;
+// the offset is -1 exactly when y % TLINES == 0 and the piece has a dy=-1
+// cell (valid placements then have y >= 1, so the word index never
+// underflows).
+const fn build_place_masks() -> [[[(u64, u64, i8, i8); 6]; 4]; 7] {
+    let mut out = [[[(0u64, 0u64, 0i8, 0i8); 6]; 4]; 7];
+    let mut p = 0;
+    while p < 7 {
+        let mut rc = 0;
+        while rc < csize(p) {
+            let cells = [
+                (0i8, 0i8),
+                PCELLS[p][rc][0],
+                PCELLS[p][rc][1],
+                PCELLS[p][rc][2],
+            ];
+            let mut dxmin = 0i32;
+            let mut dymin = 0i32;
+            let mut i = 0;
+            while i < 4 {
+                if (cells[i].0 as i32) < dxmin {
+                    dxmin = cells[i].0 as i32;
+                }
+                if (cells[i].1 as i32) < dymin {
+                    dymin = cells[i].1 as i32;
+                }
+                i += 1;
+            }
+            let xb = -dxmin;
+            let mut yr = 0;
+            while yr < 6 {
+                let boff: i32 = if yr as i32 + dymin < 0 { -1 } else { 0 };
+                let mut lo = 0u64;
+                let mut hi = 0u64;
+                let mut i = 0;
+                while i < 4 {
+                    let rr = yr as i32 + cells[i].1 as i32 - TLINES * boff;
+                    let c = cells[i].0 as i32 + xb;
+                    let bit = 1u64 << (((rr % TLINES) * WIDTH + c) as u32);
+                    if rr < TLINES {
+                        lo |= bit;
+                    } else {
+                        hi |= bit;
+                    }
+                    i += 1;
+                }
+                out[p][rc][yr] = (lo, hi, boff as i8, xb as i8);
+                yr += 1;
+            }
+            rc += 1;
+        }
+        p += 1;
+    }
+    out
+}
+
+static PMASK: [[[(u64, u64, i8, i8); 6]; 4]; 7] = build_place_masks();
 
 pub const fn group2(p: usize) -> bool {
     matches!(p, PI_I | PI_S | PI_Z)
@@ -1042,7 +1129,7 @@ fn last_level<const P2: usize, const N: usize, const M: usize>(
         let te = top_extent(p, rc);
         ml.m[rc].for_each_set_bit(|x, y| {
             let mut b2: SBoard<M> = b1.cast();
-            let clears = b2.do_move(p, rc, x, y);
+            let clears = b2.do_move_masked(p, rc, x, y);
             let h2 = if clears == 0 {
                 let t = y + te;
                 if t > h {
@@ -1491,6 +1578,48 @@ mod tests {
         shift_case::<2>(&mut st);
         shift_case::<4>(&mut st);
         shift_case::<8>(&mut st);
+    }
+
+    fn masked_case<const N: usize>(state: &mut u64, clear_hits: &mut u32) {
+        let b0 = random_board::<N>(state, SBoard::<N>::H - 2);
+        for p in 0..7usize {
+            for rc in 0..csize(p) {
+                for x in 0..10i32 {
+                    'ys: for y in 0..SBoard::<N>::H {
+                        let cells = [(0i8, 0i8), PCELLS[p][rc][0], PCELLS[p][rc][1], PCELLS[p][rc][2]];
+                        for c in cells {
+                            let cx = x + c.0 as i32;
+                            let cy = y + c.1 as i32;
+                            if cx < 0 || cx > 9 || cy < 0 || cy >= SBoard::<N>::H || b0.get(cx, cy) {
+                                continue 'ys;
+                            }
+                        }
+                        let mut a = b0;
+                        let mut m = b0;
+                        let ra = a.do_move(p, rc, x, y);
+                        let rm = m.do_move_masked(p, rc, x, y);
+                        if ra > 0 {
+                            *clear_hits += 1;
+                        }
+                        assert_eq!(ra, rm, "count N={} p={} rc={} x={} y={}", N, p, rc, x, y);
+                        assert_eq!(a, m, "board N={} p={} rc={} x={} y={}", N, p, rc, x, y);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn do_move_masked_matches_do_move_on_seeded_placements() {
+        let mut st = 0xD035_2026_0612_BEEFu64;
+        let mut clear_hits = 0u32;
+        for _ in 0..120 {
+            masked_case::<1>(&mut st, &mut clear_hits);
+            masked_case::<2>(&mut st, &mut clear_hits);
+            masked_case::<4>(&mut st, &mut clear_hits);
+            masked_case::<8>(&mut st, &mut clear_hits);
+        }
+        assert!(clear_hits > 200, "need clear coverage, got {clear_hits}");
     }
 
     #[test]
