@@ -1126,11 +1126,26 @@ fn step_cast<const P: usize, const N: usize, const M: usize>(
     y: i32,
     q: &[usize],
     depth: usize,
+    h: i32,
 ) -> u64 {
     let mut b2: SBoard<M> = b1.cast();
-    b2.do_move(P, rc, x, y);
+    let clears = b2.do_move_masked(P, rc, x, y);
+    // Same exact-height derivation as `last_level`: clear-free placements top
+    // out at y + top_extent, clearing ones rescan the small banded board. This
+    // lets the whole recursion skip the 8-word max_y rescan per node.
+    let h2 = if clears == 0 {
+        let t = y + top_extent(P, rc);
+        if t > h {
+            t
+        } else {
+            h
+        }
+    } else {
+        b2.max_y()
+    };
+    debug_assert_eq!(h2, b2.max_y());
     let nb: SBoard<8> = b2.cast();
-    perft_rec(&nb, q, depth)
+    perft_rec(&nb, q, depth, h2)
 }
 
 // Fused final level: children are leaves, so skip the full-board normalize,
@@ -1220,13 +1235,13 @@ fn inner<const P: usize, const N: usize>(b: &SBoard<8>, q: &[usize], depth: usiz
     while rc < cs {
         ml.m[rc].for_each_set_bit(|x, y| {
             nodes += if h2w == N {
-                step_cast::<P, N, N>(&b1, rc, x, y, rest, depth - 1)
+                step_cast::<P, N, N>(&b1, rc, x, y, rest, depth - 1, h)
             } else {
                 match h2w {
-                    2 => step_cast::<P, N, 2>(&b1, rc, x, y, rest, depth - 1),
-                    3 => step_cast::<P, N, 3>(&b1, rc, x, y, rest, depth - 1),
-                    4 => step_cast::<P, N, 4>(&b1, rc, x, y, rest, depth - 1),
-                    _ => step_cast::<P, N, 8>(&b1, rc, x, y, rest, depth - 1),
+                    2 => step_cast::<P, N, 2>(&b1, rc, x, y, rest, depth - 1, h),
+                    3 => step_cast::<P, N, 3>(&b1, rc, x, y, rest, depth - 1, h),
+                    4 => step_cast::<P, N, 4>(&b1, rc, x, y, rest, depth - 1, h),
+                    _ => step_cast::<P, N, 8>(&b1, rc, x, y, rest, depth - 1, h),
                 }
             };
         });
@@ -1235,8 +1250,8 @@ fn inner<const P: usize, const N: usize>(b: &SBoard<8>, q: &[usize], depth: usiz
     nodes
 }
 
-fn with_piece<const P: usize>(b: &SBoard<8>, q: &[usize], depth: usize) -> u64 {
-    let h = b.max_y();
+fn with_piece<const P: usize>(b: &SBoard<8>, q: &[usize], depth: usize, h: i32) -> u64 {
+    debug_assert_eq!(h, b.max_y());
     let h1w = band_words(h + h_gen(P));
     if depth == 1 {
         return match h1w {
@@ -1256,15 +1271,15 @@ fn with_piece<const P: usize>(b: &SBoard<8>, q: &[usize], depth: usize) -> u64 {
     }
 }
 
-fn perft_rec(b: &SBoard<8>, q: &[usize], depth: usize) -> u64 {
+fn perft_rec(b: &SBoard<8>, q: &[usize], depth: usize, h: i32) -> u64 {
     match q[0] {
-        0 => with_piece::<0>(b, q, depth),
-        1 => with_piece::<1>(b, q, depth),
-        2 => with_piece::<2>(b, q, depth),
-        3 => with_piece::<3>(b, q, depth),
-        4 => with_piece::<4>(b, q, depth),
-        5 => with_piece::<5>(b, q, depth),
-        _ => with_piece::<6>(b, q, depth),
+        0 => with_piece::<0>(b, q, depth, h),
+        1 => with_piece::<1>(b, q, depth, h),
+        2 => with_piece::<2>(b, q, depth, h),
+        3 => with_piece::<3>(b, q, depth, h),
+        4 => with_piece::<4>(b, q, depth, h),
+        5 => with_piece::<5>(b, q, depth, h),
+        _ => with_piece::<6>(b, q, depth, h),
     }
 }
 
@@ -1272,7 +1287,7 @@ fn perft_rec(b: &SBoard<8>, q: &[usize], depth: usize) -> u64 {
 pub fn perft(queue: &[usize]) -> u64 {
     assert!(!queue.is_empty() && queue.iter().all(|&p| p < 7));
     let b = SBoard::<8>::EMPTY;
-    perft_rec(&b, queue, queue.len())
+    perft_rec(&b, queue, queue.len(), 0)
 }
 
 /// Parse an upstream-style queue string such as "IOLJSZT".
