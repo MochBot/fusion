@@ -647,8 +647,10 @@ pub fn generate<const P: usize, const N: usize>(b: &SBoard<N>, y: i32, force: i3
         done = all_done & !1;
     } else {
         // Fast init: smear the blocked map downward so `search` starts as the
-        // sky-droppable set, then add two rounds of horizontal tucks and the
-        // kick-0 rotation seeds.
+        // sky-droppable set. Sky-drop reachability is a sound subset of full
+        // reachability, so if it already covers every landable candidate the
+        // tuck/seed/BFS phases cannot change the answer; most open boards
+        // (the bulk of perft leaves) exit here before any tuck work.
         let ceiling = h - h_gen(P);
         let mut r = 0;
         while r < cs {
@@ -668,7 +670,21 @@ pub fn generate<const P: usize, const N: usize>(b: &SBoard<N>, y: i32, force: i3
             if ceiling >= 16 {
                 surface = surface.or(&surface.shifted(0, -16));
             }
-            let mut s = surface.not();
+            search[r] = surface.not();
+            moves[r] = search[r].and(&cands[r]);
+            if moves[r] != cands[r] {
+                remaining |= 1 << r;
+            }
+            r += 1;
+        }
+        if remaining == 0 {
+            return SMoves { m: moves };
+        }
+
+        // Two rounds of horizontal tucks, then the kick-0 rotation seeds.
+        let mut r = 0;
+        while r < cs {
+            let mut s = search[r];
             s = s.or(&s.shifted(-1, 0).or(&s.shifted(1, 0)).and(&usable[r]));
             s = s.or(&s.shifted(-1, 0).or(&s.shifted(1, 0)).and(&usable[r]));
             search[r] = s;
@@ -688,6 +704,7 @@ pub fn generate<const P: usize, const N: usize>(b: &SBoard<N>, y: i32, force: i3
             }
         }
 
+        remaining = 0;
         let mut r = 0;
         while r < cs {
             moves[r] = search[r].and(&cands[r]);
