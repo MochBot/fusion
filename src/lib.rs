@@ -21,6 +21,7 @@ pub mod ruleset;
 pub mod search;
 pub mod search_config;
 pub mod search_expand;
+pub mod smear;
 pub mod state;
 pub mod tetrastats_features;
 pub mod transposition;

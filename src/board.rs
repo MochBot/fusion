@@ -193,7 +193,7 @@ impl Board {
         let pc = m.cells();
         let y = m.y();
         let mut clears: Bitboard = 0;
-        let mut check = |b: &Self, cy: i32| {
+        let check = |b: &Self, cy: i32| {
             if cy >= 0 && (cy as usize) < BOARD_HEIGHT && b.rows[cy as usize] == FULL_ROW {
                 1u64 << cy
             } else {
