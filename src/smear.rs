@@ -521,6 +521,94 @@ impl<const P: usize, const D: usize, const R: usize> KickTab<P, D, R> {
     const ROW: K5 = kick_row_const(P, D, R);
 }
 
+/// Bounding box of every kick displacement leaving rotation `r` in either
+/// direction, canonical offsets included. Any wave result is contained in the
+/// source set dilated by this box, which makes it a sound skip test.
+const fn env_union(p: usize, r: usize) -> (i32, i32, i32, i32) {
+    let (mut xmin, mut xmax, mut ymin, mut ymax) = (i32::MAX, i32::MIN, i32::MAX, i32::MIN);
+    let mut d = 0;
+    while d < 2 {
+        let r1 = if d == 0 { (r + 1) & 3 } else { (r + 3) & 3 };
+        let off_x = canon_off(p, r).0 - canon_off(p, r1).0;
+        let off_y = canon_off(p, r).1 - canon_off(p, r1).1;
+        let row = kick_row_const(p, d, r);
+        let mut i = 0;
+        while i < 5 {
+            let kx = row[i].0 as i32 + off_x;
+            let ky = row[i].1 as i32 + off_y;
+            if kx < xmin {
+                xmin = kx;
+            }
+            if kx > xmax {
+                xmax = kx;
+            }
+            if ky < ymin {
+                ymin = ky;
+            }
+            if ky > ymax {
+                ymax = ky;
+            }
+            i += 1;
+        }
+        d += 1;
+    }
+    (xmin, xmax, ymin, ymax)
+}
+
+struct EnvTab<const P: usize, const R: usize>;
+
+impl<const P: usize, const R: usize> EnvTab<P, R> {
+    const E: (i32, i32, i32, i32) = env_union(P, R);
+}
+
+/// Dilate `s` by the constant envelope box. The if-chains fold to straight
+/// shift/or sequences when the bounds are compile-time constants; spans never
+/// exceed 3 cells per axis (I-piece kicks plus canonical offsets).
+#[inline(always)]
+fn env_probe<const N: usize>(s: &SBoard<N>, e: (i32, i32, i32, i32)) -> SBoard<N> {
+    let (xmin, xmax, ymin, ymax) = e;
+    let mut h = *s;
+    if xmin <= -1 {
+        h = h.or(&s.shifted(-1, 0));
+    }
+    if xmin <= -2 {
+        h = h.or(&s.shifted(-2, 0));
+    }
+    if xmin <= -3 {
+        h = h.or(&s.shifted(-3, 0));
+    }
+    if xmax >= 1 {
+        h = h.or(&s.shifted(1, 0));
+    }
+    if xmax >= 2 {
+        h = h.or(&s.shifted(2, 0));
+    }
+    if xmax >= 3 {
+        h = h.or(&s.shifted(3, 0));
+    }
+    let hh = h;
+    let mut v = hh;
+    if ymin <= -1 {
+        v = v.or(&hh.shifted(0, -1));
+    }
+    if ymin <= -2 {
+        v = v.or(&hh.shifted(0, -2));
+    }
+    if ymin <= -3 {
+        v = v.or(&hh.shifted(0, -3));
+    }
+    if ymax >= 1 {
+        v = v.or(&hh.shifted(0, 1));
+    }
+    if ymax >= 2 {
+        v = v.or(&hh.shifted(0, 2));
+    }
+    if ymax >= 3 {
+        v = v.or(&hh.shifted(0, 3));
+    }
+    v
+}
+
 // ---------------------------------------------------------------------------
 // Move generation.
 
@@ -738,13 +826,14 @@ pub fn generate<const P: usize, const N: usize>(b: &SBoard<N>, y: i32, force: i3
     }
 
     macro_rules! rot_kick {
-        ($r:literal, $d:literal) => {{
+        ($r:literal, $d:literal, $probe:ident) => {{
             let r1 = KickTab::<P, $d, $r>::R1;
             let r1c = KickTab::<P, $d, $r>::R1C;
             // The wave's entire effect is gated by `res = result & unsearched[r1]`,
-            // so a fully-searched target rotation makes the five kick steps a no-op.
-            // Measured on depth-7 IOLJSZT: 37% of waves hit this skip.
-            if unsearched[r1].any() {
+            // and the result is contained in the source set dilated by the kick
+            // envelope, so an empty probe intersection proves a no-op wave.
+            // Measured on depth-7 IOLJSZT: 73% of waves hit this skip.
+            if $probe.and(&unsearched[r1]).any() {
                 let mut temp = search[$r];
                 let mut result = SBoard::<N>::EMPTY;
                 kick_step::<P, $d, $r, 0, N>(&mut temp, &mut result, &usable[r1c]);
@@ -798,8 +887,9 @@ pub fn generate<const P: usize, const N: usize>(b: &SBoard<N>, y: i32, force: i3
                     done = all_done;
                 } else {
                     if P != PI_O {
-                        rot_kick!($r, 0);
-                        rot_kick!($r, 1);
+                        let probe = env_probe(&search[$r], EnvTab::<P, $r>::E);
+                        rot_kick!($r, 0, probe);
+                        rot_kick!($r, 1, probe);
                         if remaining == 0 {
                             done = all_done;
                         }
