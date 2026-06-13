@@ -501,15 +501,19 @@ fn split_next_queue(queue: &[Piece], consumed: usize) -> (Option<Piece>, SmallVe
     (next_current, next_queue)
 }
 
+struct ActionTransition {
+    next_hold: Option<Piece>,
+    hold_used: bool,
+    next_current: Option<Piece>,
+    next_queue: SmallVec<[Piece; 16]>,
+}
+
 fn push_actions(
     ctx: &mut SearchExpansionContext<'_>,
     actions: &mut Vec<CandidateAction>,
     board: &Board,
     piece: Piece,
-    next_hold: Option<Piece>,
-    hold_used: bool,
-    next_current: Option<Piece>,
-    next_queue: SmallVec<[Piece; 16]>,
+    transition: ActionTransition,
 ) {
     ctx.with_move_scratch(|moves| {
         record_movegen_call();
@@ -519,10 +523,10 @@ fn push_actions(
                 if board.legal_lock_placement(mv) {
                     actions.push(CandidateAction {
                         mv: *mv,
-                        hold_used,
-                        next_hold,
-                        next_current,
-                        next_queue: next_queue.clone(),
+                        hold_used: transition.hold_used,
+                        next_hold: transition.next_hold,
+                        next_current: transition.next_current,
+                        next_queue: transition.next_queue.clone(),
                     });
                 }
             }
@@ -547,10 +551,7 @@ fn enumerate_actions(
             &mut actions,
             board,
             current_piece,
-            hold,
-            false,
-            next_current,
-            next_queue,
+            ActionTransition { next_hold: hold, hold_used: false, next_current, next_queue },
         );
 
         if let Some(held_piece) = hold {
@@ -560,10 +561,7 @@ fn enumerate_actions(
                 &mut actions,
                 board,
                 held_piece,
-                Some(current_piece),
-                true,
-                next_current,
-                next_queue,
+                ActionTransition { next_hold: Some(current_piece), hold_used: true, next_current, next_queue },
             );
         } else if let Some(&queue_piece) = queue.first() {
             let (next_current, next_queue) = split_next_queue(queue, 1);
@@ -572,10 +570,7 @@ fn enumerate_actions(
                 &mut actions,
                 board,
                 queue_piece,
-                Some(current_piece),
-                true,
-                next_current,
-                next_queue,
+                ActionTransition { next_hold: Some(current_piece), hold_used: true, next_current, next_queue },
             );
         }
     }

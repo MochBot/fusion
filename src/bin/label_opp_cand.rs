@@ -135,7 +135,7 @@ fn label_position(ctx: &ContextRec, beam: usize) -> Option<PositionOut> {
             put_f32(&mut rec, OFF_MULT, f0.mult as f32);
             put_f32(&mut rec, OFF_IMMEDIATE, c.immediate as f32);
             put_f32(&mut rec, OFF_EXACT, exact as f32);
-            put_f32(&mut rec, OFF_GROUP as usize, 0.0);
+            put_f32(&mut rec, OFF_GROUP, 0.0);
             rec
         })
         .collect();

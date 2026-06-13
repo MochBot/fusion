@@ -304,20 +304,18 @@ fn generate_inner<
 
     let ndirs = if ACTIVE_RULES.enable_180 { 3 } else { 2 };
     let mut imm = [[0u64; ROTATION_NB]; COL_NB];
-    if P != 1 {
-        if CHECK_SPIN && (ACTIVE_RULES.enable_allspin || !HAS_SMAP) {
-            for (x, imm_x) in imm.iter_mut().enumerate() {
-                for (rci, slot) in imm_x.iter_mut().enumerate().take(canonical_sz) {
-                    let rc = Rotation::from_u8(rci as u8);
-                    let same = cm.get(x, rc);
-                    let left = if x > 0 { cm.get(x - 1, rc) } else { !0u64 };
-                    let right = if x < COL_NB - 1 {
-                        cm.get(x + 1, rc)
-                    } else {
-                        !0u64
-                    };
-                    *slot = left & right & (same >> 1) & ((same << 1) | 1);
-                }
+    if P != 1 && CHECK_SPIN && (ACTIVE_RULES.enable_allspin || !HAS_SMAP) {
+        for (x, imm_x) in imm.iter_mut().enumerate() {
+            for (rci, slot) in imm_x.iter_mut().enumerate().take(canonical_sz) {
+                let rc = Rotation::from_u8(rci as u8);
+                let same = cm.get(x, rc);
+                let left = if x > 0 { cm.get(x - 1, rc) } else { !0u64 };
+                let right = if x < COL_NB - 1 {
+                    cm.get(x + 1, rc)
+                } else {
+                    !0u64
+                };
+                *slot = left & right & (same >> 1) & ((same << 1) | 1);
             }
         }
     }
@@ -524,17 +522,16 @@ fn immobile_bits(cm: &CollisionMap, x: usize, r: Rotation, reachable: Bitboard) 
 // All waves of a pop read the same `current_all`; writes are unions, so the
 // per-rotation processing order is interchangeable with the legacy
 // per-direction order.
-#[inline(always)]
-fn wave16(
-    w: &WaveTab,
-    x: usize,
-    src_bits: Bitboard,
+struct Wave16Ctx<'a> {
     current_all: Bitboard,
-    to_search: &mut [Bitboard; COL_NB],
-    searched: &[Bitboard; COL_NB],
-    remaining: &mut u32,
-    cm16: &CollisionMap16,
-) {
+    to_search: &'a mut [Bitboard; COL_NB],
+    searched: &'a [Bitboard; COL_NB],
+    remaining: &'a mut u32,
+    cm16: &'a CollisionMap16,
+}
+
+#[inline(always)]
+fn wave16(w: &WaveTab, x: usize, src_bits: Bitboard, ctx: &mut Wave16Ctx<'_>) {
     let sd = (w.r1 as usize) * 16;
     let mut src = src_bits;
     for i in 0..w.n as usize {
@@ -549,18 +546,18 @@ fn wave16(
         let sv = w.dy[i] as u32;
 
         let mut m = (src << sv) >> 3;
-        m &= !(cm16.get(x1u) >> sd) & 0xFFFFu64;
+        m &= !(ctx.cm16.get(x1u) >> sd) & 0xFFFFu64;
         src ^= (m << 3) >> sv;
 
-        let mut visited = searched[x1u];
+        let mut visited = ctx.searched[x1u];
         if x1u == x {
-            visited |= current_all;
+            visited |= ctx.current_all;
         }
         m &= !(visited >> sd);
 
         if m != 0 {
-            to_search[x1u] |= m << sd;
-            *remaining |= 1 << x1u;
+            ctx.to_search[x1u] |= m << sd;
+            *ctx.remaining |= 1 << x1u;
         }
     }
 }
@@ -709,37 +706,17 @@ fn generate16<const P: usize, const EMIT: bool>(
                 ($ri:literal) => {{
                     let src_bits = (current >> ($ri * 16)) & 0xFFFFu64;
                     if src_bits != 0 {
-                        wave16(
-                            &WaveTables::<P>::TABS[0][$ri],
-                            x,
-                            src_bits,
-                            current,
-                            &mut to_search,
-                            &searched,
-                            &mut remaining,
-                            &cm,
-                        );
-                        wave16(
-                            &WaveTables::<P>::TABS[1][$ri],
-                            x,
-                            src_bits,
-                            current,
-                            &mut to_search,
-                            &searched,
-                            &mut remaining,
-                            &cm,
-                        );
+                        let mut wave_ctx = Wave16Ctx {
+                            current_all: current,
+                            to_search: &mut to_search,
+                            searched: &searched,
+                            remaining: &mut remaining,
+                            cm16: &cm,
+                        };
+                        wave16(&WaveTables::<P>::TABS[0][$ri], x, src_bits, &mut wave_ctx);
+                        wave16(&WaveTables::<P>::TABS[1][$ri], x, src_bits, &mut wave_ctx);
                         if ACTIVE_RULES.enable_180 {
-                            wave16(
-                                &WaveTables::<P>::TABS[2][$ri],
-                                x,
-                                src_bits,
-                                current,
-                                &mut to_search,
-                                &searched,
-                                &mut remaining,
-                                &cm,
-                            );
+                            wave16(&WaveTables::<P>::TABS[2][$ri], x, src_bits, &mut wave_ctx);
                         }
                     }
                 }};
@@ -1637,7 +1614,7 @@ pub fn generate_engine<const EMIT: bool>(
     p: Piece,
     force: bool,
 ) -> u32 {
-    debug_assert!(ACTIVE_RULES.spawn_row > 0);
+    const { assert!(ACTIVE_RULES.spawn_row > 0) };
 
     // precompute columns once — avoids repeated 40-row iteration in col()
     let cols = b.compute_cols();

@@ -188,23 +188,7 @@ impl Board {
         }
 
         self.place(m);
-        // Only rows the piece occupies can newly fill; callers hand in boards
-        // with no pre-existing full rows (cleared eagerly on every lock).
-        let pc = m.cells();
-        let y = m.y();
-        let mut clears: Bitboard = 0;
-        let check = |b: &Self, cy: i32| {
-            if cy >= 0 && (cy as usize) < BOARD_HEIGHT && b.rows[cy as usize] == FULL_ROW {
-                1u64 << cy
-            } else {
-                0
-            }
-        };
-        clears |= check(self, y);
-        clears |= check(self, pc[0].y as i32 + y);
-        clears |= check(self, pc[1].y as i32 + y);
-        clears |= check(self, pc[2].y as i32 + y);
-        debug_assert_eq!(clears, self.line_clears());
+        let clears = self.line_clears();
         if clears == 0 {
             return 0;
         }

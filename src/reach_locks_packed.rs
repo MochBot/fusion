@@ -284,8 +284,8 @@ pub(crate) fn reachable_locks_packed(board: &Board, p: Piece, force: bool) -> Re
                 for (k, kick) in kicks.iter().enumerate() {
                     let dx = kick.x as i32 + off.x as i32;
                     let dy = kick.y as i32 + off.y as i32;
-                    for x in 0..COL_NB {
-                        let src = remaining[x];
+                    for (x, remaining_x) in remaining.iter_mut().enumerate().take(COL_NB) {
+                        let src = *remaining_x;
                         if src == 0 {
                             continue;
                         }
@@ -298,7 +298,7 @@ pub(crate) fn reachable_locks_packed(board: &Board, p: Piece, force: bool) -> Re
                         if t == 0 {
                             continue;
                         }
-                        remaining[x] &= !sh_back(t, dy);
+                        *remaining_x &= !sh_back(t, dy);
 
                         let (full, mini, nospin) = match &masks {
                             Some(m) => m.split(is_t, rt_idx, x1u, k, t),

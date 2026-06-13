@@ -27,14 +27,20 @@ import signal
 import sys
 import time
 from collections import Counter, deque
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import httpx
 
 UA = "mosaic-fusion-coaching-collector/0.1 (research; xran/xplus league replays for coaching model training)"
 
-ROOT = Path("/Users/li8591/projects/mosaic-fusion-engine-coaching/fusion-engine/data/replays-x-xplus")
+Json = dict[str, Any]
+State = dict[str, Any]
+
+FUSION_ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(os.environ.get("FUSION_REPLAY_X_XPLUS_DIR", FUSION_ROOT / "data" / "replays-x-xplus"))
 META_DIR = ROOT / "_meta"
 LOG_DIR = ROOT / "_logs"
 PLAYERS_PATH = META_DIR / "players.jsonl"
@@ -44,9 +50,6 @@ DOWNLOAD_LOG_PATH = META_DIR / "downloads.jsonl"
 STATE_PATH = META_DIR / "state.json"
 LIVE_LOG_PATH = LOG_DIR / "collector.log"
 
-PROXY_USER = os.environ["GEONODE_PROXY_USER"].strip()
-PROXY_PASS = os.environ["GEONODE_PROXY_PASS"].strip()
-PROXY_HOST = os.environ["GEONODE_PROXY_BASE"].strip().split(":")[0]
 ROTATING_PORTS = list(range(9000, 9011))
 
 TETRA_LB = "https://ch.tetr.io/api/users/by/league"
@@ -79,11 +82,21 @@ def log(msg: str) -> None:
         pass
 
 
+def proxy_config(env: Mapping[str, str] = os.environ) -> tuple[str, str, str]:
+    user = (env.get("GEONODE_PROXY_USER") or "").strip()
+    password = (env.get("GEONODE_PROXY_PASS") or "").strip()
+    base = (env.get("GEONODE_PROXY_BASE") or "").strip()
+    if not user or not password or not base:
+        raise RuntimeError("GEONODE_PROXY_USER, GEONODE_PROXY_PASS, and GEONODE_PROXY_BASE must be set")
+    return user, password, base.split(":", 1)[0]
+
+
 def proxy_url(port: int, country: str | None = None) -> str:
-    user = PROXY_USER
+    proxy_user, proxy_pass, proxy_host = proxy_config()
+    user = proxy_user
     if country:
-        user = f"{PROXY_USER}-country-{country.lower()}"
-    return f"http://{user}:{PROXY_PASS}@{PROXY_HOST}:{port}"
+        user = f"{proxy_user}-country-{country.lower()}"
+    return f"http://{user}:{proxy_pass}@{proxy_host}:{port}"
 
 
 def make_client(port: int, session_id: str | None = None) -> httpx.AsyncClient:
@@ -99,14 +112,14 @@ def make_client(port: int, session_id: str | None = None) -> httpx.AsyncClient:
     )
 
 
-def save_state(state: dict) -> None:
+def save_state(state: State) -> None:
     state["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
     tmp = STATE_PATH.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(state, indent=2))
     tmp.replace(STATE_PATH)
 
 
-def load_state() -> dict:
+def load_state() -> State:
     if STATE_PATH.exists():
         return json.loads(STATE_PATH.read_text())
     return {
@@ -115,7 +128,7 @@ def load_state() -> dict:
     }
 
 
-async def fetch_json(client: httpx.AsyncClient, url: str, max_retries: int = 3) -> dict | None:
+async def fetch_json(client: httpx.AsyncClient, url: str, max_retries: int = 3) -> Json | None:
     for attempt in range(max_retries + 1):
         try:
             r = await client.get(url, timeout=20.0)
@@ -137,18 +150,18 @@ async def fetch_json(client: httpx.AsyncClient, url: str, max_retries: int = 3) 
     return None
 
 
-async def phase_a_discover_players(state: dict) -> list[dict]:
+async def phase_a_discover_players(state: State) -> list[Json]:
     if PLAYERS_PATH.exists() and state.get("phase_a_complete"):
         players = [json.loads(line) for line in PLAYERS_PATH.read_text().splitlines() if line.strip()]
         log(f"Phase A: resumed from cache, {len(players)} players")
         return players
 
     log("Phase A: paginate league leaderboard for X / X+ players")
-    players: list[dict] = []
+    players: list[Json] = []
     seen: set[str] = set()
     cursor: str | None = None
     page = 0
-    rank_counts: Counter = Counter()
+    rank_counts: Counter[str] = Counter()
 
     async with make_client(ROTATING_PORTS[0], session_id=LB_SESSION) as c:
         while True:
@@ -165,7 +178,7 @@ async def phase_a_discover_players(state: dict) -> list[dict]:
                 break
             page += 1
             page_added = 0
-            page_ranks: Counter = Counter()
+            page_ranks: Counter[str] = Counter()
             for e in entries:
                 uid = e["_id"]
                 if uid in seen:
@@ -211,8 +224,8 @@ async def phase_a_discover_players(state: dict) -> list[dict]:
 
 async def fetch_player_records_all_pages(
     client: httpx.AsyncClient, user_id: str, max_pages: int = 50
-) -> list[dict]:
-    records: list[dict] = []
+) -> list[Json]:
+    records: list[Json] = []
     cursor: str | None = None
     for _ in range(max_pages):
         url = TETRA_RECORDS.format(user=user_id) + "?limit=100"
@@ -236,8 +249,8 @@ async def fetch_player_records_all_pages(
     return records
 
 
-async def phase_b_discover_replays(state: dict, players: list[dict]) -> dict[str, list[dict]]:
-    already_have: dict[str, list[dict]] = {}
+async def phase_b_discover_replays(state: State, players: list[Json]) -> dict[str, list[Json]]:
+    already_have: dict[str, list[Json]] = {}
     if REPLAY_INDEX_PATH.exists():
         for line in REPLAY_INDEX_PATH.read_text().splitlines():
             if not line.strip():
@@ -260,7 +273,7 @@ async def phase_b_discover_replays(state: dict, players: list[dict]) -> dict[str
     completed = 0
     progress_lock = asyncio.Lock()
 
-    async def one(idx: int, player: dict) -> tuple[str, list[dict]]:
+    async def one(idx: int, player: Json) -> tuple[str, list[Json]]:
         async with sem:
             port = ROTATING_PORTS[idx % len(ROTATING_PORTS)]
             recs = await fetch_player_records_all_pages(clients[port], player["_id"])
@@ -303,8 +316,8 @@ async def phase_b_discover_replays(state: dict, players: list[dict]) -> dict[str
     return already_have
 
 
-async def phase_c_attach_ranks(state: dict, players: list[dict]) -> dict[str, dict]:
-    existing: dict[str, dict] = {}
+async def phase_c_attach_ranks(state: State, players: list[Json]) -> dict[str, Json]:
+    existing: dict[str, Json] = {}
     if RANKS_PATH.exists():
         existing = json.loads(RANKS_PATH.read_text())
         log(f"Phase C: resumed, {len(existing)} ranks already attached")
@@ -320,7 +333,7 @@ async def phase_c_attach_ranks(state: dict, players: list[dict]) -> dict[str, di
     clients = {p: make_client(p) for p in ROTATING_PORTS}
     sem = asyncio.Semaphore(META_FETCH_CONCURRENCY)
 
-    async def one(idx: int, p: dict) -> tuple[str, dict | None]:
+    async def one(idx: int, p: Json) -> tuple[str, Json | None]:
         async with sem:
             port = ROTATING_PORTS[idx % len(ROTATING_PORTS)]
             data = await fetch_json(clients[port], TETRA_SUMMARY.format(user=p["_id"]))
@@ -383,8 +396,8 @@ class CollectorStats:
     failed: int = 0
     skipped: int = 0
     bytes_in: int = 0
-    err_counter: Counter = field(default_factory=Counter)
-    recent_outcomes: deque = field(default_factory=lambda: deque(maxlen=ERROR_WINDOW_SIZE))
+    err_counter: Counter[str] = field(default_factory=Counter)
+    recent_outcomes: deque[int] = field(default_factory=lambda: deque(maxlen=ERROR_WINDOW_SIZE))
     current_concurrency: int = DOWNLOAD_CONCURRENCY_MAX
     cooldowns_triggered: int = 0
     last_log: float = field(default_factory=time.time)
@@ -447,6 +460,7 @@ async def download_one(
         last_err: str | None = None
         last_status: int | None = None
         attempts = 0
+        port = 0
         for attempt in range(MAX_DOWNLOAD_ATTEMPTS):
             port = ports[attempt % len(ports)]
             client = clients[port]
@@ -489,7 +503,7 @@ async def download_one(
 
 
 async def phase_d_download(
-    state: dict, replay_index: dict[str, list[dict]], rank_map: dict[str, dict]
+    state: State, replay_index: dict[str, list[Json]], rank_map: dict[str, Json]
 ) -> None:
     log("Phase D: build unique download queue")
 

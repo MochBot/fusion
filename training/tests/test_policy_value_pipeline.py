@@ -636,6 +636,8 @@ class PolicyValuePipelineTests(unittest.TestCase):
                 generation_mode=GENERATION_MODE_SEARCH_ORACLE,
                 policy_temperature=1.0,
             )
+            modal_binary = Path(tmpdir) / "generate_policy_value_labels"
+            modal_binary.write_bytes(b"binary")
 
             manager = Mock()
             manager.__enter__ = Mock(return_value=Mock())
@@ -647,6 +649,9 @@ class PolicyValuePipelineTests(unittest.TestCase):
             ), patch(
                 "scripts.modal_app._upload_modal_label_binary",
                 return_value=str(modal_app.MODAL_LABEL_BINARY_RELATIVE_PATH),
+            ), patch(
+                "scripts.generate_policy_value_labels.ensure_modal_compatible_release_binary",
+                return_value=modal_binary,
             ), patch("scripts.modal_app.data_vol.batch_upload", return_value=manager), patch(
                 "scripts.modal_app.run_modal_policy_value_label_pipeline"
             ) as remote_mock:
@@ -689,6 +694,8 @@ class PolicyValuePipelineTests(unittest.TestCase):
                 generation_mode=GENERATION_MODE_SEARCH_ORACLE,
                 policy_temperature=1.0,
             )
+            modal_binary = Path(tmpdir) / "generate_policy_value_labels"
+            modal_binary.write_bytes(b"binary")
 
             shard_file = Path(tmpdir) / "requests-0000.policy_value.requests.jsonl"
             shard_file.write_text('{"request":1}\n')
@@ -704,6 +711,9 @@ class PolicyValuePipelineTests(unittest.TestCase):
             ), patch(
                 "scripts.modal_app._upload_modal_label_binary",
                 return_value=str(modal_app.MODAL_LABEL_BINARY_RELATIVE_PATH),
+            ), patch(
+                "scripts.generate_policy_value_labels.ensure_modal_compatible_release_binary",
+                return_value=modal_binary,
             ), patch("scripts.modal_app.data_vol.batch_upload", return_value=manager), patch(
                 "scripts.modal_app.run_modal_policy_value_label_pipeline"
             ) as remote_mock:

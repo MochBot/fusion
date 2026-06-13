@@ -136,7 +136,7 @@ impl<const N: usize> SBoard<N> {
                     // hi can reach 60; split the shift so it stays < 64.
                     w |= (self.d[i - q] << (hi - 1)) << 1;
                 }
-                if i >= q + 1 {
+                if i > q {
                     w |= self.d[i - q - 1] >> lo;
                 }
                 out[i] = w;
@@ -271,7 +271,7 @@ impl<const N: usize> SBoard<N> {
             let mut src = dest;
             while src < N {
                 let relative = ((src - dest) as i32 * TLINES) - prefix[src];
-                if relative >= 0 && relative < TLINES {
+                if (0..TLINES).contains(&relative) {
                     result |= packed[src] << (relative * WIDTH);
                 } else if relative < 0 && relative > -TLINES {
                     result |= packed[src] >> (-relative * WIDTH);
@@ -421,7 +421,10 @@ pub const PCELLS: [[[(i8, i8); 3]; 4]; 7] = build_pcells();
 // the offset is -1 exactly when y % TLINES == 0 and the piece has a dy=-1
 // cell (valid placements then have y >= 1, so the word index never
 // underflows).
-const fn build_place_masks() -> [[[(u64, u64, i8, i8); 6]; 4]; 7] {
+type PlaceMask = (u64, u64, i8, i8);
+type PlaceMaskTable = [[[PlaceMask; 6]; 4]; 7];
+
+const fn build_place_masks() -> PlaceMaskTable {
     let mut out = [[[(0u64, 0u64, 0i8, 0i8); 6]; 4]; 7];
     let mut p = 0;
     while p < 7 {
@@ -473,7 +476,7 @@ const fn build_place_masks() -> [[[(u64, u64, i8, i8); 6]; 4]; 7] {
     out
 }
 
-static PMASK: [[[(u64, u64, i8, i8); 6]; 4]; 7] = build_place_masks();
+static PMASK: PlaceMaskTable = build_place_masks();
 
 pub const fn group2(p: usize) -> bool {
     matches!(p, PI_I | PI_S | PI_Z)

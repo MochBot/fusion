@@ -62,13 +62,26 @@ fn read_positive_usize_env(name: &str, default: usize) -> io::Result<usize> {
     Ok(value)
 }
 
-fn feat_attack(rows: &[u16; 40], gmask: &[u16; 40], pieces: &[i8], k: usize, b2b: i32, combo: i32, pending: i32, mult: f64, beam_feat: usize, profile: bool) -> f64 {
-    if pieces.len() < k || pieces.iter().any(|&p| p < 0) {
+struct AttackInput<'a> {
+    rows: &'a [u16; 40],
+    gmask: &'a [u16; 40],
+    pieces: &'a [i8],
+    k: usize,
+    b2b: i32,
+    combo: i32,
+    pending: i32,
+    mult: f64,
+    beam_feat: usize,
+    profile: bool,
+}
+
+fn feat_attack(input: AttackInput<'_>) -> f64 {
+    if input.pieces.len() < input.k || input.pieces.iter().any(|&p| p < 0) {
         return 0.0;
     }
-    let pieces = &pieces[..k];
-    let multipliers = vec![mult; pieces.len()];
-    beam_best(rows, gmask, pieces, b2b.max(0), combo.max(0), pending.max(0), None, &multipliers, None, None, beam_feat, profile)
+    let pieces = &input.pieces[..input.k];
+    let multipliers = vec![input.mult; pieces.len()];
+    beam_best(input.rows, input.gmask, pieces, input.b2b.max(0), input.combo.max(0), input.pending.max(0), None, &multipliers, None, None, input.beam_feat, input.profile)
 }
 
 fn put_f32(out: &mut [u8; STRIDE_BYTES], off: &mut usize, value: f32) {
@@ -92,8 +105,8 @@ fn label_record(ctx: &ContextRec, cfg: &LabelConfig) -> [u8; STRIDE_BYTES] {
     };
     let my_pieces = [rec.piece, rec.queue[0], rec.queue[1], rec.queue[2], rec.queue[3]];
     let opp_pieces = [ctx.opp_piece, ctx.opp_queue[0], ctx.opp_queue[1], ctx.opp_queue[2], ctx.opp_queue[3]];
-    let my_best = feat_attack(&rec.rows, &rec.gmask, &my_pieces, cfg.k, rec.b2b, rec.combo, rec.pending, rec.mult, cfg.beam_feat, cfg.profile).max(0.0);
-    let opp_best = feat_attack(&ctx.opp_rows, &ctx.opp_gmask, &opp_pieces, cfg.k, ctx.opp_b2b, ctx.opp_combo, ctx.opp_pending, ctx.opp_mult, cfg.beam_feat, cfg.profile).max(0.0);
+    let my_best = feat_attack(AttackInput { rows: &rec.rows, gmask: &rec.gmask, pieces: &my_pieces, k: cfg.k, b2b: rec.b2b, combo: rec.combo, pending: rec.pending, mult: rec.mult, beam_feat: cfg.beam_feat, profile: cfg.profile }).max(0.0);
+    let opp_best = feat_attack(AttackInput { rows: &ctx.opp_rows, gmask: &ctx.opp_gmask, pieces: &opp_pieces, k: cfg.k, b2b: ctx.opp_b2b, combo: ctx.opp_combo, pending: ctx.opp_pending, mult: ctx.opp_mult, beam_feat: cfg.beam_feat, profile: cfg.profile }).max(0.0);
     let (oh, ohl) = height_holes(&ctx.opp_rows);
 
     let mut out = [0u8; STRIDE_BYTES];
@@ -145,7 +158,7 @@ fn read_input() -> io::Result<Vec<u8>> {
 
 fn validate_input_size(len: usize, cfg: &LabelConfig) -> io::Result<()> {
     let record_bytes = cfg.record_bytes();
-    if len % record_bytes != 0 {
+    if !len.is_multiple_of(record_bytes) {
         return Err(io::Error::new(io::ErrorKind::InvalidData, format!("input size {len} is not a multiple of {record_bytes}")));
     }
     Ok(())

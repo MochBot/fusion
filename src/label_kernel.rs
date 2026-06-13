@@ -543,7 +543,7 @@ pub fn beam_best(
             add_counter(&PROFILE.generated_unique, unique.len() as u64);
         }
         let prune_start = Instant::now();
-        unique.sort_by(|a, b| b.acc.cmp(&a.acc));
+        unique.sort_by_key(|child| std::cmp::Reverse(child.acc));
         let keepb = keep_line.map(|keep| keep[t]);
         let mut pruned = Vec::with_capacity(beam_width);
         let mut kept = false;
@@ -589,9 +589,9 @@ pub struct Candidate {
 pub fn compact_gmask_rows(gmask: &[u16; 40], cleared: u64) -> [u16; 40] {
     let mut out = [0u16; 40];
     let mut write = 0usize;
-    for y in 0..40 {
+    for (y, row) in gmask.iter().enumerate() {
         if cleared & (1u64 << y) == 0 {
-            out[write] = gmask[y];
+            out[write] = *row;
             write += 1;
         }
     }
@@ -640,10 +640,9 @@ pub fn inject_garbage(rows: &[u16; 40], gmask: &[u16; 40], count: usize, garbage
     }
     let mut nr = [0u16; 40];
     let mut ng = [0u16; 40];
-    for i in 0..count.min(40) {
-        nr[i] = garbage[i];
-        ng[i] = garbage[i];
-    }
+    let inserted = count.min(40);
+    nr[..inserted].copy_from_slice(&garbage[..inserted]);
+    ng[..inserted].copy_from_slice(&garbage[..inserted]);
     let mut y = 0usize;
     while y + count < 40 {
         nr[y + count] = rows[y];

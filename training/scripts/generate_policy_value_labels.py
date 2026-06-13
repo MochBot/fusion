@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -182,6 +183,15 @@ def ensure_release_binary() -> Path:
 
 
 def ensure_modal_compatible_release_binary() -> Path:
+    override = _release_binary_override()
+    if override is not None:
+        return override
+
+    if platform.system() != "Linux" or platform.machine() not in {"x86_64", "AMD64"}:
+        raise RuntimeError(
+            f"Modal label binary build requires a Linux x86_64 host; set {RELEASE_BINARY_ENV_VAR} to a prebuilt Linux binary on other hosts"
+        )
+
     repo_root = _repo_root()
     modal_binary = repo_root / MODAL_RELEASE_BINARY_RELATIVE_PATH
     if modal_binary.exists():

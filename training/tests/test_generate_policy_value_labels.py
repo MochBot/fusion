@@ -21,6 +21,7 @@ from scripts.generate_policy_value_labels import (
     deserialize_policy_value_oracle_request,
     default_labels_output_path,
     default_requests_input_path,
+    ensure_modal_compatible_release_binary,
     ensure_release_binary,
     generate_policy_value_labels_for_dataset,
     merge_label_shards,
@@ -170,6 +171,13 @@ class GeneratePolicyValueLabelTests(unittest.TestCase):
             with patch.dict(os.environ, {RELEASE_BINARY_ENV_VAR: str(binary_path)}, clear=False):
                 self.assertEqual(ensure_release_binary(), binary_path)
 
+    def test_modal_release_binary_requires_linux_x86_host_or_override(self) -> None:
+        with patch.dict(os.environ, {RELEASE_BINARY_ENV_VAR: ""}, clear=False), patch(
+            "scripts.generate_policy_value_labels.platform.system", return_value="Darwin"
+        ), patch("scripts.generate_policy_value_labels.platform.machine", return_value="arm64"):
+            with self.assertRaisesRegex(RuntimeError, "Linux x86_64"):
+                ensure_modal_compatible_release_binary()
+
     def _write_fake_label_binary(self, tmpdir: Path) -> Path:
         binary_path = tmpdir / "fake_generate_policy_value_labels.py"
         _ = binary_path.write_text(
@@ -191,10 +199,13 @@ with input_path.open() as src, output_path.open('w') as dst:
 metadata_path = Path(str(output_path).removesuffix('.policy_value.jsonl') + '.policy_value.metadata.json')
 metadata = {
     'schema_version': 'phase1-v1',
+    'contract_version': 'policy-value-v2',
     'generation_mode': 'search_oracle',
     'policy_temperature': 1.0,
     'sample_count': count,
     'move_id_contract': 'Move.raw',
+    'shared_input_contract': 'policy-value-shared-core-v2',
+    'runtime_compatible_shared_inputs': True,
     'oracle_profile': 'stronger_offline_oracle',
     'oracle_beam_width': 2000,
     'oracle_depth': 18,
