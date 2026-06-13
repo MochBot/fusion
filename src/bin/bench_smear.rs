@@ -28,6 +28,12 @@ fn main() {
     };
 
     let mt = std::env::args().nth(2).is_some_and(|s| s == "mt");
+    // Surface the worker count: RAYON_NUM_THREADS silently caps the pool, which
+    // makes multithreaded NPS numbers incomparable unless the size is recorded.
+    #[cfg(feature = "rayon")]
+    if mt {
+        println!("Threads: {}", rayon::current_num_threads());
+    }
     let start = Instant::now();
     let nodes = run(&queue, mt);
     let ms = start.elapsed().as_millis() as u64;
