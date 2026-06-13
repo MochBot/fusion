@@ -13,7 +13,9 @@ use std::time::{Duration, Instant};
 
 pub use crate::search_config::{SearchConfig, SearchNode, SearchResult, SearchResultFull};
 pub(crate) use crate::search_config::{SearchExpansionContext, SearchIterationParams};
-pub(crate) use crate::search_expand::{expand_node, gen_and_eval_root};
+pub(crate) use crate::search_expand::{
+    expand_node, gen_and_eval_root, profile_root_score_aggregation, profile_sort_prune_truncate,
+};
 
 /// beam search from game state
 /// returns the best move found, or None if no legal moves exist
@@ -71,14 +73,7 @@ pub fn find_best_move_with_scores_forced(
     weights: &EvalWeights,
     forced_root_move: Option<crate::header::Move>,
 ) -> Option<SearchResultFull> {
-    find_best_move_with_scores_forced_runtime(
-        state,
-        config,
-        weights,
-        None,
-        None,
-        forced_root_move,
-    )
+    find_best_move_with_scores_forced_runtime(state, config, weights, None, None, forced_root_move)
 }
 
 pub fn find_best_move_with_scores_forced_runtime(
@@ -213,13 +208,15 @@ fn run_beam_search_iteration(params: &mut SearchIterationParams<'_>) -> Option<S
         return None;
     }
 
-    apply_futility_pruning(
-        &mut beam,
-        params.config.futility_delta,
-        params.forced_root_move,
-    );
-    beam.sort_unstable_by(compare_nodes_desc);
-    truncate_with_forced(&mut beam, params.beam_width, params.forced_root_move);
+    profile_sort_prune_truncate(|| {
+        apply_futility_pruning(
+            &mut beam,
+            params.config.futility_delta,
+            params.forced_root_move,
+        );
+        beam.sort_unstable_by(compare_nodes_desc);
+        truncate_with_forced(&mut beam, params.beam_width, params.forced_root_move);
+    });
 
     for depth_idx in 0..params.max_depth.saturating_sub(1) {
         let child_depth = depth_idx + 2;
@@ -236,13 +233,15 @@ fn run_beam_search_iteration(params: &mut SearchIterationParams<'_>) -> Option<S
             break;
         }
 
-        apply_futility_pruning(
-            &mut next_beam,
-            params.config.futility_delta,
-            params.forced_root_move,
-        );
-        next_beam.sort_unstable_by(compare_nodes_desc);
-        truncate_with_forced(&mut next_beam, params.beam_width, params.forced_root_move);
+        profile_sort_prune_truncate(|| {
+            apply_futility_pruning(
+                &mut next_beam,
+                params.config.futility_delta,
+                params.forced_root_move,
+            );
+            next_beam.sort_unstable_by(compare_nodes_desc);
+            truncate_with_forced(&mut next_beam, params.beam_width, params.forced_root_move);
+        });
         beam = next_beam;
     }
 
@@ -257,8 +256,10 @@ fn run_beam_search_iteration(params: &mut SearchIterationParams<'_>) -> Option<S
 
         if !loud_nodes.is_empty() {
             let mut q_beam = loud_nodes;
-            q_beam.sort_unstable_by(compare_nodes_desc);
-            q_beam.truncate(q_beam_width);
+            profile_sort_prune_truncate(|| {
+                q_beam.sort_unstable_by(compare_nodes_desc);
+                q_beam.truncate(q_beam_width);
+            });
 
             for ext in 0..q_max {
                 let child_depth = main_depth + ext + 2;
@@ -276,8 +277,10 @@ fn run_beam_search_iteration(params: &mut SearchIterationParams<'_>) -> Option<S
                     break;
                 }
 
-                next_q.sort_unstable_by(compare_nodes_desc);
-                next_q.truncate(q_beam_width);
+                profile_sort_prune_truncate(|| {
+                    next_q.sort_unstable_by(compare_nodes_desc);
+                    next_q.truncate(q_beam_width);
+                });
 
                 for node in &next_q {
                     if !node.is_loud() {
@@ -292,7 +295,7 @@ fn run_beam_search_iteration(params: &mut SearchIterationParams<'_>) -> Option<S
             }
 
             beam.extend(q_beam);
-            beam.sort_unstable_by(compare_nodes_desc);
+            profile_sort_prune_truncate(|| beam.sort_unstable_by(compare_nodes_desc));
         }
     }
 
@@ -306,21 +309,23 @@ fn run_beam_search_iteration(params: &mut SearchIterationParams<'_>) -> Option<S
         pv_clear_events: best.path_clear_events.to_vec(),
     };
 
-    let mut root_scores: Vec<(crate::header::Move, f32)> = Vec::new();
-    for node in &beam {
-        let raw = node.root_move.raw();
-        match root_scores.iter_mut().find(|entry| entry.0.raw() == raw) {
-            Some(entry) => {
-                if node.score > entry.1 {
-                    entry.1 = node.score;
+    let (root_scores, position_complexity) = profile_root_score_aggregation(|| {
+        let mut root_scores: Vec<(crate::header::Move, f32)> = Vec::new();
+        for node in &beam {
+            let raw = node.root_move.raw();
+            match root_scores.iter_mut().find(|entry| entry.0.raw() == raw) {
+                Some(entry) => {
+                    if node.score > entry.1 {
+                        entry.1 = node.score;
+                    }
                 }
+                None => root_scores.push((node.root_move, node.score)),
             }
-            None => root_scores.push((node.root_move, node.score)),
         }
-    }
-    root_scores.sort_by(|a, b| b.1.total_cmp(&a.1));
-
-    let position_complexity = compute_position_complexity(&root_scores);
+        root_scores.sort_by(|a, b| b.1.total_cmp(&a.1));
+        let position_complexity = compute_position_complexity(&root_scores);
+        (root_scores, position_complexity)
+    });
 
     Some(SearchResultFull {
         best: result,
@@ -450,7 +455,36 @@ fn compare_nodes_desc(a: &SearchNode, b: &SearchNode) -> std::cmp::Ordering {
     let a_key = policy_key(a);
     let b_key = policy_key(b);
 
-    b_key.cmp(&a_key).then_with(|| b.score.total_cmp(&a.score))
+    // Default/shipped order: (policy_key, score) only — matches the deployed
+    // scalar-BFS enumeration, whose coaching quality benchmarks net-better than
+    // any deterministic tie-break we found (see Option D bench: net -19444).
+    let base = b_key.cmp(&a_key).then_with(|| b.score.total_cmp(&a.score));
+
+    // Opt-in Option D order-independence: behind `deterministic_beam_tiebreak`
+    // (NOT default, NOT in the wasm build) so default builds reproduce deployed
+    // behaviour. The cascade is a TOTAL order, making beam truncation invariant
+    // to move-enumeration order (scalar BFS vs packed movegen); kept as a proven
+    // capability though it is not shipped (it grades net-worse on coaching).
+    #[cfg(feature = "deterministic_beam_tiebreak")]
+    let base = base
+        .then_with(|| b.board_score.total_cmp(&a.board_score))
+        .then_with(|| b.attack_score.total_cmp(&a.attack_score))
+        .then_with(|| b.chain_score.total_cmp(&a.chain_score))
+        .then_with(|| b.context_score.total_cmp(&a.context_score))
+        .then_with(|| b.path_attack.total_cmp(&a.path_attack))
+        .then_with(|| b.path_chain.total_cmp(&a.path_chain))
+        .then_with(|| b.path_context.total_cmp(&a.path_context))
+        .then_with(|| b.value_score.total_cmp(&a.value_score))
+        .then_with(|| b.policy_score.total_cmp(&a.policy_score))
+        .then_with(|| a.root_move.raw().cmp(&b.root_move.raw()))
+        .then_with(|| {
+            a.path
+                .iter()
+                .map(|m| m.raw())
+                .cmp(b.path.iter().map(|m| m.raw()))
+        });
+
+    base
 }
 
 fn compare_results_desc(a: &SearchResult, b: &SearchResult) -> std::cmp::Ordering {
@@ -495,6 +529,7 @@ mod tests {
     use crate::header::{Move, Piece, COL_NB};
     use crate::state::CoachingState;
     use smallvec::{smallvec, SmallVec};
+    use std::sync::Arc;
     fn make_node(
         score: f32,
         fatality: crate::state::FatalityState,
@@ -532,7 +567,7 @@ mod tests {
             policy_score: 0.0,
             value_score: 0.0,
             fallback_used: false,
-            path_clear_events: SmallVec::new(),
+            path_clear_events: Arc::new(Vec::new()),
         }
     }
 
@@ -589,6 +624,81 @@ mod tests {
         assert!(result.is_some());
         let r = result.unwrap_or_else(|| panic!("checked"));
         assert_eq!(r.pv.len(), 1, "depth-1 search should have single-move PV");
+    }
+
+    #[test]
+    fn search_records_sort_prune_truncate_timing() {
+        crate::search_expand::reset_search_expansion_stats();
+        crate::search_expand::set_search_profiling_enabled(true);
+        let state = GameState::new(Board::new(), Piece::T, vec![Piece::I, Piece::O]);
+        let config = SearchConfig {
+            beam_width: 20,
+            depth: 1,
+            ..SearchConfig::default()
+        };
+        let weights = EvalWeights::default();
+
+        let result = find_best_move(&state, &config, &weights);
+        let stats = crate::search_expand::search_expansion_stats();
+
+        assert!(result.is_some());
+        assert!(stats.sort_prune_truncate_nanos > 0);
+        crate::search_expand::set_search_profiling_enabled(false);
+    }
+
+    #[test]
+    fn search_timing_is_disabled_by_default() {
+        crate::search_expand::reset_search_expansion_stats();
+        crate::search_expand::set_search_profiling_enabled(false);
+        let state = GameState::new(Board::new(), Piece::T, vec![Piece::I, Piece::O]);
+        let config = SearchConfig {
+            beam_width: 20,
+            depth: 1,
+            ..SearchConfig::default()
+        };
+        let weights = EvalWeights::default();
+
+        let result = find_best_move(&state, &config, &weights);
+        let stats = crate::search_expand::search_expansion_stats();
+
+        assert!(result.is_some());
+        assert_eq!(stats.action_generation_nanos, 0);
+        assert_eq!(stats.legal_filter_nanos, 0);
+        assert_eq!(stats.child_eval_nanos, 0);
+        assert_eq!(stats.do_move_nanos, 0);
+        assert_eq!(stats.eval_fallback_nanos, 0);
+        assert_eq!(stats.tt_probe_nanos, 0);
+        assert_eq!(stats.sort_prune_truncate_nanos, 0);
+    }
+
+    #[test]
+    fn profiling_does_not_change_search_result() {
+        let state = GameState::new(Board::new(), Piece::T, vec![Piece::I, Piece::O]);
+        let config = SearchConfig {
+            beam_width: 40,
+            depth: 2,
+            use_tt: true,
+            extend_queue_7bag: false,
+            ..SearchConfig::default()
+        };
+        let weights = EvalWeights::default();
+
+        crate::search_expand::reset_search_expansion_stats();
+        crate::search_expand::set_search_profiling_enabled(false);
+        let baseline = find_best_move_with_scores(&state, &config, &weights)
+            .unwrap_or_else(|| panic!("baseline search should return a move"));
+
+        crate::search_expand::reset_search_expansion_stats();
+        crate::search_expand::set_search_profiling_enabled(true);
+        let profiled = find_best_move_with_scores(&state, &config, &weights)
+            .unwrap_or_else(|| panic!("profiled search should return a move"));
+        crate::search_expand::set_search_profiling_enabled(false);
+
+        assert_eq!(profiled.best.best_move, baseline.best.best_move);
+        assert_eq!(profiled.best.hold_used, baseline.best.hold_used);
+        assert_eq!(profiled.best.pv, baseline.best.pv);
+        assert_eq!(profiled.root_scores.len(), baseline.root_scores.len());
+        assert_eq!(profiled.root_scores[0].0, baseline.root_scores[0].0);
     }
 
     #[test]
@@ -720,6 +830,81 @@ mod tests {
     }
 
     #[test]
+    fn tt_on_matches_tt_off_exactly_on_seeded_states() {
+        // The TT caches the exact f32 returned by evaluate(board, weights), so a
+        // hit must reproduce the recompute bit-for-bit; this pins that search
+        // results are invariant under the cache modulo 64-bit hash collisions.
+        let mut seed;
+        let xs = |s: &mut u64| {
+            *s ^= *s << 13;
+            *s ^= *s >> 7;
+            *s ^= *s << 17;
+            *s
+        };
+        for case in 0..6u64 {
+            seed = 0x7757_0611_2026_0001u64.wrapping_add(case.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+            let mut board = Board::new();
+            let height = 4 + (xs(&mut seed) % 8) as usize;
+            for y in 0..height {
+                let mut row = (xs(&mut seed) & 0x3FF) as u16;
+                row &= !(1u16 << (xs(&mut seed) % 10));
+                board.rows[y] = row;
+            }
+            for y in 0..height {
+                let mut bits = board.rows[y] as u64;
+                while bits != 0 {
+                    let x = bits.trailing_zeros() as usize;
+                    board.cols[x] |= 1u64 << y;
+                    bits &= bits - 1;
+                }
+            }
+            let pieces = [
+                Piece::I,
+                Piece::O,
+                Piece::T,
+                Piece::L,
+                Piece::J,
+                Piece::S,
+                Piece::Z,
+            ];
+            let current = pieces[(xs(&mut seed) % 7) as usize];
+            let queue: Vec<Piece> = (0..5).map(|_| pieces[(xs(&mut seed) % 7) as usize]).collect();
+            let mut state = GameState::new(board, current, queue);
+            state.hold = Some(pieces[(xs(&mut seed) % 7) as usize]);
+
+            let weights = EvalWeights::default();
+            let off = SearchConfig {
+                beam_width: 200,
+                depth: 5,
+                use_tt: false,
+                extend_queue_7bag: false,
+                ..SearchConfig::default()
+            };
+            let on = SearchConfig {
+                beam_width: 200,
+                depth: 5,
+                use_tt: true,
+                extend_queue_7bag: false,
+                ..SearchConfig::default()
+            };
+            let a = find_best_move(&state, &off, &weights);
+            let b = find_best_move(&state, &on, &weights);
+            match (a, b) {
+                (None, None) => {}
+                (Some(a), Some(b)) => {
+                    assert_eq!(a.best_move, b.best_move, "case={case}");
+                    assert_eq!(a.hold_used, b.hold_used, "case={case}");
+                    assert_eq!(a.score.to_bits(), b.score.to_bits(), "case={case}");
+                    let pa: Vec<u16> = a.pv.iter().map(|m| m.raw()).collect();
+                    let pb: Vec<u16> = b.pv.iter().map(|m| m.raw()).collect();
+                    assert_eq!(pa, pb, "case={case}");
+                }
+                _ => panic!("tt presence changed move availability, case={case}"),
+            }
+        }
+    }
+
+    #[test]
     fn test_no_moves_returns_none() {
         // fill the board nearly to the top — no valid placements
         let mut board = Board::new();
@@ -767,7 +952,7 @@ mod tests {
                 policy_score: 0.0,
                 value_score: 0.0,
                 fallback_used: false,
-                path_clear_events: SmallVec::new(),
+                path_clear_events: Arc::new(Vec::new()),
             },
             SearchNode {
                 board: Board::new(),
@@ -795,7 +980,7 @@ mod tests {
                 policy_score: 0.0,
                 value_score: 0.0,
                 fallback_used: false,
-                path_clear_events: SmallVec::new(),
+                path_clear_events: Arc::new(Vec::new()),
             },
             SearchNode {
                 board: Board::new(),
@@ -823,7 +1008,7 @@ mod tests {
                 policy_score: 0.0,
                 value_score: 0.0,
                 fallback_used: false,
-                path_clear_events: SmallVec::new(),
+                path_clear_events: Arc::new(Vec::new()),
             },
         ];
 
@@ -986,6 +1171,83 @@ mod tests {
             full.position_complexity >= 0.0,
             "position_complexity should be non-negative, got {}",
             full.position_complexity
+        );
+    }
+
+    // Option D invariant: the beam comparator must be a TOTAL, deterministic
+    // order so truncation/selection is independent of move-enumeration order.
+    // Only valid under the opt-in feature; the default comparator deliberately
+    // stops at (policy_key, score) to match deployed scalar-BFS behaviour.
+    #[cfg(feature = "deterministic_beam_tiebreak")]
+    #[test]
+    fn test_beam_ordering_is_deterministic_and_input_order_independent() {
+        let mk = |score: f32, board: f32, raw: u16| {
+            let mut n = make_node(
+                score,
+                crate::state::FatalityState::Safe,
+                crate::state::ObligationState::None,
+            );
+            n.board_score = board;
+            n.root_move = Move::from_raw(raw);
+            n.path = smallvec![Move::from_raw(raw)];
+            n
+        };
+
+        // Case A: equal policy_key + equal score, DISTINCT board_score.
+        // Cascade must order by board_score desc, deterministically, regardless
+        // of the input enumeration order.
+        let order1 = [
+            mk(5.0, 1.0, 100),
+            mk(5.0, 2.0, 200),
+            mk(5.0, 3.0, 300),
+            mk(5.0, 4.0, 400),
+        ];
+        let order2 = [
+            mk(5.0, 4.0, 400),
+            mk(5.0, 3.0, 300),
+            mk(5.0, 2.0, 200),
+            mk(5.0, 1.0, 100),
+        ];
+        let mut a = order1.to_vec();
+        a.sort_unstable_by(compare_nodes_desc);
+        let mut b = order2.to_vec();
+        b.sort_unstable_by(compare_nodes_desc);
+        let seq_a: Vec<f32> = a.iter().map(|n| n.board_score).collect();
+        let seq_b: Vec<f32> = b.iter().map(|n| n.board_score).collect();
+        assert_eq!(
+            seq_a,
+            vec![4.0, 3.0, 2.0, 1.0],
+            "equal-score nodes must tie-break by board_score desc"
+        );
+        assert_eq!(
+            seq_a, seq_b,
+            "beam ordering must be independent of input enumeration order"
+        );
+
+        // Case B: every comparable field equal except identity (root_move.raw).
+        // The raw backstop must still yield a deterministic, order-independent
+        // total order.
+        let order3 = [
+            mk(5.0, 1.0, 100),
+            mk(5.0, 1.0, 200),
+            mk(5.0, 1.0, 300),
+            mk(5.0, 1.0, 400),
+        ];
+        let order4 = [
+            mk(5.0, 1.0, 400),
+            mk(5.0, 1.0, 300),
+            mk(5.0, 1.0, 200),
+            mk(5.0, 1.0, 100),
+        ];
+        let mut c = order3.to_vec();
+        c.sort_unstable_by(compare_nodes_desc);
+        let mut d = order4.to_vec();
+        d.sort_unstable_by(compare_nodes_desc);
+        let raw_c: Vec<u16> = c.iter().map(|n| n.root_move.raw()).collect();
+        let raw_d: Vec<u16> = d.iter().map(|n| n.root_move.raw()).collect();
+        assert_eq!(
+            raw_c, raw_d,
+            "fully-tied nodes must order deterministically via raw backstop"
         );
     }
 }

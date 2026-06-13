@@ -6,7 +6,7 @@ use std::path::Path;
 
 const DEFAULT_MANIFEST_PATH: &str =
     "data/replay-corpus/s2-ranked-1v1-rd70-165/manifests/players_manifest.json";
-const DEFAULT_REPORT_PATH: &str = "evidence/replay-metrics.txt";
+const DEFAULT_REPORT_PATH: &str = "data/evidence/replay-metrics.txt";
 
 fn ensure_parent_dir(path: &Path) -> Result<(), String> {
     if let Some(parent) = path.parent() {

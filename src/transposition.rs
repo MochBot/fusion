@@ -4,19 +4,35 @@ use crate::header::COL_NB;
 const ZOBRIST_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 pub(crate) const DEFAULT_TT_SIZE: usize = 65_536;
 
+const ROW_KEY_COUNT: usize = 1 << COL_NB;
+const ROW_MASK: usize = ROW_KEY_COUNT - 1;
+
 #[derive(Clone)]
 pub(crate) struct ZobristKeys {
-    keys: [[u64; BOARD_HEIGHT]; COL_NB],
+    keys: Box<[[u64; ROW_KEY_COUNT]]>,
 }
 
 impl ZobristKeys {
     pub(crate) fn new() -> Self {
         let mut rng = SplitMix64::new(ZOBRIST_SEED);
-        let mut keys = [[0u64; BOARD_HEIGHT]; COL_NB];
+        let mut per_bit_keys = [[0u64; BOARD_HEIGHT]; COL_NB];
 
-        for row in keys.iter_mut().take(COL_NB) {
+        for row in per_bit_keys.iter_mut().take(COL_NB) {
             for key in row.iter_mut().take(BOARD_HEIGHT) {
                 *key = rng.next_u64();
+            }
+        }
+
+        let mut keys = vec![[0u64; ROW_KEY_COUNT]; BOARD_HEIGHT].into_boxed_slice();
+        for y in 0..BOARD_HEIGHT {
+            for row_value in 1..ROW_KEY_COUNT {
+                let mut hash = 0u64;
+                for (x, bit_keys) in per_bit_keys.iter().enumerate().take(COL_NB) {
+                    if row_value & (1usize << x) != 0 {
+                        hash ^= bit_keys[y];
+                    }
+                }
+                keys[y][row_value] = hash;
             }
         }
 
@@ -28,10 +44,8 @@ impl ZobristKeys {
 
         for y in 0..BOARD_HEIGHT {
             let row = board.rows[y];
-            for x in 0..COL_NB {
-                if row & (1u16 << x) != 0 {
-                    hash ^= self.keys[x][y];
-                }
+            if row != 0 {
+                hash ^= self.keys[y][(row as usize) & ROW_MASK];
             }
         }
 
@@ -85,7 +99,8 @@ pub(crate) struct TranspositionTable {
 
 impl TranspositionTable {
     pub(crate) fn new(size: usize) -> Self {
-        let size = size.max(1);
+        let size = size.max(1).next_power_of_two();
+        debug_assert!(size.is_power_of_two());
         Self {
             entries: vec![TTEntry::default(); size].into_boxed_slice(),
         }
@@ -93,7 +108,7 @@ impl TranspositionTable {
 
     #[inline]
     fn index(&self, hash: u64) -> usize {
-        (hash as usize) % self.entries.len()
+        hash as usize & (self.entries.len() - 1)
     }
 
     pub(crate) fn probe(&self, hash: u64, depth: u8) -> Option<f32> {
@@ -134,6 +149,92 @@ mod tests {
             board.cols[x] |= 1u64 << y;
         }
         board
+    }
+
+    fn board_from_rows(rows: [u16; BOARD_HEIGHT]) -> Board {
+        let mut board = Board::new();
+        for (y, row) in rows.iter().enumerate() {
+            board.rows[y] = row & 0x03FF;
+            for x in 0..COL_NB {
+                if board.rows[y] & (1u16 << x) != 0 {
+                    board.cols[x] |= 1u64 << y;
+                }
+            }
+        }
+        board
+    }
+
+    fn reference_per_bit_hash(board: &Board) -> u64 {
+        let mut rng = SplitMix64::new(ZOBRIST_SEED);
+        let mut per_bit_keys = [[0u64; BOARD_HEIGHT]; COL_NB];
+
+        for row in per_bit_keys.iter_mut().take(COL_NB) {
+            for key in row.iter_mut().take(BOARD_HEIGHT) {
+                *key = rng.next_u64();
+            }
+        }
+
+        let mut hash = 0u64;
+        for y in 0..BOARD_HEIGHT {
+            let row = board.rows[y];
+            for (x, keys) in per_bit_keys.iter().enumerate().take(COL_NB) {
+                if row & (1u16 << x) != 0 {
+                    hash ^= keys[y];
+                }
+            }
+        }
+
+        hash
+    }
+
+    #[test]
+    fn row_keyed_hash_matches_per_bit_hash() {
+        let keys = ZobristKeys::new();
+        assert_eq!(keys.keys.len(), BOARD_HEIGHT);
+        assert_eq!(keys.keys[0].len(), 1024);
+
+        let mut boards = vec![
+            Board::new(),
+            board_with_cells(&[(0, 0), (9, 0), (4, 17), (2, 39)]),
+            board_from_rows([0x03FF; BOARD_HEIGHT]),
+        ];
+
+        let mut rng = SplitMix64::new(0xD1B5_4A32_D192_ED03);
+        for _ in 0..16 {
+            let mut rows = [0u16; BOARD_HEIGHT];
+            for row in rows.iter_mut() {
+                *row = rng.next_u64() as u16 & 0x03FF;
+            }
+            boards.push(board_from_rows(rows));
+        }
+
+        for board in boards {
+            assert_eq!(keys.hash_board(&board), reference_per_bit_hash(&board));
+        }
+    }
+
+    #[test]
+    fn index_is_power_of_two_masked() {
+        let tt = TranspositionTable::new(1000);
+        let len = tt.entries.len();
+        assert!(len.is_power_of_two());
+        assert_eq!(len, 1024);
+
+        for hash in [
+            0u64,
+            1,
+            0x03FF,
+            0x0400,
+            0x1234_5678_9ABC_DEF0,
+            u64::MAX,
+        ] {
+            assert_eq!(tt.index(hash), hash as usize & (len - 1));
+        }
+
+        let one = TranspositionTable::new(1);
+        assert_eq!(one.entries.len(), 1);
+        assert_eq!(one.index(0), 0);
+        assert_eq!(one.index(u64::MAX), 0);
     }
 
     #[test]

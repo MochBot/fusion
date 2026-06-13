@@ -1,48 +1,26 @@
 # Fusion Engine Training Pipeline
 
-Policy/value neural network training for the Fusion beam search engine. The active path trains a shared state encoder with candidate-move policy heads and a scalar value head, then exports ONNX search/player heads for native runtime experiments and browser-side coaching.
+Cloud-based teacher-student training pipeline running on [Modal](https://modal.com) with NVIDIA B200 GPUs. Trains a dual-CNN teacher via Optuna hyperparameter optimization, then distills into a lightweight MLP student for WASM deployment.
 
-Legacy teacher/student distillation code is still present for historical tests and reference only. It is not the current deployment path.
-
-## Current Status
-
-- Phase 1 training is complete; no additional training budget is currently planned.
-- Best original checkpoint: `pvc-real-r03` (`val_total_loss=1186.6691`).
-- Browser deployment currently uses the loss-rebalanced search head: `static/models/pvc-rebal-r01.onnx` in the frontend repo.
-- Training data: `training_data.bin` with 350,307 samples plus policy/value request, label, group, and player-context sidecars.
-- Detailed checkpoint record: `POLICY_VALUE_STATE_2026-03-12.md`.
-
-## Contract References
-
+Current contract references:
 - `training/PHASE0_STATE_CONTRACT.md`
 - `training/PHASE1_SEARCH_ALIGNED_SUPERVISION.md`
 - `training/POLICY_VALUE_REBUILD_BLUEPRINT.md`
 - `training/POLICY_VALUE_V2_CONTRACT_PLAN.md`
-- `training/POLICY_VALUE_STATE_2026-03-12.md`
 
-Phase 0 defines replay-aligned schema and artifact ownership. Phase 1 defines search-aligned policy/value supervision. Phase 2 owns ONNX runtime integration and browser/native feature-contract parity.
+The current 854-feature teacher/student path is now a legacy training path under contract repair. Phase 0 establishes the canonical schema and artifact ownership that later policy+value work depends on.
+Phase 1 establishes search-aligned policy/value supervision on the training side before any runtime policy+value integration.
+Phase 2 adds native ONNX runtime ownership and an A10-capable Modal launcher for the policy/value path.
 
-## Active Pipeline
+## Current active path
 
-```text
-.ttrm replays
-    -> preprocess_replays.py
-    -> training_data.bin + metadata/groups sidecars
-    -> generate_policy_value_labels.py
-    -> *.policy_value.requests.jsonl + *.policy_value.jsonl + player-context sidecars
-    -> train_policy_value.py on Modal
-    -> export_policy_value_onnx.py
-    -> search-head/player-head ONNX artifacts
-    -> policy_value_runtime.rs or onnxruntime-web
-```
-
-Active entrypoints:
+The active path is now policy/value, not teacher/student distillation:
 
 - local artifact prep: `training/scripts/preprocess_replays.py`
 - local label generation: `training/scripts/generate_policy_value_labels.py`
 - local training entrypoint: `training/scripts/train_policy_value.py`
 - local export entrypoint: `training/scripts/export_policy_value_onnx.py`
-- remote launcher: `training/scripts/modal_app.py::launch_policy_value_pipeline`
+- remote A10 launcher: `training/scripts/modal_app.py::launch_policy_value_pipeline`
 
 Required artifact set for `training/training_data.bin`:
 
@@ -52,157 +30,321 @@ Required artifact set for `training/training_data.bin`:
 - `training_data.bin.policy_value.requests.jsonl`
 - `training_data.bin.policy_value.jsonl`
 - `training_data.bin.policy_value.metadata.json`
-- `training_data.bin.policy_value.player_context.jsonl`
-- `training_data.bin.policy_value.player_context.metadata.json`
 
-Typical path from `fusion-engine/`:
+Typical A10 path:
 
 ```bash
-python3 training/scripts/preprocess_replays.py data/replays training/training_data.bin --workers 10
-python3 training/scripts/generate_policy_value_labels.py training/training_data.bin
+python training/scripts/preprocess_replays.py data/replays training/training_data.bin --workers 10
+python training/scripts/generate_policy_value_labels.py training/training_data.bin
 modal run training/scripts/modal_app.py::launch_policy_value_pipeline --local-data-path training/training_data.bin
 ```
-
-## Model Architecture
-
-```text
-PolicyValueNet (285K params)
-├── Shared state encoder: 854 features -> hidden state
-├── Shared move encoder: per-candidate move features -> hidden state
-├── Search policy head: masked logits over candidate moves
-├── Player context head: player-style logits with player_aux_context
-└── Value head: scalar board-quality estimate
-```
-
-Search-head ONNX exports use three inputs: `features`, `candidate_move_features`, and `candidate_mask`. Player-head ONNX exports additionally require `player_aux_context` with 56 dimensions and are not wired into browser inference yet.
-
-## Feature Vector
-
-The shared state feature vector is 854 floats:
-
-| Offset | Size | Description |
-|--------|------|-------------|
-| 0-399 | 400 | Player board, 10 columns x 40 rows, column-major binary occupancy |
-| 400-799 | 400 | Opponent board, same layout |
-| 800-848 | 49 | Piece one-hot slots: current, hold, next 5 |
-| 849 | 1 | `combo / 20`, clamped to 1 |
-| 850 | 1 | `b2b / 10`, clamped to 1 |
-| 851 | 1 | `lines_total / 100`, clamped to 1 |
-| 852 | 1 | `pending_garbage / 12`, clamped to 1 |
-| 853 | 1 | `bag_number / 20`, clamped to 1 |
-
-Candidate move features are `64 x 14` floats with a parallel 64-entry candidate mask.
-
-## Directory Structure
-
-```text
-training/
-├── TRAINING.md
-├── POLICY_VALUE_STATE_2026-03-12.md
-├── training_data.bin
-├── training_data.bin.*
-├── pyproject.toml
-├── uv.lock
-├── data/
-│   ├── dataset.py
-│   └── policy_value_dataset.py
-├── models/
-│   ├── policy_value.py
-│   ├── policy_value_lit_module.py
-│   ├── teacher.py        # legacy
-│   └── student.py        # legacy
-├── scripts/
-│   ├── preprocess_replays.py
-│   ├── generate_policy_value_labels.py
-│   ├── policy_value_pipeline.py
-│   ├── train_policy_value.py
-│   ├── export_policy_value_onnx.py
-│   ├── modal_app.py
-│   ├── export_weights.py      # legacy
-│   └── distill_student.py     # legacy
-├── utils/
-│   ├── config.py
-│   ├── example_schema.py
-│   └── policy_value_schema.py
-└── tests/
-```
-
-## Modal Deployment
-
-Training runs on Modal with `modal.Volume` for data and checkpoints.
 
 Default A10 policy/value launcher settings:
 
 - batch size: `1024`
 - dataloader workers: `4`
 - max epochs: `50`
-- learning rate: `3e-4`
+- lr: `3e-4`
 - weight decay: `1e-5`
-- precision: inherited from the active Modal profile, typically `bf16-mixed`
+- precision: inherited from active Modal profile (`bf16-mixed` on A10)
 
-Volume paths:
+## Architecture
 
-- Data: `fusion-training-data:/`
-- Checkpoints: `fusion-training-checkpoints:/policy_value/{profile_name}/`
-
-Operational lessons:
-
-- Reducers must call `data_vol.reload()` before reading worker outputs.
-- Upload paths must be idempotent and tolerate pre-existing files.
-- Request-shard temp files must outlive `batch_upload()`.
-- Prefer reducer-only resume over full reruns after shard fan-out.
-- `modal app list` plus volume inspection is more reliable than a silent PTY for status.
-
-## Artifact Readiness
-
-Readiness is stricter than file presence:
-
-- Base dataset byte size must equal `sample_count * BYTES_PER_SAMPLE`.
-- Metadata files must agree on a positive `sample_count`.
-- Request, label, and player-context JSONL line counts must match.
-- Line-by-line identities must align on `(replay_id, round_id, player_id, frame_id)`.
-- Train/validation split is by replay-round group ID, not row index.
-
-Move IDs use the Rust `Move.raw` piece order from `src/header.rs`: `I=0, O=1, T=2, L=3, J=4, S=5, Z=6`. Python policy/value code must use `PIECE_ORDER = "iotljsz"`.
-
-## Tests
-
-Run from `fusion-engine/training/`:
-
-```bash
-python3 -m pytest tests/ -v --tb=short
+```
+.ttrm replays ──► preprocess_replays.py ──► training_data.bin + metadata/group sidecars
+                                                    │
+                                            ┌───────┴───────┐
+                                            │  Modal Cloud  │
+                                            │               │
+                                            │  fan_out()    │
+                                            │  ├─ worker 0  │
+                                            │  ├─ worker 1  │
+                                            │  ├─ ...       │
+                                            │  └─ worker 14 │
+                                            │       │       │
+                                            │  best ckpt    │
+                                            │       │       │
+                                            │  distill()    │
+                                            │       │       │
+                                            │  export()     │
+                                            └───────┬───────┘
+                                                    │
+                                            student_weights.bin (734 KB)
+                                                    │
+                                            WASM inference engine
 ```
 
-Key coverage:
+### Models
 
-| Test | Covers |
-|------|--------|
-| `test_dataset_contract.py` | Binary dataset and schema contract |
-| `test_preprocess_contract.py` | Preprocessing and sidecar alignment |
-| `test_generate_policy_value_labels.py` | Label generation and sharding |
-| `test_policy_value_dataset.py` | Dataset loading, collate, player-context features |
-| `test_policy_value_model.py` | Network shapes and forward contracts |
-| `test_policy_value_lit_module.py` | Losses, metrics, and training steps |
-| `test_policy_value_pipeline.py` | Artifact readiness and identity alignment |
-| `test_export_policy_value_onnx.py` | ONNX export contract |
-| `test_runtime_training_contract_parity.py` | Runtime/training feature parity |
-| `test_modal_app_bootstrap.py` | Modal import resilience |
-| `test_teacher_target_contract.py` | Legacy teacher-output contract |
+**Teacher** (`models/teacher.py`) — Dual-CNN with fusion MLP.
 
-## Legacy Teacher/Student Path
+- Two CNN encoders (player + opponent boards): `Conv2d(1→64→128→256)` with BatchNorm, ReLU, MaxPool, AdaptiveAvgPool → 256-dim each
+- Fusion: concat(256 + 256 + 49 pieces + 5 scalars) = 566 → Linear(566,512) → Linear(512,256)
+- 6 regression heads: value, attack_potential, defensive_solidity, efficiency, flexibility, tempo
+- 1 classification head: phase (opener / midgame / survival)
+- Loss: Kendall homoscedastic uncertainty weighting (learnable log-variance per task, Huber for regression, CE for classification)
 
-Legacy teacher/student files remain because older tests and artifacts reference them, but they are not the active deployment path:
+**Student** (`models/student.py`) — 3-layer MLP for WASM.
 
-- `models/teacher.py`
-- `models/student.py`
-- `scripts/distill_student.py`
-- `scripts/export_weights.py`
-- flat `student_weights.bin` export notes in older docs and memories
+- Architecture: 854 → 192 → 96 → 48 → 9 (SCReLU activations)
+- Output: 6 regression values + 3 phase logits
+- Exported as flat f32 binary: 187,785 floats = 734 KB
+- Distillation loss: α·MSE(regression) + β·KL(phase logits with temperature)
 
-Do not use the legacy path for new neural-coaching work unless explicitly reviving that experiment.
+### Feature Vector (854 floats)
+
+| Offset | Size | Description |
+|--------|------|-------------|
+| 0–399 | 400 | Player board (10 cols × 40 rows, column-major, binary) |
+| 400–799 | 400 | Opponent board (same layout) |
+| 800–848 | 49 | Piece one-hot encoding (7 pieces × 7 slots: current + queue + hold) |
+| 849–853 | 5 | Scalars: combo, b2b, lines cleared, garbage pending, bag position (all normalized) |
+
+Labels (5 floats appended during preprocessing): game_outcome, lines_sent, b2b_after, position_normalized, time_to_topout.
+
+Total sample: 859 floats = 3,436 bytes.
+
+## Directory Structure
+
+```
+training/
+├── TRAINING.md              # This file
+├── training_data.bin         # Preprocessed replay data (mmap'd f32 binary)
+├── pyproject.toml            # Python deps (torch, lightning, optuna)
+├── data/
+│   └── dataset.py            # FusionBinaryDataset — memory-mapped binary loader
+├── models/
+│   ├── teacher.py            # TeacherNet (dual-CNN + fusion MLP)
+│   ├── student.py            # StudentNet (3-layer MLP, SCReLU)
+│   └── lit_module.py         # TeacherLitModule + FusionDataModule (Lightning wrappers)
+├── scripts/
+│   ├── modal_app.py          # Modal app definition — all cloud functions
+│   ├── optuna_objective.py   # Optuna trial definition for teacher HPO
+│   ├── distill_student.py    # StudentDistillModule + distillation training
+│   ├── preprocess_replays.py # .ttrm → training_data.bin (parallel, SRS simulation)
+│   └── export_weights.py     # Lightning checkpoint → flat f32 binary
+├── utils/
+│   ├── config.py             # All dimension constants, label names, export order
+│   ├── losses.py             # KendallMultiTaskLoss
+│   └── activations.py        # SCReLU (Squared Clipped ReLU)
+└── tests/
+```
+
+## Data Pipeline
+
+### 1. Scrape Replays
+
+```bash
+cd scripts/replay_scraper
+pip install -r requirements.txt
+python scraper.py              # Fetches .ttrm files from TETR.IO API
+python sort_by_rank.py         # Sorts into data/replays/0001-0100/ ... /0901-1000/
+```
+
+Current dataset: 5,969 replays across 10 rank buckets.
+
+### 2. Preprocess Replays
+
+Simulates TETR.IO game mechanics from initial board snapshot + key events. Extracts a sample at every hard drop for both players. Uses SRS rotation with wall kicks.
+
+```bash
+PYTHONPATH=/home/li859/projects/mosaic-fusion-engine-coaching/fusion-engine \
+  python training/scripts/preprocess_replays.py \
+    data/replays \
+    training/training_data.bin \
+    --workers 10
+```
+
+Output: `training_data.bin` — contiguous f32 binary, plus `training_data.bin.metadata.json` and `training_data.bin.groups.u64` sidecars used for Phase 0 schema validation and replay-group-aware splitting.
+
+### 3. Upload Data to Modal Volume
+
+```bash
+modal run training/scripts/modal_app.py::upload_data \
+  --local-path training/training_data.bin
+```
+
+Uploads in 256 MB chunks to the `fusion-training-data` volume at `/data/training_data.bin`.
+
+## Training on Modal
+
+### Quick Start
+
+```bash
+# Full pipeline: HPO → distill → export
+modal run training/scripts/modal_app.py::launch_pipeline
+
+# Custom configuration
+modal run training/scripts/modal_app.py::launch_pipeline \
+  --num-workers 15 \
+  --trials-per-worker 4 \
+  --teacher-epochs 50 \
+  --student-epochs 50
+```
+
+### Pipeline Phases
+
+**Phase 1 — Teacher HPO** (`fan_out` → `train_teacher_trial` × N)
+
+Each worker runs an independent Optuna study with HyperbandPruner. Workers explore hyperparameter space in parallel with no shared state (in-memory storage per worker).
+
+Search space:
+
+| Parameter | Range | Scale |
+|-----------|-------|-------|
+| Learning rate | 1e-5 – 1e-2 | Log |
+| Weight decay | 1e-6 – 1e-2 | Log |
+| Batch size | 12288 | Locked first real-training candidate |
+| Dropout (fc1) | 0.1 – 0.5 | Uniform |
+| Dropout (fc2) | 0.05 – 0.3 | Uniform |
+
+Callbacks: ModelCheckpoint (top-1 by val/total_loss), EarlyStopping (patience=10), PruningCallback.
+
+**Phase 2 — Student Distillation** (`distill_student_remote`)
+
+Loads the best teacher checkpoint (frozen). Trains StudentNet to mimic teacher outputs:
+- Regression: MSE loss between student and teacher
+- Phase: KL divergence with temperature scaling
+- Optimizer: AdamW with CosineAnnealingLR (T_max = max_epochs)
+- EarlyStopping patience: 15
+
+**Phase 3 — Weight Export** (`export_weights_remote`)
+
+Extracts student weights from Lightning checkpoint into flat f32 binary for WASM consumption. Order defined in `config.WEIGHT_EXPORT_ORDER`.
+
+### LARYNX Pattern
+
+`run_pipeline` is decorated with `@app.function` (not `local_entrypoint`) so it runs inside a Modal container. This survives client disconnects — if your terminal dies, the pipeline continues. `launch_pipeline` is the thin `local_entrypoint` that calls `run_pipeline.remote()` and exits.
+
+## B200 GPU Optimizations
+
+### Hardware Configuration
+
+| Parameter | Teacher | Student |
+|-----------|---------|---------|
+| GPU | B200 (192 GB VRAM) | B200 |
+| CPU cores | 12 | 12 |
+| RAM | 40 GB | 40 GB |
+| Timeout | 10,800s (3h) | 7,200s (2h) |
+| Retries | 2 | 2 |
+| Scale-down window | 300s | 300s |
+| Startup timeout | 600s | 600s |
+
+### Ephemeral Disk Copy
+
+Training data is copied from the Modal Volume (FUSE, ~200 MB/s) to the container's local NVMe (`/tmp`, ~5 GB/s) at container start. This eliminates network I/O during training.
+
+```python
+shutil.copy2("/data/training_data.bin", "/tmp/training_data.bin")
+```
+
+### DataLoader Tuning
+
+| Parameter | Value | Rationale |
+|-----------|-------|-----------|
+| `num_workers` | 10 | Best validated feeder point from the B200 benchmark before real-loop remeasurement |
+| `pin_memory` | True | DMA transfer to GPU |
+| `persistent_workers` | True | Avoid respawning between epochs |
+| `prefetch_factor` | 6 | Best validated queue depth at the current B200 single-instance knee |
+| `drop_last` | True (train) | Consistent batch sizes |
+
+### torch.compile
+
+Both TeacherLitModule and StudentDistillModule use `configure_model()` to compile the inner `nn.Module` before DDP wrapping:
+
+```python
+def configure_model(self):
+    self.model = torch.compile(self.model, mode="default", dynamic=False)
+```
+
+- `mode='default'`: operator fusion and kernel optimization without CUDA Graphs
+- `dynamic=False`: keeps the compile path stable while avoiding shape-mismatch issues when real batch sizes vary less but still are not guaranteed graph-safe
+- Compile cache persisted to `fusion-compile-cache` Volume at `/compile-cache`
+
+### Precision
+
+`bf16-mixed` on both Trainer instances. BF16 Tensor Cores on B200 for matmul/conv, FP32 for reductions and loss computation. Chosen over `bf16-true` for gradient stability during training.
+
+### CUDA Environment Variables
+
+| Variable | Value | Purpose |
+|----------|-------|---------|
+| `PYTORCH_CUDA_ALLOC_CONF` | `expandable_segments:True` | Prevents CUDA memory fragmentation |
+| `CUBLAS_WORKSPACE_CONFIG` | `:4096:8` | Deterministic cuBLAS operations |
+| `TORCH_NCCL_AVOID_RECORD_STREAMS` | `1` | Reduces NCCL memory overhead |
+| `NCCL_NVLS_ENABLE` | `0` | Avoids NVLink issues on single-GPU |
+| `NCCL_CUMEM_ENABLE` | `0` | Avoids cuMem API issues |
+| `TORCH_CUDNN_V8_API_ENABLED` | `1` | Enable cuDNN v8 backend |
+| `TORCHINDUCTOR_CACHE_DIR` | `/compile-cache` | Persist torch.compile cache across containers |
+
+### Volume Architecture
+
+| Volume | Mount | Purpose |
+|--------|-------|---------|
+| `fusion-training-data` | `/data` | Training binary (read-only during training) |
+| `fusion-training-checkpoints` | `/checkpoints` | Model checkpoints (cross-worker visibility) |
+| `fusion-compile-cache` | `/compile-cache` | torch.compile/Inductor cache |
+
+Checkpoint visibility between containers requires explicit `volume.commit()` after saving and `volume.reload()` before reading.
+
+## Default Configuration
+
+```
+Workers:           15
+Trials/worker:     4  (60 total trials)
+Teacher epochs:    50
+Student epochs:    100
+GPU:               B200
+Teacher batch:     12288 (locked first real-training candidate)
+Student batch:     12288 (locked first real-training candidate)
+Teacher/student workers: 10 / 10
+Prefetch factor:   6
+```
+
+## Cost Estimates
+
+| Config | GPUs | Time | Cost |
+|--------|------|------|------|
+| 15 workers × 4 trials × 50 epochs | 15 B200 | ~18–24 min | ~$112–150 |
+| 5 workers × 10 trials × 100 epochs | 5 A10G | Timeout (>2h) | Failed |
+
+B200 at $6.25/hr has 2.3× the BF16 throughput of H100 ($3.95/hr), making it cheaper per-job despite the higher hourly rate.
+
+## Local Development
+
+### Prerequisites
+
+```bash
+cd training
+uv sync           # Install Python dependencies
+```
+
+### Run Preprocessing Locally
+
+```bash
+PYTHONPATH=/home/li859/projects/mosaic-fusion-engine-coaching/fusion-engine \
+  python training/scripts/preprocess_replays.py data/replays training/training_data.bin
+```
+
+### Export Weights Locally
+
+```bash
+PYTHONPATH=/home/li859/projects/mosaic-fusion-engine-coaching/fusion-engine \
+  python training/scripts/export_weights.py path/to/checkpoint.ckpt output_weights.bin
+```
+
+### Run a Smoke Test
+
+```bash
+modal run training/scripts/modal_app.py::launch_pipeline \
+  --num-workers 2 \
+  --trials-per-worker 2 \
+  --teacher-epochs 3 \
+  --student-epochs 3
+```
 
 ## Known Issues
 
-- Local scripts may require `PYTHONPATH` set to the `fusion-engine/` repo root for module resolution.
-- Large artifacts such as `training_data.bin` and replay manifests are intentionally not committed.
-- Browser deployment currently uses the search head only; player-head inference still needs `player_aux_context` wiring.
+- **Import resolution**: `training.scripts.*` / `training.utils.*` imports only resolve inside the Modal container (`.add_local_python_source("training")`). Local LSP will show import errors — this is expected.
+- **PYTHONPATH**: Local scripts require `PYTHONPATH` set to the repo root for proper module resolution.
+- **Large files**: `training_data.bin` (~30 GB) and `data/metadata/replay_manifest.json` (~5.5 MB) are in `.gitignore`. JJ snapshot limit bumped to 15 GiB.

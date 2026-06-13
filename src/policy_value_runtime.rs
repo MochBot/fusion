@@ -283,21 +283,6 @@ mod native {
     use crate::header::Move;
     use crate::state::GameState;
 
-    #[derive(Clone, Debug, serde::Deserialize)]
-    pub struct PolicyValueRuntimeManifest {
-        pub schema_version: String,
-        pub format: String,
-        pub model_path: String,
-        pub state_feature_dim: usize,
-        pub move_feature_dim: usize,
-        pub policy_output: String,
-        pub value_output: String,
-        pub policy_head_type: String,
-        pub move_id_contract: String,
-        pub candidate_capacity: usize,
-        pub shared_input_contract: String,
-    }
-
     pub struct PolicyValueRuntime;
 
     #[derive(Clone)]

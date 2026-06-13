@@ -67,6 +67,35 @@ fn holes_and_covered(board: &Board, heights: &[usize; COL_NB]) -> (i32, i32) {
             continue;
         }
 
+        let below_mask = (1u64 << h) - 1;
+        let filled_below = board.cols[x] & below_mask;
+        let col_holes = h as i32 - filled_below.count_ones() as i32;
+        holes += col_holes;
+
+        if col_holes == 0 {
+            continue;
+        }
+
+        let empty_below = !board.cols[x] & below_mask;
+        let topmost_hole = 63usize - empty_below.leading_zeros() as usize;
+        let at_or_below_hole = (1u64 << (topmost_hole + 1)) - 1;
+        let cov = (filled_below & !at_or_below_hole).count_ones() as i32;
+        covered += cov.min(6);
+    }
+
+    (holes, covered)
+}
+
+#[cfg(test)]
+fn holes_and_covered_oracle(board: &Board, heights: &[usize; COL_NB]) -> (i32, i32) {
+    let mut holes = 0i32;
+    let mut covered = 0i32;
+
+    for (x, &h) in heights.iter().enumerate() {
+        if h == 0 {
+            continue;
+        }
+
         let mut topmost_hole: Option<usize> = None;
         for y in (0..h).rev() {
             if !board.occupied(x as i32, y as i32) {
@@ -192,6 +221,58 @@ fn count_tsd_overhangs(board: &Board, heights: &[usize; COL_NB]) -> i32 {
             continue;
         }
 
+        let top_bit = 1u64 << (h - 1);
+        let cavity_bit = 1u64 << (h - 2);
+        let col = board.cols[c];
+
+        // Overhang: filled at top, empty directly below
+        let has_overhang = (col & top_bit) != 0 && (col & cavity_bit) == 0;
+
+        if !has_overhang {
+            continue;
+        }
+
+        // Check for wall on either side providing the T-slot
+        let wall_left = c > 0
+            && heights[c - 1] >= h
+            && (board.cols[c - 1] & top_bit) != 0
+            && (board.cols[c - 1] & cavity_bit) != 0;
+
+        let wall_right = c < COL_NB - 1
+            && heights[c + 1] >= h
+            && (board.cols[c + 1] & top_bit) != 0
+            && (board.cols[c + 1] & cavity_bit) != 0;
+
+        // Need cavity on the opposite side of the wall
+        if wall_left {
+            let open_right = c < COL_NB - 1 && (board.cols[c + 1] & cavity_bit) == 0;
+            let open_right = open_right || c == COL_NB - 1;
+            if open_right {
+                count += 1;
+            }
+        }
+        if wall_right {
+            let open_left = c > 0 && (board.cols[c - 1] & cavity_bit) == 0;
+            let open_left = open_left || c == 0;
+            if open_left {
+                count += 1;
+            }
+        }
+    }
+
+    count.min(2)
+}
+
+#[cfg(test)]
+fn count_tsd_overhangs_oracle(board: &Board, heights: &[usize; COL_NB]) -> i32 {
+    let mut count = 0i32;
+
+    for c in 0..COL_NB {
+        let h = heights[c];
+        if h < 2 {
+            continue;
+        }
+
         // Overhang: filled at top, empty directly below
         let has_overhang =
             board.occupied(c as i32, h as i32 - 1) && !board.occupied(c as i32, h as i32 - 2);
@@ -305,7 +386,216 @@ pub fn evaluate(board: &Board, weights: &EvalWeights) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::board::{Board, FULL_ROW};
+    use crate::board::{Board, BOARD_HEIGHT, FULL_ROW};
+
+    struct SplitMix64 {
+        state: u64,
+    }
+
+    impl SplitMix64 {
+        fn new(seed: u64) -> Self {
+            Self { state: seed }
+        }
+
+        fn next_u64(&mut self) -> u64 {
+            self.state = self.state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+            let mut z = self.state;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+            z ^ (z >> 31)
+        }
+
+        fn next_usize(&mut self, upper: usize) -> usize {
+            (self.next_u64() as usize) % upper
+        }
+    }
+
+    fn board_from_rows(rows: [u16; BOARD_HEIGHT]) -> Board {
+        let mut board = Board::new();
+        for (y, row) in rows.iter().enumerate() {
+            board.rows[y] = row & FULL_ROW;
+            let mut bits = board.rows[y] as u64;
+            while bits != 0 {
+                let x = bits.trailing_zeros() as usize;
+                board.cols[x] |= 1u64 << y;
+                bits &= bits - 1;
+            }
+        }
+        board
+    }
+
+    fn set_column(rows: &mut [u16; BOARD_HEIGHT], x: usize, ys: &[usize]) {
+        for &y in ys {
+            rows[y] |= 1u16 << x;
+        }
+    }
+
+    fn edge_case_boards() -> Vec<Board> {
+        let mut boards = Vec::new();
+
+        boards.push(Board::new());
+        boards.push(board_from_rows([FULL_ROW; BOARD_HEIGHT]));
+
+        let mut rows = [0u16; BOARD_HEIGHT];
+        set_column(&mut rows, 3, &[1, 2, 3]);
+        boards.push(board_from_rows(rows));
+
+        let mut rows = [0u16; BOARD_HEIGHT];
+        set_column(&mut rows, 4, &[0, 2]);
+        boards.push(board_from_rows(rows));
+
+        let mut rows = [0u16; BOARD_HEIGHT];
+        set_column(&mut rows, 5, &[1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        boards.push(board_from_rows(rows));
+
+        let mut rows = [0u16; BOARD_HEIGHT];
+        for y in 0..BOARD_HEIGHT {
+            if y != 10 && y != 20 {
+                rows[y] |= 1u16 << 6;
+            }
+        }
+        boards.push(board_from_rows(rows));
+
+        let mut rows = [0u16; BOARD_HEIGHT];
+        for y in 0..BOARD_HEIGHT {
+            rows[y] |= 1u16 << 7;
+        }
+        boards.push(board_from_rows(rows));
+
+        let mut rows = [0u16; BOARD_HEIGHT];
+        set_column(&mut rows, 2, &[0, 2, 3, 5, 8, 9]);
+        boards.push(board_from_rows(rows));
+
+        let mut rows = [0u16; BOARD_HEIGHT];
+        set_column(&mut rows, 3, &[1, 2]);
+        set_column(&mut rows, 4, &[2]);
+        boards.push(board_from_rows(rows));
+
+        let mut rows = [0u16; BOARD_HEIGHT];
+        set_column(&mut rows, 4, &[1, 2]);
+        set_column(&mut rows, 5, &[2]);
+        set_column(&mut rows, 6, &[1, 2]);
+        boards.push(board_from_rows(rows));
+
+        boards
+    }
+
+    fn fill_by_density(
+        rows: &mut [u16; BOARD_HEIGHT],
+        rng: &mut SplitMix64,
+        height: usize,
+        threshold: u64,
+        modulo: u64,
+    ) {
+        for row in rows.iter_mut().take(height) {
+            for x in 0..COL_NB {
+                if rng.next_u64() % modulo < threshold {
+                    *row |= 1u16 << x;
+                }
+            }
+        }
+    }
+
+    fn random_board(rng: &mut SplitMix64, case: usize) -> Board {
+        let mut rows = [0u16; BOARD_HEIGHT];
+        match case % 6 {
+            0 => {
+                let height = rng.next_usize(9);
+                fill_by_density(&mut rows, rng, height, 1, 8);
+            }
+            1 => {
+                let height = 1 + rng.next_usize(BOARD_HEIGHT);
+                fill_by_density(&mut rows, rng, height, 7, 8);
+            }
+            2 => {
+                let height = rng.next_usize(9);
+                fill_by_density(&mut rows, rng, height, 1, 3);
+            }
+            3 => {
+                let height = 32 + rng.next_usize(BOARD_HEIGHT - 31);
+                fill_by_density(&mut rows, rng, height, 1, 2);
+            }
+            4 => {
+                for x in 0..COL_NB {
+                    let h = rng.next_usize(BOARD_HEIGHT + 1);
+                    if h == 0 {
+                        continue;
+                    }
+                    rows[h - 1] |= 1u16 << x;
+                    for row in rows.iter_mut().take(h - 1) {
+                        if rng.next_u64() & 3 != 0 {
+                            *row |= 1u16 << x;
+                        }
+                    }
+                    if h > 6 {
+                        let y0 = rng.next_usize(h - 1);
+                        let y1 = rng.next_usize(h - 1);
+                        rows[y0] &= !(1u16 << x);
+                        rows[y1] &= !(1u16 << x);
+                    }
+                }
+            }
+            _ => {
+                for x in 0..COL_NB {
+                    let h = rng.next_usize(BOARD_HEIGHT + 1);
+                    for row in rows.iter_mut().take(h) {
+                        *row |= 1u16 << x;
+                    }
+                    if h > 3 {
+                        let y = rng.next_usize(h - 1);
+                        rows[y] &= !(1u16 << x);
+                    }
+                }
+            }
+        }
+        board_from_rows(rows)
+    }
+
+    fn check_holes_covered_parity(board: &Board, label: &str) {
+        let heights = column_heights(board);
+        assert_eq!(
+            holes_and_covered(board, &heights),
+            holes_and_covered_oracle(board, &heights),
+            "{label} rows {:?}",
+            board.rows
+        );
+    }
+
+    fn check_tsd_overhang_parity(board: &Board, label: &str) {
+        let heights = column_heights(board);
+        assert_eq!(
+            count_tsd_overhangs(board, &heights),
+            count_tsd_overhangs_oracle(board, &heights),
+            "{label} rows {:?}",
+            board.rows
+        );
+    }
+
+    #[test]
+    fn bitboard_holes_covered_matches_oracle() {
+        for (case, board) in edge_case_boards().into_iter().enumerate() {
+            check_holes_covered_parity(&board, &format!("edge case {case}"));
+        }
+
+        let mut rng = SplitMix64::new(0xD1B5_4A32_D192_ED03);
+        for case in 0..100_000 {
+            let board = random_board(&mut rng, case);
+            check_holes_covered_parity(&board, &format!("random case {case}"));
+        }
+    }
+
+    #[test]
+    fn bitboard_tsd_overhangs_matches_oracle() {
+        for (case, board) in edge_case_boards().into_iter().enumerate() {
+            check_tsd_overhang_parity(&board, &format!("edge case {case}"));
+        }
+
+        let mut rng = SplitMix64::new(0x9E37_79B9_7F4_A7C15);
+        for case in 0..100_000 {
+            let board = random_board(&mut rng, case);
+            check_tsd_overhang_parity(&board, &format!("random case {case}"));
+        }
+    }
 
     #[test]
     fn test_empty_board_eval() {

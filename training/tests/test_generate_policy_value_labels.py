@@ -191,13 +191,10 @@ with input_path.open() as src, output_path.open('w') as dst:
 metadata_path = Path(str(output_path).removesuffix('.policy_value.jsonl') + '.policy_value.metadata.json')
 metadata = {
     'schema_version': 'phase1-v1',
-    'contract_version': 'policy-value-v2',
     'generation_mode': 'search_oracle',
     'policy_temperature': 1.0,
     'sample_count': count,
     'move_id_contract': 'Move.raw',
-    'shared_input_contract': 'policy-value-shared-core-v2',
-    'runtime_compatible_shared_inputs': True,
     'oracle_profile': 'stronger_offline_oracle',
     'oracle_beam_width': 2000,
     'oracle_depth': 18,

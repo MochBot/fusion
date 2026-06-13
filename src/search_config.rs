@@ -2,10 +2,17 @@ use crate::attack::AttackConfig;
 use crate::board::Board;
 use crate::eval::EvalWeights;
 use crate::header::{Move, Piece};
+use crate::move_buffer::MoveBuffer;
 use crate::policy_value_runtime::{PolicyValueRuntime, PolicyValueRuntimeContext};
 use crate::state::{ClearEvent, CoachingState, GameState};
 use crate::transposition::{TranspositionTable, ZobristKeys};
 use smallvec::SmallVec;
+use std::cell::RefCell;
+use std::sync::Arc;
+
+thread_local! {
+    static SEARCH_MOVE_SCRATCH: RefCell<MoveBuffer> = RefCell::new(MoveBuffer::new());
+}
 
 pub struct SearchConfig {
     pub beam_width: usize,
@@ -51,7 +58,7 @@ impl Default for SearchConfig {
             depth: 14,
             futility_delta: 15.0,
             time_budget_ms: None,
-            use_tt: false,
+            use_tt: true,
             extend_queue_7bag: true,
             attack_config: AttackConfig::tetra_league(),
             attack_weight: 0.50,
@@ -126,6 +133,17 @@ pub(crate) struct SearchExpansionContext<'a> {
     pub runtime_context: Option<&'a PolicyValueRuntimeContext>,
 }
 
+impl SearchExpansionContext<'_> {
+    #[inline]
+    pub(crate) fn with_move_scratch<T>(&mut self, f: impl FnOnce(&mut MoveBuffer) -> T) -> T {
+        SEARCH_MOVE_SCRATCH.with(|scratch| {
+            let mut moves = scratch.borrow_mut();
+            moves.clear();
+            f(&mut moves)
+        })
+    }
+}
+
 /// Parameters for a single beam search iteration.
 /// Groups game state, queue, configuration, and search infrastructure.
 pub(crate) struct SearchIterationParams<'a> {
@@ -175,8 +193,7 @@ pub struct SearchNode {
     pub policy_score: f32,
     pub value_score: f32,
     pub fallback_used: bool,
-    /// Per-move clear event history along the search path (capacity >= typical clears per depth).
-    pub path_clear_events: SmallVec<[ClearEvent; 4]>,
+    pub path_clear_events: Arc<Vec<ClearEvent>>,
 }
 
 impl SearchNode {

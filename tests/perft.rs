@@ -1,4 +1,4 @@
-// perft.rs -- integration tests validating D1-D5 against cobra-movegen d7054ef baselines
+// perft.rs -- integration tests pinning movegen node counts (D1-D4 vs upstream, D5-D7 vs Fusion)
 use direct_cobra_copy::board::Board;
 use direct_cobra_copy::header::Piece;
 use direct_cobra_copy::movegen::MoveList;
@@ -33,7 +33,11 @@ fn perft(board: &Board, queue: &[Piece], depth: usize) -> u64 {
     count
 }
 
-// D1-D7 baselines from cobra-movegen d7054ef, queue IOLJSZT, empty board
+// D1-D4 baselines match cobra-movegen d7054ef, queue IOLJSZT, empty board.
+// D5-D7 are Fusion baselines: all-spin emission adds spin-labeled move
+// variants once boards develop overhangs, so deep counts exceed upstream's
+// T-spin-only totals. Verified: with enable_allspin=false this engine
+// reproduces upstream exactly (D5 3500883, D6 67088390, D7 2705999255).
 
 #[test]
 fn test_perft_d1() {
@@ -64,21 +68,21 @@ fn test_perft_d4() {
 #[ignore]
 fn test_perft_d5() {
     let board = Board::new();
-    assert_eq!(perft(&board, &QUEUE, 5), 3500883, "D5");
+    assert_eq!(perft(&board, &QUEUE, 5), 3573524, "D5");
 }
 
 #[test]
 #[ignore]
 fn test_perft_d6() {
     let board = Board::new();
-    assert_eq!(perft(&board, &QUEUE, 6), 67088390, "D6");
+    assert_eq!(perft(&board, &QUEUE, 6), 70797703, "D6");
 }
 
 #[test]
 #[ignore]
 fn test_perft_d7() {
     let board = Board::new();
-    assert_eq!(perft(&board, &QUEUE, 7), 2705999255, "D7");
+    assert_eq!(perft(&board, &QUEUE, 7), 2845035044, "D7");
 }
 
 // per-piece D1 counts: I=17, O=9, L=34, J=34, S=17, Z=17, T=34

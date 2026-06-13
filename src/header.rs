@@ -240,6 +240,10 @@ impl Move {
         self.data
     }
 
+    pub const fn from_raw(data: u16) -> Self {
+        Self { data }
+    }
+
     pub fn cells(self) -> PieceCoordinates {
         piece_table(self.piece(), self.rotation())
     }
@@ -328,13 +332,35 @@ const fn rotate_coord(r: Rotation, c: Coordinates) -> Coordinates {
     }
 }
 
-pub const fn piece_table(p: Piece, r: Rotation) -> PieceCoordinates {
+const fn piece_table_const(p: Piece, r: Rotation) -> PieceCoordinates {
     let cells = make_piece(p);
     PieceCoordinates::new(
         rotate_coord(r, cells.coords[0]),
         rotate_coord(r, cells.coords[1]),
         rotate_coord(r, cells.coords[2]),
     )
+}
+
+const fn build_piece_cells() -> [[PieceCoordinates; ROTATION_NB]; PIECE_NB] {
+    let zero = Coordinates { x: 0, y: 0 };
+    let mut table = [[PieceCoordinates { coords: [zero; 3] }; ROTATION_NB]; PIECE_NB];
+    let mut pi = 0;
+    while pi < PIECE_NB {
+        let mut ri = 0;
+        while ri < ROTATION_NB {
+            table[pi][ri] = piece_table_const(Piece::from_u8(pi as u8), Rotation::from_u8(ri as u8));
+            ri += 1;
+        }
+        pi += 1;
+    }
+    table
+}
+
+static PIECE_CELLS: [[PieceCoordinates; ROTATION_NB]; PIECE_NB] = build_piece_cells();
+
+#[inline(always)]
+pub fn piece_table(p: Piece, r: Rotation) -> PieceCoordinates {
+    PIECE_CELLS[p as usize][r as usize]
 }
 
 // -- Bitboard operations --

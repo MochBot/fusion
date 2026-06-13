@@ -29,8 +29,9 @@ pub(crate) fn from_js<T: serde::de::DeserializeOwned>(js_val: JsValue) -> Option
 // ---------------------------------------------------------------------------
 // Piece conversion helpers
 // ---------------------------------------------------------------------------
-// WASM API uses Fusion v1 ordering: I=0,O=1,T=2,S=3,Z=4,J=5,L=6
-// Internal (Cobra) ordering:        I=0,O=1,T=2,L=3,J=4,S=5,Z=6
+// WASM API uses the external / Triangle piece-ID order: I=0,O=1,T=2,S=3,Z=4,J=5,L=6
+// (historically called "Fusion v1 ordering" — a numbering convention, NOT an engine version).
+// Internal (Cobra / Fusion V2) ordering:                 I=0,O=1,T=2,L=3,J=4,S=5,Z=6
 
 pub(crate) fn piece_from_external(v: u8) -> Option<Piece> {
     match v {
@@ -71,14 +72,45 @@ pub(crate) fn hold_from_external(hold: Option<u8>) -> Option<Piece> {
     hold.and_then(piece_from_external)
 }
 
+pub(crate) fn board_from_external_rows(rows: Option<&[u16]>) -> Board {
+    let mut board = Board::new();
+    if let Some(rows) = rows {
+        for (y, row) in rows.iter().take(crate::board::BOARD_HEIGHT).enumerate() {
+            let row = *row & ((1u16 << COL_NB) - 1);
+            board.rows[y] = row;
+            let mut bits = row as u64;
+            while bits != 0 {
+                let x = bits.trailing_zeros() as usize;
+                board.cols[x] |= 1u64 << y;
+                bits &= bits - 1;
+            }
+        }
+    }
+    board
+}
+
 pub(crate) fn game_state_from_external_context(
     board: Board,
     current: Piece,
-    queue: Option<&[u8]>,
-    hold: Option<u8>,
+    context: Option<&ReplayFrameContextJson>,
 ) -> GameState {
-    let mut state = GameState::new(board, current, queue_from_external(queue));
-    state.hold = hold_from_external(hold);
+    let mut state = GameState::new(
+        board,
+        current,
+        queue_from_external(context.and_then(|ctx| ctx.queue.as_deref())),
+    );
+    state.hold = hold_from_external(context.and_then(|ctx| ctx.hold));
+    if let Some(context) = context {
+        state.b2b = context.b2b.unwrap_or(0).max(0).min(u8::MAX as i32) as u8;
+        state.combo = context.combo.unwrap_or(0).max(0) as u32;
+        state.pending_garbage = context
+            .pending_garbage
+            .unwrap_or(0)
+            .min(u8::MAX as u32) as u8;
+        state.lines_total = context.lines_total.unwrap_or(0);
+        state.bag_number = context.bag_number.unwrap_or(0);
+        state.pieces_into_bag = context.pieces_into_bag.unwrap_or(0);
+    }
     state
 }
 
@@ -139,7 +171,7 @@ pub(crate) fn coaching_to_contract(v: CoachingState) -> MachineDiagnosticsJson {
 // Serde JSON types for WASM serialization
 // ---------------------------------------------------------------------------
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub(crate) struct MoveResultJson {
     pub piece: u8,
     pub rotation: u8,
@@ -370,5 +402,38 @@ mod tests {
         assert_eq!(ctx.bag_number, Some(6));
         assert_eq!(ctx.pieces_into_bag, Some(5));
         assert_eq!(ctx.opponent_board.as_ref().map(Vec::len), Some(3));
+    }
+
+    #[test]
+    fn game_state_context_propagates_phase0_progression_fields() {
+        let ctx = ReplayFrameContextJson {
+            queue: Some(vec![0, 1]),
+            hold: Some(2),
+            opponent_board: Some(vec![1, 2, 3]),
+            player_pps: None,
+            player_app: None,
+            player_dsp: None,
+            lines_cleared: None,
+            lines_total: Some(14),
+            b2b: Some(3),
+            combo: Some(2),
+            combo_before: None,
+            hold_used: None,
+            pending_garbage: Some(4),
+            imminent_garbage: None,
+            bag_number: Some(6),
+            pieces_into_bag: Some(5),
+        };
+
+        let state = game_state_from_external_context(Board::new(), Piece::T, Some(&ctx));
+
+        assert_eq!(state.queue, vec![Piece::I, Piece::O]);
+        assert_eq!(state.hold, Some(Piece::T));
+        assert_eq!(state.lines_total, 14);
+        assert_eq!(state.b2b, 3);
+        assert_eq!(state.combo, 2);
+        assert_eq!(state.pending_garbage, 4);
+        assert_eq!(state.bag_number, 6);
+        assert_eq!(state.pieces_into_bag, 5);
     }
 }

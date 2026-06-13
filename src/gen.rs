@@ -24,7 +24,7 @@ pub(crate) const fn canonical_size(p: Piece) -> usize {
     }
 }
 
-pub(crate) fn canonical_r(p: Piece, r: Rotation) -> Rotation {
+pub(crate) const fn canonical_r(p: Piece, r: Rotation) -> Rotation {
     match p {
         Piece::O => Rotation::North,
         Piece::I | Piece::S | Piece::Z => {
@@ -35,7 +35,7 @@ pub(crate) fn canonical_r(p: Piece, r: Rotation) -> Rotation {
     }
 }
 
-pub(crate) fn canonical_offset(p: Piece, r: Rotation) -> Coordinates {
+pub(crate) const fn canonical_offset(p: Piece, r: Rotation) -> Coordinates {
     match p {
         Piece::I => match r {
             Rotation::South => Coordinates::new(1, 0),
@@ -62,7 +62,7 @@ pub(crate) enum Direction {
 
 pub(crate) const DIRECTION_NB: usize = 2; // Cw and Ccw only (Flip is separate)
 
-pub(crate) fn rotate(d: Direction, r: Rotation) -> Rotation {
+pub(crate) const fn rotate(d: Direction, r: Rotation) -> Rotation {
     let ri = r as u8;
     let result = match d {
         Direction::Cw => (ri + 1) & 3,
@@ -90,7 +90,7 @@ macro_rules! c {
     };
 }
 
-pub(crate) static KICKS: [[[Offsets5; ROTATION_NB]; DIRECTION_NB]; 3] = [
+pub(crate) const KICKS: [[[Offsets5; ROTATION_NB]; DIRECTION_NB]; 3] = [
     // [0] LJSZT
     [
         // Cw
@@ -144,7 +144,7 @@ pub(crate) static KICKS: [[[Offsets5; ROTATION_NB]; DIRECTION_NB]; 3] = [
     ],
 ];
 
-pub(crate) static KICKS_180: [[Offsets6; ROTATION_NB]; 2] = [
+pub(crate) const KICKS_180: [[Offsets6; ROTATION_NB]; 2] = [
     // [0] LJSZT
     [
         [c!(0, 0), c!(0, 1), c!(1, 1), c!(-1, 1), c!(1, 0), c!(-1, 0)],
@@ -197,8 +197,8 @@ pub(crate) static KICKS_180: [[Offsets6; ROTATION_NB]; 2] = [
 ];
 
 // kick table index: srs_plus uses (p==I)*2, srs uses (p==I)
-pub(crate) fn kick_index(p: Piece, srs_plus: bool) -> usize {
-    let is_i = (p == Piece::I) as usize;
+pub(crate) const fn kick_index(p: Piece, srs_plus: bool) -> usize {
+    let is_i = matches!(p, Piece::I) as usize;
     if srs_plus {
         is_i * 2
     } else {
@@ -206,8 +206,8 @@ pub(crate) fn kick_index(p: Piece, srs_plus: bool) -> usize {
     }
 }
 
-pub(crate) fn kick_180_index(p: Piece) -> usize {
-    (p == Piece::I) as usize
+pub(crate) const fn kick_180_index(p: Piece) -> usize {
+    matches!(p, Piece::I) as usize
 }
 
 // -- CollisionMap --
@@ -218,6 +218,7 @@ pub(crate) struct CollisionMap {
 }
 
 impl CollisionMap {
+    #[inline(always)]
     pub(crate) fn new(cols: &[Bitboard; COL_NB], p: Piece) -> Self {
         let cs = canonical_size(p);
         let mut board = [[0u64; 4]; COL_NB];
@@ -247,6 +248,7 @@ impl CollisionMap {
         CollisionMap { board }
     }
 
+    #[inline(always)]
     pub(crate) fn get(&self, x: usize, r: Rotation) -> Bitboard {
         self.board[x][r as usize]
     }
@@ -294,6 +296,7 @@ impl CollisionMap16 {
         CollisionMap16 { board }
     }
 
+    #[inline(always)]
     pub(crate) fn get(&self, x: usize) -> Bitboard {
         self.board[x]
     }

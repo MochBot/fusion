@@ -70,12 +70,6 @@ def policy_value_onnx_metadata_path(checkpoint_path: str | Path) -> Path:
     return path.with_suffix(f"{path.suffix}{POLICY_VALUE_ONNX_METADATA_SUFFIX}")
 
 
-def _load_checkpoint_state_dict(checkpoint_path: Path) -> dict[str, torch.Tensor]:
-    ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
-    state_dict = ckpt.get("state_dict", ckpt)
-    return state_dict
-
-
 def build_policy_value_onnx_metadata(*, model_path: str | Path) -> dict[str, Any]:
     return {
         "schema_version": PHASE2_RUNTIME_SCHEMA_VERSION,
@@ -110,7 +104,8 @@ def export_policy_value_onnx(
     )
 
     module = PolicyValueNet()
-    state_dict = _load_checkpoint_state_dict(checkpoint_path)
+    ckpt = torch.load(checkpoint_path, map_location="cpu")
+    state_dict = ckpt.get("state_dict", ckpt)
     normalized: dict[str, torch.Tensor] = {}
     for key, value in state_dict.items():
         clean = key
@@ -175,7 +170,8 @@ def export_player_head_onnx(
     )
 
     module = PolicyValueNet()
-    state_dict = _load_checkpoint_state_dict(checkpoint_path)
+    ckpt = torch.load(checkpoint_path, map_location="cpu")
+    state_dict = ckpt.get("state_dict", ckpt)
     normalized: dict[str, torch.Tensor] = {}
     for key, value in state_dict.items():
         clean = key
