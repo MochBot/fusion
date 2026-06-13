@@ -4,8 +4,8 @@ use direct_cobra_copy::calibration::{
 use std::path::Path;
 
 const DEFAULT_MANIFEST_PATH: &str =
-    ".sisyphus/data/replay-corpus/s2-ranked-1v1-rd70-165/manifests/players_manifest.json";
-const DEFAULT_OUTPUT_PATH: &str = ".sisyphus/data/calibration/skill_bucket_calibration_v1.cal";
+    "data/replay-corpus/s2-ranked-1v1-rd70-165/manifests/players_manifest.json";
+const DEFAULT_OUTPUT_PATH: &str = "data/calibration/skill_bucket_calibration_v1.cal";
 
 fn ensure_parent_dir(path: &Path) -> Result<(), String> {
     if let Some(parent) = path.parent() {

@@ -1,7 +1,5 @@
 # Policy+Value Phase 1 Search-Aligned Supervision Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
-
 **Goal:** Replace legacy proxy teacher supervision with policy/value targets produced from current search outputs, while keeping runtime search integration unchanged for now.
 
 **Architecture:** Phase 1 adds a new training-side supervision artifact parallel to the Phase 0 canonical example dataset. The initial oracle is the existing engine search: `root_scores` define policy supervision and `best.score` defines value supervision. This phase does not yet replace the runtime model or the Rust search path; it establishes the new truth source and the data/training surfaces needed to consume it.

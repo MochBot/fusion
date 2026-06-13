@@ -770,9 +770,9 @@ const LANE_TOP: Bitboard = 0x7FFF_7FFF_7FFF_7FFF;
 // 16-bit-lane mirror of the T dispatch's spin_map/check_spin builder; valid for
 // h <= 13 boards where corner, lock, and immobility bits above row 15 are all
 // provably zero, so lane-masked shifts agree with the 64-bit forms. Kept as a
-// test-only oracle: routing production dispatch through this precheck measured
-// 9.5% slower at perft D7 (deep low boards are mostly spin-eligible, so the
-// 16-bit pass became a duplicate build instead of a save).
+// test-only oracle: routing the production dispatch through this precheck is not
+// a net win, because deep low boards are mostly spin-eligible and the 16-bit
+// pass then duplicates the 64-bit build instead of replacing it.
 #[cfg(test)]
 fn t_spin_masks16(cols: &[Bitboard; COL_NB], cm: &CollisionMap16) -> (SpinMasks16, bool) {
     let mut masks = SpinMasks16 {

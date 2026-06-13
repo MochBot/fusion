@@ -5,8 +5,8 @@ use direct_cobra_copy::replay_validation::{
 use std::path::Path;
 
 const DEFAULT_MANIFEST_PATH: &str =
-    ".sisyphus/data/replay-corpus/s2-ranked-1v1-rd70-165/manifests/players_manifest.json";
-const DEFAULT_REPORT_PATH: &str = ".sisyphus/evidence/task-8-replay-metrics.txt";
+    "data/replay-corpus/s2-ranked-1v1-rd70-165/manifests/players_manifest.json";
+const DEFAULT_REPORT_PATH: &str = "data/evidence/replay-metrics.txt";
 
 fn ensure_parent_dir(path: &Path) -> Result<(), String> {
     if let Some(parent) = path.parent() {

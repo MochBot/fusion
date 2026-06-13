@@ -2,7 +2,7 @@
 //!
 //! Mirrors the upstream cobra bench interface: a single queue-string argument
 //! (e.g. "IOLJSZT") and the same one-line output format, so the two binaries
-//! can be interleaved for A/B runs.
+//! can be compared directly.
 
 use direct_cobra_copy::smear;
 use std::time::Instant;

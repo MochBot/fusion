@@ -1017,7 +1017,6 @@ fn gen_impl<const P: usize, const N: usize, const EMIT: bool>(
             // The wave's entire effect is gated by `res = result & unsearched[r1]`,
             // and the result is contained in the source set dilated by the kick
             // envelope, so an empty probe intersection proves a no-op wave.
-            // Measured on depth-7 IOLJSZT: 73% of waves hit this skip.
             if $probe.and(&unsearched[r1]).any() {
                 let mut temp = search[$r];
                 let mut result = SBoard::<N>::EMPTY;
@@ -1494,7 +1493,6 @@ mod tests {
                 // The wave's entire effect is gated by `res = result & unsearched[r1]`,
                 // and the result is contained in the source set dilated by the kick
                 // envelope, so an empty probe intersection proves a no-op wave.
-                // Measured on depth-7 IOLJSZT: 73% of waves hit this skip.
                 if $probe.and(&unsearched[r1]).any() {
                     let mut temp = search[$r];
                     let mut result = SBoard::<N>::EMPTY;

@@ -1,7 +1,5 @@
 # Policy+Value Phase 0 Contract Repair Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
-
 **Goal:** Repair and canonicalize the training/runtime state contract so later policy+value work is built on trustworthy examples rather than mismatched replay state.
 
 **Architecture:** Introduce one versioned example schema for replay decision points, move feature ownership out of scattered ad hoc definitions, and verify that preprocessing, dataset loading, and runtime encoding all agree on the same state semantics. This phase does not train a new model; it establishes the source-of-truth contract required for every later phase.
