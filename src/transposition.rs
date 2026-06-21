@@ -220,14 +220,7 @@ mod tests {
         assert!(len.is_power_of_two());
         assert_eq!(len, 1024);
 
-        for hash in [
-            0u64,
-            1,
-            0x03FF,
-            0x0400,
-            0x1234_5678_9ABC_DEF0,
-            u64::MAX,
-        ] {
+        for hash in [0u64, 1, 0x03FF, 0x0400, 0x1234_5678_9ABC_DEF0, u64::MAX] {
             assert_eq!(tt.index(hash), hash as usize & (len - 1));
         }
 

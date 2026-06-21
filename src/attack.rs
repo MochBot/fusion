@@ -33,16 +33,17 @@ const MODERN_COMBO_TABLE: [u8; 13] = [0, 1, 1, 2, 2, 2, 3, 3, 3, 3, 3, 3, 4];
 static COMBO_FLOOR_LN_TABLE: OnceLock<[f64; 256]> = OnceLock::new();
 
 fn combo_floor_ln_value(combo: usize) -> f64 {
-    if let Some(value) = COMBO_FLOOR_LN_TABLE.get_or_init(|| {
-        let mut table = [0.0_f64; 256];
-        let mut i = 0;
-        while i < table.len() {
-            table[i] = (1.0 + i as f64 * COMBO_FLOOR_SCALE as f64).ln();
-            i += 1;
-        }
-        table
-    })
-    .get(combo)
+    if let Some(value) = COMBO_FLOOR_LN_TABLE
+        .get_or_init(|| {
+            let mut table = [0.0_f64; 256];
+            let mut i = 0;
+            while i < table.len() {
+                table[i] = (1.0 + i as f64 * COMBO_FLOOR_SCALE as f64).ln();
+                i += 1;
+            }
+            table
+        })
+        .get(combo)
     {
         *value
     } else {
@@ -728,7 +729,11 @@ mod tests {
         // building credits +1 per B2B (3->4 is +1, not a cliff jump).
         assert_eq!(surge_potential(3, 1.0), 3);
         assert_eq!(surge_potential(1, 1.0), 1);
-        assert_eq!(surge_potential(4, 1.0) - surge_potential(3, 1.0), 1, "no cliff at threshold");
+        assert_eq!(
+            surge_potential(4, 1.0) - surge_potential(3, 1.0),
+            1,
+            "no cliff at threshold"
+        );
         assert_eq!(surge_potential(0, 1.0), 0);
         assert_eq!(surge_potential(-1, 1.0), 0, "b2b sentinel clamps to 0");
         assert_eq!(surge_potential(4, 2.0), 8, "multiplier scales potential");

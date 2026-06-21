@@ -868,7 +868,9 @@ mod tests {
                 Piece::Z,
             ];
             let current = pieces[(xs(&mut seed) % 7) as usize];
-            let queue: Vec<Piece> = (0..5).map(|_| pieces[(xs(&mut seed) % 7) as usize]).collect();
+            let queue: Vec<Piece> = (0..5)
+                .map(|_| pieces[(xs(&mut seed) % 7) as usize])
+                .collect();
             let mut state = GameState::new(board, current, queue);
             state.hold = Some(pieces[(xs(&mut seed) % 7) as usize]);
 

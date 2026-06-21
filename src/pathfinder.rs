@@ -124,7 +124,11 @@ fn classify_rotation_spin(
             return SpinType::NoSpin;
         }
         if kick_idx >= 4 {
-            return if spins { SpinType::Full } else { SpinType::Mini };
+            return if spins {
+                SpinType::Full
+            } else {
+                SpinType::Mini
+            };
         }
         let front = match rt {
             Rotation::North => nw && ne,
@@ -464,10 +468,7 @@ pub(crate) struct ReachLocks {
 
 impl ReachLocks {
     #[inline]
-    pub(crate) fn from_locks(
-        piece: Piece,
-        locks: [[[u64; ROTATION_NB]; COL_NB]; SPIN_NB],
-    ) -> Self {
+    pub(crate) fn from_locks(piece: Piece, locks: [[[u64; ROTATION_NB]; COL_NB]; SPIN_NB]) -> Self {
         Self { piece, locks }
     }
 
@@ -1253,7 +1254,10 @@ mod tests {
             diffs > 0,
             "expected the strict kick fix to change at least one cube on the corpus"
         );
-        println!("legacy-vs-strict cubes differing: {diffs} (first: {})", first.unwrap());
+        println!(
+            "legacy-vs-strict cubes differing: {diffs} (first: {})",
+            first.unwrap()
+        );
     }
 
     #[derive(Default)]
@@ -1299,21 +1303,17 @@ mod tests {
                                 if l == s {
                                     continue;
                                 }
-                                let phys_strict = strict[0][x][ri]
-                                    | strict[1][x][ri]
-                                    | strict[2][x][ri];
-                                let phys_legacy = legacy[0][x][ri]
-                                    | legacy[1][x][ri]
-                                    | legacy[2][x][ri];
+                                let phys_strict =
+                                    strict[0][x][ri] | strict[1][x][ri] | strict[2][x][ri];
+                                let phys_legacy =
+                                    legacy[0][x][ri] | legacy[1][x][ri] | legacy[2][x][ri];
 
                                 let mut gone = l & !s;
                                 while gone != 0 {
                                     let y = ctz(gone) as i32;
                                     gone &= gone - 1;
                                     let has_path = move_for_lock(p, s_idx, x as i32, y, ri)
-                                        .map(|mv| {
-                                            !get_input(&b, &mv, false, force).data.is_empty()
-                                        })
+                                        .map(|mv| !get_input(&b, &mv, false, force).data.is_empty())
                                         .unwrap_or(false);
                                     if has_path {
                                         counts.bug += 1;
@@ -1444,7 +1444,11 @@ mod tests {
                     while drop_y > 0 && cm.get(x as usize, rc) & bb(drop_y - 1) == 0 {
                         drop_y -= 1;
                     }
-                    let label = if can_spin && drop_y == y { s } else { SpinType::NoSpin };
+                    let label = if can_spin && drop_y == y {
+                        s
+                    } else {
+                        SpinType::NoSpin
+                    };
                     return Some((x, drop_y, rc, label));
                 }
                 Input::ShiftLeft | Input::ShiftRight => {
@@ -1521,7 +1525,9 @@ mod tests {
                             continue;
                         }
                         s = if can_spin {
-                            classify_rotation_spin(board, &cm, is_t, is_allspin, x1, y1, rt, rt_c, k)
+                            classify_rotation_spin(
+                                board, &cm, is_t, is_allspin, x1, y1, rt, rt_c, k,
+                            )
                         } else {
                             SpinType::NoSpin
                         };
@@ -1591,8 +1597,7 @@ mod tests {
                                 while bits != 0 {
                                     let y = ctz(bits) as i32;
                                     bits &= bits - 1;
-                                    let Some(target) =
-                                        move_for_lock(p, s_idx, x as i32, y, ri)
+                                    let Some(target) = move_for_lock(p, s_idx, x as i32, y, ri)
                                     else {
                                         continue;
                                     };
@@ -1663,5 +1668,4 @@ mod tests {
         assert!(!inputs.data.is_empty());
         assert_eq!(*inputs.data.last().unwrap(), Input::HardDrop);
     }
-
 }

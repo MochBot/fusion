@@ -165,26 +165,50 @@ mod tests {
 
     #[test]
     fn ffi_rejects_invalid_piece() {
-        assert_eq!(fusion_encode_move_raw(7, 0, 0, 0, 0), FUSION_ENCODE_MOVE_RAW_ERROR);
-        assert_eq!(fusion_encode_move_raw(255, 0, 0, 0, 0), FUSION_ENCODE_MOVE_RAW_ERROR);
+        assert_eq!(
+            fusion_encode_move_raw(7, 0, 0, 0, 0),
+            FUSION_ENCODE_MOVE_RAW_ERROR
+        );
+        assert_eq!(
+            fusion_encode_move_raw(255, 0, 0, 0, 0),
+            FUSION_ENCODE_MOVE_RAW_ERROR
+        );
     }
 
     #[test]
     fn ffi_rejects_invalid_rotation() {
-        assert_eq!(fusion_encode_move_raw(0, 4, 0, 0, 0), FUSION_ENCODE_MOVE_RAW_ERROR);
+        assert_eq!(
+            fusion_encode_move_raw(0, 4, 0, 0, 0),
+            FUSION_ENCODE_MOVE_RAW_ERROR
+        );
     }
 
     #[test]
     fn ffi_rejects_out_of_range_coords() {
-        assert_eq!(fusion_encode_move_raw(0, 0, -1, 0, 0), FUSION_ENCODE_MOVE_RAW_ERROR);
-        assert_eq!(fusion_encode_move_raw(0, 0, 16, 0, 0), FUSION_ENCODE_MOVE_RAW_ERROR);
-        assert_eq!(fusion_encode_move_raw(0, 0, 0, -1, 0), FUSION_ENCODE_MOVE_RAW_ERROR);
-        assert_eq!(fusion_encode_move_raw(0, 0, 0, 64, 0), FUSION_ENCODE_MOVE_RAW_ERROR);
+        assert_eq!(
+            fusion_encode_move_raw(0, 0, -1, 0, 0),
+            FUSION_ENCODE_MOVE_RAW_ERROR
+        );
+        assert_eq!(
+            fusion_encode_move_raw(0, 0, 16, 0, 0),
+            FUSION_ENCODE_MOVE_RAW_ERROR
+        );
+        assert_eq!(
+            fusion_encode_move_raw(0, 0, 0, -1, 0),
+            FUSION_ENCODE_MOVE_RAW_ERROR
+        );
+        assert_eq!(
+            fusion_encode_move_raw(0, 0, 0, 64, 0),
+            FUSION_ENCODE_MOVE_RAW_ERROR
+        );
     }
 
     #[test]
     fn ffi_rejects_invalid_spin() {
-        assert_eq!(fusion_encode_move_raw(0, 0, 0, 0, 2), FUSION_ENCODE_MOVE_RAW_ERROR);
+        assert_eq!(
+            fusion_encode_move_raw(0, 0, 0, 0, 2),
+            FUSION_ENCODE_MOVE_RAW_ERROR
+        );
     }
 
     #[test]
@@ -196,8 +220,7 @@ mod tests {
             (Piece::T, Rotation::South, 4, 18, true),
         ];
         for (piece, rotation, x, y, fullspin) in cases {
-            let raw =
-                fusion_encode_move_raw(piece as u8, rotation as u8, x, y, fullspin as u8);
+            let raw = fusion_encode_move_raw(piece as u8, rotation as u8, x, y, fullspin as u8);
             assert!(raw >= 0, "sentinel returned for valid input");
             let m = Move::new(piece, rotation, x, y, fullspin);
             assert_eq!(raw as u16, m.raw());

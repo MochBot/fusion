@@ -4,11 +4,7 @@
 //! expert analysis.
 
 use direct_cobra_copy::{
-    analysis::{
-        compute_sigmoid_c, detect_insights,
-        InsightDetectorInput, PlayerSkill,
-        SIGMOID_K,
-    },
+    analysis::{compute_sigmoid_c, detect_insights, InsightDetectorInput, PlayerSkill, SIGMOID_K},
     board::{Board, FULL_ROW},
     eval::{evaluate, EvalWeights},
     header::{Piece, SpinType, COL_NB},
@@ -19,7 +15,10 @@ use direct_cobra_copy::{
 // ── Board helpers ──────────────────────────────────────────────────────
 
 fn board_from_bottom_rows(bottom_rows: &[u16]) -> Board {
-    assert!(bottom_rows.len() <= 40, "board helper expects at most 40 rows");
+    assert!(
+        bottom_rows.len() <= 40,
+        "board helper expects at most 40 rows"
+    );
     let mut board = Board::new();
     for (y, row) in bottom_rows.iter().copied().enumerate() {
         board.rows[y] = row & FULL_ROW;
@@ -380,7 +379,7 @@ fn run_scenario(scenario: &Scenario, config: &SearchConfig) -> Option<ScenarioRe
         actual_combo_after: scenario.combo.saturating_add(1), // assume clear
         actual_combo_before: scenario.combo,
         actual_lines_cleared: 1, // assume 1 line
-        board_eval_delta: 0.0, // best move = no delta
+        board_eval_delta: 0.0,   // best move = no delta
     });
 
     // Simulate insight detection for a suboptimal move (2nd worst or worst)
@@ -396,7 +395,7 @@ fn run_scenario(scenario: &Scenario, config: &SearchConfig) -> Option<ScenarioRe
             actual_combo_after: 0, // assume combo broken
             actual_combo_before: scenario.combo,
             actual_lines_cleared: 0, // assume no clear
-            board_eval_delta: -2.5, // assume board got worse
+            board_eval_delta: -2.5,  // assume board got worse
         })
     } else {
         vec![]
@@ -433,8 +432,14 @@ fn run_scenario(scenario: &Scenario, config: &SearchConfig) -> Option<ScenarioRe
         path_context: result.path_context,
         eval_before,
         eval_after_best: best.score,
-        insights_best: insights_best.iter().map(|i| i.tag.to_str().to_string()).collect(),
-        insights_suboptimal: insights_suboptimal.iter().map(|i| format!("{} (sev={:.2})", i.tag.to_str(), i.severity)).collect(),
+        insights_best: insights_best
+            .iter()
+            .map(|i| i.tag.to_str().to_string())
+            .collect(),
+        insights_suboptimal: insights_suboptimal
+            .iter()
+            .map(|i| format!("{} (sev={:.2})", i.tag.to_str(), i.severity))
+            .collect(),
         top_moves,
         win_prob_before: wp_before,
         win_prob_after: wp_after,
@@ -452,21 +457,34 @@ fn e2e_composite_scoring_validation() {
     for scenario in &scenarios {
         eprintln!("\n{}", "=".repeat(60));
         eprintln!("Running: {} — {}", scenario.name, scenario.description);
-        
+
         match run_scenario(scenario, &config) {
             Some(r) => {
                 // Print detailed report
                 eprintln!("\n  BEST MOVE: {}", r.best_move);
-                eprintln!("  Score: {:.3}  |  Hold: {}  |  PV depth: {}", r.best_score, r.hold_used, r.pv_length);
-                eprintln!("  Root moves: {}  |  Score spread: {:.3}  |  Complexity: {:.3}", r.num_root_moves, r.score_spread, r.position_complexity);
+                eprintln!(
+                    "  Score: {:.3}  |  Hold: {}  |  PV depth: {}",
+                    r.best_score, r.hold_used, r.pv_length
+                );
+                eprintln!(
+                    "  Root moves: {}  |  Score spread: {:.3}  |  Complexity: {:.3}",
+                    r.num_root_moves, r.score_spread, r.position_complexity
+                );
                 eprintln!("\n  COMPOSITE CHANNELS:");
                 eprintln!("    board:   {:.4}", r.board_score);
                 eprintln!("    attack:  {:.4}", r.attack_score);
                 eprintln!("    chain:   {:.4}", r.chain_score);
                 eprintln!("    context: {:.4}", r.context_score);
                 eprintln!("\n  EVAL DELTA:");
-                eprintln!("    before: {:.3}  →  after(best): {:.3}", r.eval_before, r.eval_after_best);
-                eprintln!("    win_prob: {:.1}% → {:.1}%", r.win_prob_before * 100.0, r.win_prob_after * 100.0);
+                eprintln!(
+                    "    before: {:.3}  →  after(best): {:.3}",
+                    r.eval_before, r.eval_after_best
+                );
+                eprintln!(
+                    "    win_prob: {:.1}% → {:.1}%",
+                    r.win_prob_before * 100.0,
+                    r.win_prob_after * 100.0
+                );
                 eprintln!("\n  INSIGHTS (best move):   {:?}", r.insights_best);
                 eprintln!("  INSIGHTS (suboptimal): {:?}", r.insights_suboptimal);
                 eprintln!("\n  TOP 5 MOVES:");
@@ -483,58 +501,109 @@ fn e2e_composite_scoring_validation() {
     }
 
     eprintln!("\n\n{}", "=".repeat(60));
-    eprintln!("SUMMARY: {} scenarios run, {} produced results", scenarios.len(), results.len());
+    eprintln!(
+        "SUMMARY: {} scenarios run, {} produced results",
+        scenarios.len(),
+        results.len()
+    );
     eprintln!("{}", "=".repeat(60));
-    
+
     // ── Sanity assertions ──
     // Every scenario should produce a result
-    assert_eq!(results.len(), scenarios.len(), "All scenarios should produce results");
+    assert_eq!(
+        results.len(),
+        scenarios.len(),
+        "All scenarios should produce results"
+    );
 
     // Basic composite score sanity
     for r in &results {
         // Board score should always be finite
-        assert!(r.board_score.is_finite(), "{}: board_score is not finite", r.name);
-        assert!(r.attack_score.is_finite(), "{}: attack_score is not finite", r.name);
-        assert!(r.chain_score.is_finite(), "{}: chain_score is not finite", r.name);
-        assert!(r.context_score.is_finite(), "{}: context_score is not finite", r.name);
-        
+        assert!(
+            r.board_score.is_finite(),
+            "{}: board_score is not finite",
+            r.name
+        );
+        assert!(
+            r.attack_score.is_finite(),
+            "{}: attack_score is not finite",
+            r.name
+        );
+        assert!(
+            r.chain_score.is_finite(),
+            "{}: chain_score is not finite",
+            r.name
+        );
+        assert!(
+            r.context_score.is_finite(),
+            "{}: context_score is not finite",
+            r.name
+        );
+
         // Score spread should be non-negative
         assert!(r.score_spread >= 0.0, "{}: negative score spread", r.name);
-        
+
         // Win probability should be in [0, 1]
-        assert!((0.0..=1.0).contains(&r.win_prob_before), "{}: win_prob_before out of range", r.name);
-        assert!((0.0..=1.0).contains(&r.win_prob_after), "{}: win_prob_after out of range", r.name);
+        assert!(
+            (0.0..=1.0).contains(&r.win_prob_before),
+            "{}: win_prob_before out of range",
+            r.name
+        );
+        assert!(
+            (0.0..=1.0).contains(&r.win_prob_after),
+            "{}: win_prob_after out of range",
+            r.name
+        );
     }
 
     // ── Scenario-specific assertions ──
-    
+
     // Quad well: I piece should clear lines (high attack)
-    let quad = results.iter().find(|r| r.name == "quad_well_i_piece").unwrap();
+    let quad = results
+        .iter()
+        .find(|r| r.name == "quad_well_i_piece")
+        .unwrap();
     assert!(quad.path_attack > 0.0,
         "Quad well: I piece should have positive path_attack (cumulative attack along best path), got {:.4}", quad.path_attack);
 
     // Active combo: chain_score should be elevated
-    let combo = results.iter().find(|r| r.name == "active_combo_maintain").unwrap();
-    assert!(combo.chain_score > 0.0,
-        "Active combo: chain_score should be positive (combo=3), got {:.4}", combo.chain_score);
+    let combo = results
+        .iter()
+        .find(|r| r.name == "active_combo_maintain")
+        .unwrap();
+    assert!(
+        combo.chain_score > 0.0,
+        "Active combo: chain_score should be positive (combo=3), got {:.4}",
+        combo.chain_score
+    );
 
-    let combo_break = results.iter().find(|r| r.name == "combo_break_scenario").unwrap();
+    let combo_break = results
+        .iter()
+        .find(|r| r.name == "combo_break_scenario")
+        .unwrap();
     assert!(combo_break.chain_score > 0.0 || combo_break.path_chain > 0.0,
         "Combo break (combo=5) should have positive immediate chain_score ({:.4}) or positive path_chain ({:.4})",
         combo_break.chain_score,
         combo_break.path_chain);
 
     // Near-death: board_score should dominate (survival mode)
-    let near_death = results.iter().find(|r| r.name == "near_death_survival").unwrap();
+    let near_death = results
+        .iter()
+        .find(|r| r.name == "near_death_survival")
+        .unwrap();
     // In survival mode, the engine should find moves that reduce height
-    assert!(near_death.board_score.is_finite(),
-        "Near-death: board_score should be finite");
+    assert!(
+        near_death.board_score.is_finite(),
+        "Near-death: board_score should be finite"
+    );
 
     // Suboptimal insights should fire for scenarios with clear differences
     // (we simulate worst-case: combo broken, no clear, board worsened)
     let any_suboptimal_insights = results.iter().any(|r| !r.insights_suboptimal.is_empty());
-    assert!(any_suboptimal_insights,
-        "At least one scenario should trigger suboptimal-move insights");
+    assert!(
+        any_suboptimal_insights,
+        "At least one scenario should trigger suboptimal-move insights"
+    );
 
     eprintln!("\n✓ All sanity assertions passed.");
 }

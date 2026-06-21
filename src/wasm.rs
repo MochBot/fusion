@@ -1854,9 +1854,7 @@ mod tests {
                     stats.reachable_ns += start.elapsed().as_nanos();
 
                     let start = Instant::now();
-                    moves.retain(|m| {
-                        node.board.legal_lock_placement(m) && reach.move_reachable(m)
-                    });
+                    moves.retain(|m| node.board.legal_lock_placement(m) && reach.move_reachable(m));
                     stats.retain_ns += start.elapsed().as_nanos();
                     stats.packed_calls += 1;
                 }

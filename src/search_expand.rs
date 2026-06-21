@@ -551,7 +551,12 @@ fn enumerate_actions(
             &mut actions,
             board,
             current_piece,
-            ActionTransition { next_hold: hold, hold_used: false, next_current, next_queue },
+            ActionTransition {
+                next_hold: hold,
+                hold_used: false,
+                next_current,
+                next_queue,
+            },
         );
 
         if let Some(held_piece) = hold {
@@ -561,7 +566,12 @@ fn enumerate_actions(
                 &mut actions,
                 board,
                 held_piece,
-                ActionTransition { next_hold: Some(current_piece), hold_used: true, next_current, next_queue },
+                ActionTransition {
+                    next_hold: Some(current_piece),
+                    hold_used: true,
+                    next_current,
+                    next_queue,
+                },
             );
         } else if let Some(&queue_piece) = queue.first() {
             let (next_current, next_queue) = split_next_queue(queue, 1);
@@ -570,7 +580,12 @@ fn enumerate_actions(
                 &mut actions,
                 board,
                 queue_piece,
-                ActionTransition { next_hold: Some(current_piece), hold_used: true, next_current, next_queue },
+                ActionTransition {
+                    next_hold: Some(current_piece),
+                    hold_used: true,
+                    next_current,
+                    next_queue,
+                },
             );
         }
     }
@@ -1455,7 +1470,24 @@ clear:43
 27138:3231920948:1:1077936128:3
 27202:3229194648:1:1077936128:3";
 
+        #[cfg(not(feature = "packed_movegen"))]
         assert_eq!(actual, expected);
+        #[cfg(feature = "packed_movegen")]
+        {
+            let normalize = |s: &str| -> String {
+                s.split("\n--\n")
+                    .map(|section| {
+                        let mut lines: Vec<&str> = section.lines().collect();
+                        if lines.len() > 1 {
+                            lines[1..].sort_unstable();
+                        }
+                        lines.join("\n")
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n--\n")
+            };
+            assert_eq!(normalize(&actual), normalize(&expected));
+        }
     }
 
     #[test]

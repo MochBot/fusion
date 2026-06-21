@@ -33,7 +33,7 @@ PYTHONPATH="$PWD" uv run python -m pytest tests
 
 Copy `.env.example` to `.env` only if you need replay collection, Modal training, or a local override for the policy/value label generator. Normal Rust tests, clippy, and Python unit tests do not require private env vars.
 
-Large generated artifacts are intentionally not tracked. `training/training_data_triangle_v1.bin`, replay corpora under `data/`, and generated label sidecars must be staged locally or pulled from the shared artifact store before running full training jobs. Runtime model sidecars are tracked, but the ONNX binaries are not. `models/pvc-real-r03.onnx` is WIP in this upstream snapshot until the model file is provided; commands that load `models/pvc-real-r03.onnx.metadata.json` need that ONNX file next to the metadata.
+Large generated artifacts are intentionally not tracked. `training/training_data_triangle_v1.bin`, replay corpora under `data/`, and generated label sidecars must be staged locally or pulled from the shared artifact store before running full training jobs. Runtime model files that are present under `models/` are tracked with their metadata; keep the ONNX and `.metadata.json` side by side when running runtime smoke commands.
 
 ## Useful commands
 
@@ -43,4 +43,4 @@ CLOUD_EXEC_SKIP=1 cargo run --bin policy_value_runtime_smoke -- models/pvc-real-
 cd training && uv run python scripts/generate_policy_value_labels.py training_data_triangle_v1.bin
 ```
 
-The smoke command requires `models/pvc-real-r03.onnx`. The label command requires the training data and request sidecars described in `DATA_INVENTORY.md` and `training/TRAINING.md`.
+The smoke command requires the matching ONNX file next to the metadata file. The label command requires the training data and request sidecars described in `DATA_INVENTORY.md` and `training/TRAINING.md`.

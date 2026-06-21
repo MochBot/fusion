@@ -57,9 +57,8 @@ fn build_inputs() -> TractResult<TVec<TValue>> {
         cand_features,
     )
     .map_err(|e| TractError::msg(format!("cand_features: {e}")))?;
-    let cand_mask_t =
-        tract_ndarray::Array2::from_shape_vec((1, CANDIDATE_CAPACITY), cand_mask)
-            .map_err(|e| TractError::msg(format!("cand_mask: {e}")))?;
+    let cand_mask_t = tract_ndarray::Array2::from_shape_vec((1, CANDIDATE_CAPACITY), cand_mask)
+        .map_err(|e| TractError::msg(format!("cand_mask: {e}")))?;
 
     Ok(tvec![
         features_t.into_tensor().into(),
@@ -126,10 +125,7 @@ fn bench_one(onnx_path: &Path, warmup: usize, iters: usize, optimize: bool) -> T
     println!("  mean      : {:.1} us", mean);
     println!("  stddev    : {:.1} us", stddev);
     println!("  throughput: {:.0} inferences/sec", nps);
-    println!(
-        "  search    : {:.0} nodes/sec @ 1 inference/node",
-        nps
-    );
+    println!("  search    : {:.0} nodes/sec @ 1 inference/node", nps);
     Ok(())
 }
 

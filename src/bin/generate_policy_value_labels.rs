@@ -128,7 +128,10 @@ fn board_from_rows(rows: &[u16]) -> Result<Board, String> {
 
 fn game_state_from_request(request: &PolicyValueOracleRequest) -> Result<GameState, String> {
     if request.schema_version != PHASE1_SCHEMA_VERSION {
-        return Err(format!("unexpected schema version: {}", request.schema_version));
+        return Err(format!(
+            "unexpected schema version: {}",
+            request.schema_version
+        ));
     }
     let board = board_from_rows(&request.player_board_rows)?;
     let current = parse_training_piece(&request.current_piece)?;
@@ -156,11 +159,11 @@ fn softmax(scores: &[f32], temperature: f32) -> Result<Vec<f32>, String> {
         return Err(format!("temperature must be positive, got {temperature}"));
     }
     let scaled: Vec<f32> = scores.iter().map(|score| score / temperature).collect();
-    let max_score = scaled
+    let max_score = scaled.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let exps: Vec<f32> = scaled
         .iter()
-        .copied()
-        .fold(f32::NEG_INFINITY, f32::max);
-    let exps: Vec<f32> = scaled.iter().map(|score| (*score - max_score).exp()).collect();
+        .map(|score| (*score - max_score).exp())
+        .collect();
     let total: f32 = exps.iter().sum();
     if total <= 0.0 {
         return Err("softmax total must be positive".to_string());
@@ -188,8 +191,12 @@ fn build_target(
             ));
         }
     }
-    let result = search
-        .ok_or_else(|| format!("search produced no result for {}:{}", request.replay_id, request.frame_id))?;
+    let result = search.ok_or_else(|| {
+        format!(
+            "search produced no result for {}:{}",
+            request.replay_id, request.frame_id
+        )
+    })?;
 
     let root_scores: Vec<(u16, f32)> = result
         .root_scores
@@ -197,10 +204,16 @@ fn build_target(
         .map(|(mv, score)| (mv.raw(), *score))
         .collect();
     if root_scores.is_empty() {
-        return Err(format!("search returned empty root_scores for {}:{}", request.replay_id, request.frame_id));
+        return Err(format!(
+            "search returned empty root_scores for {}:{}",
+            request.replay_id, request.frame_id
+        ));
     }
     let policy_probs = softmax(
-        &root_scores.iter().map(|(_, score)| *score).collect::<Vec<_>>(),
+        &root_scores
+            .iter()
+            .map(|(_, score)| *score)
+            .collect::<Vec<_>>(),
         POLICY_TEMPERATURE,
     )?;
     Ok(PolicyValueTarget {
@@ -218,7 +231,11 @@ fn build_target(
     })
 }
 
-fn metadata(sample_count: usize, skipped_count: usize, skip_failures_enabled: bool) -> PolicyValueMetadata {
+fn metadata(
+    sample_count: usize,
+    skipped_count: usize,
+    skip_failures_enabled: bool,
+) -> PolicyValueMetadata {
     PolicyValueMetadata {
         schema_version: PHASE1_SCHEMA_VERSION.to_string(),
         generation_mode: GENERATION_MODE.to_string(),
@@ -270,9 +287,9 @@ fn run() -> Result<(), String> {
             "--skip-failures" => skip_failures = true,
             "--time-budget-ms" => {
                 idx += 1;
-                let value = raw_args
-                    .get(idx)
-                    .ok_or_else(|| "--time-budget-ms requires a value (milliseconds)".to_string())?;
+                let value = raw_args.get(idx).ok_or_else(|| {
+                    "--time-budget-ms requires a value (milliseconds)".to_string()
+                })?;
                 time_budget_ms = Some(parse_time_budget(value)?);
             }
             "--help" | "-h" => {
@@ -297,7 +314,10 @@ fn run() -> Result<(), String> {
         idx += 1;
     }
     if positional.is_empty() {
-        return Err("usage: generate_policy_value_labels [--skip-failures] <requests.jsonl> [output.jsonl]".to_string());
+        return Err(
+            "usage: generate_policy_value_labels [--skip-failures] <requests.jsonl> [output.jsonl]"
+                .to_string(),
+        );
     }
 
     let input_path = PathBuf::from(&positional[0]);
@@ -308,12 +328,14 @@ fn run() -> Result<(), String> {
     };
     let metadata_path = metadata_output_path(&output_path);
 
-    let input = File::open(&input_path).map_err(|err| format!("open {}: {err}", input_path.display()))?;
+    let input =
+        File::open(&input_path).map_err(|err| format!("open {}: {err}", input_path.display()))?;
     if let Some(parent) = output_path.parent() {
         fs::create_dir_all(parent).map_err(|err| format!("mkdir {}: {err}", parent.display()))?;
     }
     let mut writer = BufWriter::new(
-        File::create(&output_path).map_err(|err| format!("create {}: {err}", output_path.display()))?,
+        File::create(&output_path)
+            .map_err(|err| format!("create {}: {err}", output_path.display()))?,
     );
 
     let mut count = 0usize;
@@ -334,7 +356,9 @@ fn run() -> Result<(), String> {
             Ok(target) => {
                 serde_json::to_writer(&mut writer, &target)
                     .map_err(|err| format!("write target json: {err}"))?;
-                writer.write_all(b"\n").map_err(|err| format!("write newline: {err}"))?;
+                writer
+                    .write_all(b"\n")
+                    .map_err(|err| format!("write newline: {err}"))?;
                 count += 1;
             }
             Err(err) if skip_failures => {
@@ -349,14 +373,18 @@ fn run() -> Result<(), String> {
                 };
                 serde_json::to_writer(&mut writer, &marker)
                     .map_err(|werr| format!("write skip marker: {werr}"))?;
-                writer.write_all(b"\n").map_err(|werr| format!("write newline: {werr}"))?;
+                writer
+                    .write_all(b"\n")
+                    .map_err(|werr| format!("write newline: {werr}"))?;
                 eprintln!("skip {replay_id}:{frame_id} - {err}");
                 skipped += 1;
             }
             Err(err) => return Err(err),
         }
     }
-    writer.flush().map_err(|err| format!("flush {}: {err}", output_path.display()))?;
+    writer
+        .flush()
+        .map_err(|err| format!("flush {}: {err}", output_path.display()))?;
 
     let metadata_file = File::create(&metadata_path)
         .map_err(|err| format!("create {}: {err}", metadata_path.display()))?;

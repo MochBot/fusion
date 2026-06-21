@@ -6,7 +6,8 @@ use serde_json::Value;
 
 #[test]
 fn parity_fixture_generator_emits_contract_shape() {
-    let metadata_path = PathBuf::from("models/rebal-r01/checkpoint.ckpt.policy_value.onnx.metadata.json");
+    let metadata_path =
+        PathBuf::from("models/rebal-r01/checkpoint.ckpt.policy_value.onnx.metadata.json");
     if !metadata_path.exists() {
         eprintln!(
             "skipping parity fixture test: {} is missing",
@@ -23,7 +24,13 @@ fn parity_fixture_generator_emits_contract_shape() {
 
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
     let status = Command::new(cargo)
-        .args(["run", "--quiet", "--bin", "policy_value_runtime_parity_fixture", "--"])
+        .args([
+            "run",
+            "--quiet",
+            "--bin",
+            "policy_value_runtime_parity_fixture",
+            "--",
+        ])
         .arg(&metadata_path)
         .arg(&output_path)
         .status()
@@ -41,10 +48,11 @@ fn parity_fixture_generator_emits_contract_shape() {
     assert_eq!(fixture["candidate_capacity"], 64);
     assert_eq!(fixture["scalar_scope"], "zero-only");
 
-    let positions = fixture["positions"]
-        .as_array()
-        .expect("positions array");
-    assert!(positions.len() >= 3, "expected at least three parity positions");
+    let positions = fixture["positions"].as_array().expect("positions array");
+    assert!(
+        positions.len() >= 3,
+        "expected at least three parity positions"
+    );
 
     for position in positions {
         let source = position["source"].as_object().expect("source object");
@@ -104,9 +112,17 @@ fn parity_fixture_generator_emits_contract_shape() {
         }
 
         for (index, descriptor) in moves.iter().enumerate() {
-            assert_eq!(descriptor["index"].as_u64().expect("move index") as usize, index);
+            assert_eq!(
+                descriptor["index"].as_u64().expect("move index") as usize,
+                index
+            );
             assert!(descriptor["raw"].as_u64().expect("raw move id") <= u16::MAX as u64);
-            assert!(descriptor["piece"].as_u64().expect("external move piece id") <= 6);
+            assert!(
+                descriptor["piece"]
+                    .as_u64()
+                    .expect("external move piece id")
+                    <= 6
+            );
             assert!(descriptor["rotation"].as_u64().expect("rotation") <= 3);
             assert!(descriptor["spin"].as_u64().expect("spin") <= 2);
         }
@@ -116,13 +132,14 @@ fn parity_fixture_generator_emits_contract_shape() {
             .expect("best index") as usize;
         assert!(best_index < move_count);
         assert_eq!(
-            position["native"]["best_raw"],
-            moves[best_index]["raw"],
+            position["native"]["best_raw"], moves[best_index]["raw"],
             "best_raw must match the best move descriptor"
         );
 
         assert!(position["rank"]["top1_margin"].as_f64().is_some());
-        assert!(position["rank"]["top3_adjacent_min_margin"].as_f64().is_some());
+        assert!(position["rank"]["top3_adjacent_min_margin"]
+            .as_f64()
+            .is_some());
         assert!(position["rank"]["rank_checks_enabled"].as_bool().is_some());
     }
 

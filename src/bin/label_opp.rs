@@ -32,7 +32,12 @@ struct LabelConfig {
 
 impl LabelConfig {
     fn new(k: usize, beam: usize, beam_feat: usize) -> Self {
-        Self { k, beam, beam_feat, profile: false }
+        Self {
+            k,
+            beam,
+            beam_feat,
+            profile: false,
+        }
     }
 
     fn from_env() -> io::Result<Self> {
@@ -51,13 +56,21 @@ impl LabelConfig {
 }
 
 fn read_positive_usize_env(name: &str, default: usize) -> io::Result<usize> {
-    let Some(raw) = env::var_os(name) else { return Ok(default); };
+    let Some(raw) = env::var_os(name) else {
+        return Ok(default);
+    };
     let raw = raw.to_string_lossy();
     let value = raw.parse::<usize>().map_err(|_| {
-        io::Error::new(io::ErrorKind::InvalidInput, format!("{name} must be a positive integer, got {raw}"))
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{name} must be a positive integer, got {raw}"),
+        )
     })?;
     if value == 0 {
-        return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("{name} must be positive")));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{name} must be positive"),
+        ));
     }
     Ok(value)
 }
@@ -81,7 +94,20 @@ fn feat_attack(input: AttackInput<'_>) -> f64 {
     }
     let pieces = &input.pieces[..input.k];
     let multipliers = vec![input.mult; pieces.len()];
-    beam_best(input.rows, input.gmask, pieces, input.b2b.max(0), input.combo.max(0), input.pending.max(0), None, &multipliers, None, None, input.beam_feat, input.profile)
+    beam_best(
+        input.rows,
+        input.gmask,
+        pieces,
+        input.b2b.max(0),
+        input.combo.max(0),
+        input.pending.max(0),
+        None,
+        &multipliers,
+        None,
+        None,
+        input.beam_feat,
+        input.profile,
+    )
 }
 
 fn put_f32(out: &mut [u8; STRIDE_BYTES], off: &mut usize, value: f32) {
@@ -91,29 +117,114 @@ fn put_f32(out: &mut [u8; STRIDE_BYTES], off: &mut usize, value: f32) {
 
 fn label_record(ctx: &ContextRec, cfg: &LabelConfig) -> [u8; STRIDE_BYTES] {
     let rec = &ctx.frames[0];
-    let pieces: Vec<i8> = ctx.frames.iter().take(cfg.k).map(|frame| frame.piece).collect();
-    let multipliers: Vec<f64> = ctx.frames.iter().take(cfg.k).map(|frame| frame.mult).collect();
+    let pieces: Vec<i8> = ctx
+        .frames
+        .iter()
+        .take(cfg.k)
+        .map(|frame| frame.piece)
+        .collect();
+    let multipliers: Vec<f64> = ctx
+        .frames
+        .iter()
+        .take(cfg.k)
+        .map(|frame| frame.mult)
+        .collect();
     let recon = reconstruct(&ctx.frames);
     let matched = if recon.is_some() { 1.0 } else { 0.0 };
-    let player_atk = recon.as_ref().map(|r| r.0).unwrap_or_else(|| ctx.frames[..cfg.k].iter().map(|f| f.atk).sum());
+    let player_atk = recon
+        .as_ref()
+        .map(|r| r.0)
+        .unwrap_or_else(|| ctx.frames[..cfg.k].iter().map(|f| f.atk).sum());
     let best = if let Some((_, garbage_counts, garbage_rows)) = &recon {
-        let keep: Vec<[u16; 40]> = ctx.frames.iter().skip(1).take(cfg.k).map(|frame| frame.rows).collect();
-        beam_best(&rec.rows, &rec.gmask, &pieces, rec.b2b, rec.combo, rec.pending, Some(&keep), &multipliers, Some(garbage_counts), Some(garbage_rows), cfg.beam, cfg.profile)
+        let keep: Vec<[u16; 40]> = ctx
+            .frames
+            .iter()
+            .skip(1)
+            .take(cfg.k)
+            .map(|frame| frame.rows)
+            .collect();
+        beam_best(
+            &rec.rows,
+            &rec.gmask,
+            &pieces,
+            rec.b2b,
+            rec.combo,
+            rec.pending,
+            Some(&keep),
+            &multipliers,
+            Some(garbage_counts),
+            Some(garbage_rows),
+            cfg.beam,
+            cfg.profile,
+        )
     } else {
         let fallback_multipliers = vec![rec.mult; cfg.k];
-        beam_best(&rec.rows, &rec.gmask, &pieces, rec.b2b, rec.combo, rec.pending, None, &fallback_multipliers, None, None, cfg.beam, cfg.profile)
+        beam_best(
+            &rec.rows,
+            &rec.gmask,
+            &pieces,
+            rec.b2b,
+            rec.combo,
+            rec.pending,
+            None,
+            &fallback_multipliers,
+            None,
+            None,
+            cfg.beam,
+            cfg.profile,
+        )
     };
-    let my_pieces = [rec.piece, rec.queue[0], rec.queue[1], rec.queue[2], rec.queue[3]];
-    let opp_pieces = [ctx.opp_piece, ctx.opp_queue[0], ctx.opp_queue[1], ctx.opp_queue[2], ctx.opp_queue[3]];
-    let my_best = feat_attack(AttackInput { rows: &rec.rows, gmask: &rec.gmask, pieces: &my_pieces, k: cfg.k, b2b: rec.b2b, combo: rec.combo, pending: rec.pending, mult: rec.mult, beam_feat: cfg.beam_feat, profile: cfg.profile }).max(0.0);
-    let opp_best = feat_attack(AttackInput { rows: &ctx.opp_rows, gmask: &ctx.opp_gmask, pieces: &opp_pieces, k: cfg.k, b2b: ctx.opp_b2b, combo: ctx.opp_combo, pending: ctx.opp_pending, mult: ctx.opp_mult, beam_feat: cfg.beam_feat, profile: cfg.profile }).max(0.0);
+    let my_pieces = [
+        rec.piece,
+        rec.queue[0],
+        rec.queue[1],
+        rec.queue[2],
+        rec.queue[3],
+    ];
+    let opp_pieces = [
+        ctx.opp_piece,
+        ctx.opp_queue[0],
+        ctx.opp_queue[1],
+        ctx.opp_queue[2],
+        ctx.opp_queue[3],
+    ];
+    let my_best = feat_attack(AttackInput {
+        rows: &rec.rows,
+        gmask: &rec.gmask,
+        pieces: &my_pieces,
+        k: cfg.k,
+        b2b: rec.b2b,
+        combo: rec.combo,
+        pending: rec.pending,
+        mult: rec.mult,
+        beam_feat: cfg.beam_feat,
+        profile: cfg.profile,
+    })
+    .max(0.0);
+    let opp_best = feat_attack(AttackInput {
+        rows: &ctx.opp_rows,
+        gmask: &ctx.opp_gmask,
+        pieces: &opp_pieces,
+        k: cfg.k,
+        b2b: ctx.opp_b2b,
+        combo: ctx.opp_combo,
+        pending: ctx.opp_pending,
+        mult: ctx.opp_mult,
+        beam_feat: cfg.beam_feat,
+        profile: cfg.profile,
+    })
+    .max(0.0);
     let (oh, ohl) = height_holes(&ctx.opp_rows);
 
     let mut out = [0u8; STRIDE_BYTES];
     let mut off = 0;
     for row in &rec.rows {
         for x in 0..10 {
-            put_f32(&mut out, &mut off, if *row & (1u16 << x) != 0 { 1.0 } else { 0.0 });
+            put_f32(
+                &mut out,
+                &mut off,
+                if *row & (1u16 << x) != 0 { 1.0 } else { 0.0 },
+            );
         }
     }
     for p in 0..7 {
@@ -159,7 +270,10 @@ fn read_input() -> io::Result<Vec<u8>> {
 fn validate_input_size(len: usize, cfg: &LabelConfig) -> io::Result<()> {
     let record_bytes = cfg.record_bytes();
     if !len.is_multiple_of(record_bytes) {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, format!("input size {len} is not a multiple of {record_bytes}")));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("input size {len} is not a multiple of {record_bytes}"),
+        ));
     }
     Ok(())
 }
@@ -171,14 +285,21 @@ fn main() -> io::Result<()> {
     let bench = env::var_os("LABEL_OPP_BENCH").is_some();
     let t0 = std::time::Instant::now();
     let record_bytes = cfg.record_bytes();
-    let records: Vec<[u8; STRIDE_BYTES]> = input.par_chunks_exact(record_bytes).map(|chunk| label_record(&parse_context(chunk, cfg.k), &cfg)).collect();
+    let records: Vec<[u8; STRIDE_BYTES]> = input
+        .par_chunks_exact(record_bytes)
+        .map(|chunk| label_record(&parse_context(chunk, cfg.k), &cfg))
+        .collect();
     let mut stdout = io::stdout().lock();
     for record in &records {
         stdout.write_all(record)?;
     }
     if bench {
         let dt = t0.elapsed().as_secs_f64();
-        eprintln!("label_opp records={} samples/s={:.2}", records.len(), records.len() as f64 / dt);
+        eprintln!(
+            "label_opp records={} samples/s={:.2}",
+            records.len(),
+            records.len() as f64 / dt
+        );
     }
     if cfg.profile {
         eprintln!(

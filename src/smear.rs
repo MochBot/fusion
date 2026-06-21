@@ -1374,7 +1374,11 @@ mod tests {
 
     // Frozen verbatim copy of the pre-missing-tracking `generate`, kept as the
     // behavioral oracle for the refactor parity tests. Do not optimize or fix.
-    pub fn generate_reference<const P: usize, const N: usize>(b: &SBoard<N>, y: i32, force: i32) -> SMoves<N> {
+    pub fn generate_reference<const P: usize, const N: usize>(
+        b: &SBoard<N>,
+        y: i32,
+        force: i32,
+    ) -> SMoves<N> {
         const { assert!(P < 7) };
         let h: i32 = TLINES * N as i32;
         let cs = csize(P);
@@ -1683,11 +1687,17 @@ mod tests {
             for rc in 0..csize(p) {
                 for x in 0..10i32 {
                     'ys: for y in 0..SBoard::<N>::H {
-                        let cells = [(0i8, 0i8), PCELLS[p][rc][0], PCELLS[p][rc][1], PCELLS[p][rc][2]];
+                        let cells = [
+                            (0i8, 0i8),
+                            PCELLS[p][rc][0],
+                            PCELLS[p][rc][1],
+                            PCELLS[p][rc][2],
+                        ];
                         for c in cells {
                             let cx = x + c.0 as i32;
                             let cy = y + c.1 as i32;
-                            if cx < 0 || cx > 9 || cy < 0 || cy >= SBoard::<N>::H || b0.get(cx, cy) {
+                            if cx < 0 || cx > 9 || cy < 0 || cy >= SBoard::<N>::H || b0.get(cx, cy)
+                            {
                                 continue 'ys;
                             }
                         }
@@ -1829,7 +1839,14 @@ mod tests {
             let got = generate::<P, N>(&b, y, force);
             assert_eq!(got.m, want.m, "emit P={} N={} force={}", P, N, force);
             let count = count_locks::<P, N>(&b, y, force);
-            assert_eq!(count, want.popcount(csize(P)), "count P={} N={} force={}", P, N, force);
+            assert_eq!(
+                count,
+                want.popcount(csize(P)),
+                "count P={} N={} force={}",
+                P,
+                N,
+                force
+            );
         }
     }
 

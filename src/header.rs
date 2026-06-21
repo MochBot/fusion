@@ -348,7 +348,8 @@ const fn build_piece_cells() -> [[PieceCoordinates; ROTATION_NB]; PIECE_NB] {
     while pi < PIECE_NB {
         let mut ri = 0;
         while ri < ROTATION_NB {
-            table[pi][ri] = piece_table_const(Piece::from_u8(pi as u8), Rotation::from_u8(ri as u8));
+            table[pi][ri] =
+                piece_table_const(Piece::from_u8(pi as u8), Rotation::from_u8(ri as u8));
             ri += 1;
         }
         pi += 1;

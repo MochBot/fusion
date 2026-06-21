@@ -1,6 +1,6 @@
 # Fusion Engine Training Pipeline
 
-Cloud-based teacher-student training pipeline running on [Modal](https://modal.com) with NVIDIA B200 GPUs. Trains a dual-CNN teacher via Optuna hyperparameter optimization, then distills into a lightweight MLP student for WASM deployment.
+Policy/value training and labeling pipeline for Fusion engine experiments. The current active path is policy/value data preparation, labeling, training, export, and runtime smoke validation; the older teacher/student distillation material below is historical context unless explicitly referenced by a current contract.
 
 Current contract references:
 - `training/PHASE0_STATE_CONTRACT.md`
@@ -8,9 +8,7 @@ Current contract references:
 - `training/POLICY_VALUE_REBUILD_BLUEPRINT.md`
 - `training/POLICY_VALUE_V2_CONTRACT_PLAN.md`
 
-The current 854-feature teacher/student path is now a legacy training path under contract repair. Phase 0 establishes the canonical schema and artifact ownership that later policy+value work depends on.
-Phase 1 establishes search-aligned policy/value supervision on the training side before any runtime policy+value integration.
-Phase 2 adds native ONNX runtime ownership and an A10-capable Modal launcher for the policy/value path.
+The 854-feature teacher/student path is legacy. Phase 0 established canonical schema and artifact ownership; Phase 1 established search-aligned policy/value supervision; Phase 2 added native ONNX runtime ownership and a Modal launcher for the policy/value path.
 
 ## Current active path
 
@@ -20,61 +18,60 @@ The active path is now policy/value, not teacher/student distillation:
 - local label generation: `training/scripts/generate_policy_value_labels.py`
 - local training entrypoint: `training/scripts/train_policy_value.py`
 - local export entrypoint: `training/scripts/export_policy_value_onnx.py`
-- remote A10 launcher: `training/scripts/modal_app.py::launch_policy_value_pipeline`
+- remote policy/value launcher: `training/scripts/modal_app.py::launch_policy_value_pipeline` (default GPU profile is `l4`; override with `FUSION_GPU_PROFILE`)
 
-Required artifact set for `training/training_data.bin`:
+Required artifact set for a policy/value corpus basename such as `training/training_data_triangle_v1.bin`:
 
-- `training_data.bin`
-- `training_data.bin.metadata.json`
-- `training_data.bin.groups.u64`
-- `training_data.bin.policy_value.requests.jsonl`
-- `training_data.bin.policy_value.jsonl`
-- `training_data.bin.policy_value.metadata.json`
+- `<name>.bin`
+- `<name>.bin.metadata.json`
+- `<name>.bin.groups.u64`
+- `<name>.bin.policy_value.requests.jsonl`
+- `<name>.bin.policy_value.jsonl`
+- `<name>.bin.policy_value.metadata.json`
 
-Typical A10 path:
+Typical remote path:
 
 ```bash
-python training/scripts/preprocess_replays.py data/replays training/training_data.bin --workers 10
-python training/scripts/generate_policy_value_labels.py training/training_data.bin
-modal run training/scripts/modal_app.py::launch_policy_value_pipeline --local-data-path training/training_data.bin
+python training/scripts/preprocess_replays.py data/replays-x-xplus training/training_data_triangle_v1.bin --workers 10
+python training/scripts/generate_policy_value_labels.py training/training_data_triangle_v1.bin
+modal run training/scripts/modal_app.py::launch_policy_value_pipeline --local-data-path training/training_data_triangle_v1.bin --replay-dir data/replays-x-xplus
 ```
 
-Default A10 policy/value launcher settings:
+Default policy/value launcher settings with `FUSION_GPU_PROFILE` unset:
 
-- batch size: `1024`
+- GPU profile: `l4`
+- batch size: `512`
 - dataloader workers: `4`
 - max epochs: `50`
 - lr: `3e-4`
 - weight decay: `1e-5`
-- precision: inherited from active Modal profile (`bf16-mixed` on A10)
+- precision: inherited from active Modal profile (`bf16-mixed` on L4)
 
-## Architecture
+## Active architecture
 
 ```
-.ttrm replays ──► preprocess_replays.py ──► training_data.bin + metadata/group sidecars
-                                                    │
-                                            ┌───────┴───────┐
-                                            │  Modal Cloud  │
-                                            │               │
-                                            │  fan_out()    │
-                                            │  ├─ worker 0  │
-                                            │  ├─ worker 1  │
-                                            │  ├─ ...       │
-                                            │  └─ worker 14 │
-                                            │       │       │
-                                            │  best ckpt    │
-                                            │       │       │
-                                            │  distill()    │
-                                            │       │       │
-                                            │  export()     │
-                                            └───────┬───────┘
-                                                    │
-                                            student_weights.bin (734 KB)
-                                                    │
-                                            WASM inference engine
+.ttrm replays
+    │
+    ▼
+preprocess_replays.py ──► corpus bin + metadata/group sidecars
+    │
+    ▼
+generate_policy_value_labels.py ──► policy/value request + label sidecars
+    │
+    ▼
+train_policy_value.py / modal_app.py::launch_policy_value_pipeline
+    │
+    ▼
+export_policy_value_onnx.py ──► ONNX + metadata for runtime smoke tests
 ```
 
-### Models
+### Active model family
+
+The current policy/value path uses `training/scripts/train_policy_value.py`, `training/scripts/export_policy_value_onnx.py`, and the models under `training/models/policy_value.py`. Keep the corpus and replay ownership aligned with `DATA_INVENTORY.md`: the canonical baseline corpus is `training/training_data_triangle_v1.bin`, sourced from `data/replays-x-xplus/`.
+
+### Historical teacher/student path
+
+The following model notes describe the legacy 854-feature teacher/student pipeline and are retained for archaeology only.
 
 **Teacher** (`models/teacher.py`) — Dual-CNN with fusion MLP.
 
@@ -141,17 +138,17 @@ python scraper.py              # Fetches .ttrm files from TETR.IO API
 python sort_by_rank.py         # Sorts into data/replays/0001-0100/ ... /0901-1000/
 ```
 
-Current dataset: 5,969 replays across 10 rank buckets.
+Current canonical baseline replay source: `data/replays-x-xplus/`. The legacy general replay corpus is `data/replays-legacy/`.
 
 ### 2. Preprocess Replays
 
 Simulates TETR.IO game mechanics from initial board snapshot + key events. Extracts a sample at every hard drop for both players. Uses SRS rotation with wall kicks.
 
 ```bash
-PYTHONPATH=/home/li859/projects/mosaic-fusion-engine-coaching/fusion-engine \
+PYTHONPATH="$PWD" \
   python training/scripts/preprocess_replays.py \
-    data/replays \
-    training/training_data.bin \
+    data/replays-x-xplus \
+    training/training_data_triangle_v1.bin \
     --workers 10
 ```
 
@@ -168,10 +165,10 @@ Uploads in 256 MB chunks to the `fusion-training-data` volume at `/data/training
 
 ## Training on Modal
 
-### Quick Start
+### Legacy teacher/student quick start
 
 ```bash
-# Full pipeline: HPO → distill → export
+# Historical pipeline: HPO → distill → export
 modal run training/scripts/modal_app.py::launch_pipeline
 
 # Custom configuration
@@ -301,15 +298,6 @@ Teacher/student workers: 10 / 10
 Prefetch factor:   6
 ```
 
-## Cost Estimates
-
-| Config | GPUs | Time | Cost |
-|--------|------|------|------|
-| 15 workers × 4 trials × 50 epochs | 15 B200 | ~18–24 min | ~$112–150 |
-| 5 workers × 10 trials × 100 epochs | 5 A10G | Timeout (>2h) | Failed |
-
-B200 at $6.25/hr has 2.3× the BF16 throughput of H100 ($3.95/hr), making it cheaper per-job despite the higher hourly rate.
-
 ## Local Development
 
 ### Prerequisites
@@ -322,14 +310,14 @@ uv sync           # Install Python dependencies
 ### Run Preprocessing Locally
 
 ```bash
-PYTHONPATH=/home/li859/projects/mosaic-fusion-engine-coaching/fusion-engine \
-  python training/scripts/preprocess_replays.py data/replays training/training_data.bin
+PYTHONPATH="$PWD" \
+  python training/scripts/preprocess_replays.py data/replays-x-xplus training/training_data_triangle_v1.bin
 ```
 
 ### Export Weights Locally
 
 ```bash
-PYTHONPATH=/home/li859/projects/mosaic-fusion-engine-coaching/fusion-engine \
+PYTHONPATH="$PWD" \
   python training/scripts/export_weights.py path/to/checkpoint.ckpt output_weights.bin
 ```
 

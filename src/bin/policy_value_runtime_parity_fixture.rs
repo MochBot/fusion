@@ -160,11 +160,7 @@ fn build_fixture_position(runtime: &PolicyValueRuntime, spec: PositionSpec) -> F
 
     let state_features = encode_state_features_flat(&state, &spec.opponent_board);
     let (candidate_features, candidate_mask) = encode_candidate_features_flat(&candidates);
-    let moves: Vec<MoveDescriptor> = candidates
-        .iter()
-        .enumerate()
-        .map(move_descriptor)
-        .collect();
+    let moves: Vec<MoveDescriptor> = candidates.iter().enumerate().map(move_descriptor).collect();
     let best_index = best_index(&inference.policy_logits);
     let rank = rank_metadata(&inference.policy_logits);
 

@@ -2,12 +2,12 @@ use std::env;
 use std::path::PathBuf;
 
 use direct_cobra_copy::board::{Board, BOARD_HEIGHT, FULL_ROW};
-use direct_cobra_copy::header::COL_NB;
+use direct_cobra_copy::eval::EvalWeights;
 use direct_cobra_copy::header::Piece;
+use direct_cobra_copy::header::COL_NB;
 use direct_cobra_copy::policy_value_runtime::{PolicyValueRuntime, PolicyValueRuntimeContext};
 use direct_cobra_copy::search::{find_best_move_with_scores_runtime, SearchConfig};
 use direct_cobra_copy::state::GameState;
-use direct_cobra_copy::eval::EvalWeights;
 
 fn constrained_board() -> Board {
     let mut board = Board::new();
@@ -39,11 +39,7 @@ fn main() {
     let runtime_context = PolicyValueRuntimeContext {
         opponent_board: Board::new(),
     };
-    let state = GameState::new(
-        constrained_board(),
-        Piece::I,
-        vec![Piece::O, Piece::L],
-    );
+    let state = GameState::new(constrained_board(), Piece::I, vec![Piece::O, Piece::L]);
     let result = find_best_move_with_scores_runtime(
         &state,
         &SearchConfig {

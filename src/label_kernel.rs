@@ -351,7 +351,9 @@ pub fn nonempty_bits(rows: &[u16; 40]) -> u64 {
 }
 
 pub fn expand_raw(s: &FrameRec, piece: i8) -> Vec<ExpandRec> {
-    let Some(p) = piece_from_external(piece) else { return Vec::new(); };
+    let Some(p) = piece_from_external(piece) else {
+        return Vec::new();
+    };
     let board = board_from_rows(&s.rows);
     let mut moves = MoveBuffer::new();
     generate_playable(&board, &mut moves, p, false);
@@ -372,7 +374,10 @@ pub fn expand_raw(s: &FrameRec, piece: i8) -> Vec<ExpandRec> {
             garbage_cleared,
             s.mult,
         );
-        out.push(ExpandRec { attack: attack.attack as f64, rows });
+        out.push(ExpandRec {
+            attack: attack.attack as f64,
+            rows,
+        });
     }
     out
 }
@@ -406,7 +411,11 @@ pub fn reconstruct(frames: &[FrameRec]) -> Option<(f64, Vec<usize>, Vec<[u16; 40
         let s = &frames[t];
         let nx = &frames[t + 1];
         let max_g = bottom_garbage_run(&nx.gmask);
-        let tries: [i8; 2] = if s.hold >= 0 && s.hold != s.piece { [s.piece, s.hold] } else { [s.piece, -1] };
+        let tries: [i8; 2] = if s.hold >= 0 && s.hold != s.piece {
+            [s.piece, s.hold]
+        } else {
+            [s.piece, -1]
+        };
         let mut chosen: Option<(usize, usize, Vec<ExpandRec>)> = None;
         for pc in tries {
             if pc < 0 || chosen.is_some() {
@@ -418,8 +427,14 @@ pub fn reconstruct(frames: &[FrameRec]) -> Option<(f64, Vec<usize>, Vec<[u16; 40
                 cand.entry(rec.rows).or_default().push(idx);
             }
             for g in 0..=max_g {
-                let key = if g == 0 { nx.rows } else { shift_down_key(&nx.rows, g) };
-                let Some(offs) = cand.get(&key) else { continue; };
+                let key = if g == 0 {
+                    nx.rows
+                } else {
+                    shift_down_key(&nx.rows, g)
+                };
+                let Some(offs) = cand.get(&key) else {
+                    continue;
+                };
                 let mut pick = offs[0];
                 for &idx in offs {
                     if (flat[idx].attack - s.atk).abs() < 1e-6 {
@@ -459,13 +474,29 @@ pub fn beam_best(
     if profile {
         add_counter(&PROFILE.beam_calls, 1);
     }
-    let mut beam = vec![Node { rows: *rows0, gm: gm_bits(gmask0), acc: 0, b2b, combo, pending }];
+    let mut beam = vec![Node {
+        rows: *rows0,
+        gm: gm_bits(gmask0),
+        acc: 0,
+        b2b,
+        combo,
+        pending,
+    }];
     for t in 0..pieces.len() {
-        let Some(piece) = piece_from_external(pieces[t]) else { break; };
+        let Some(piece) = piece_from_external(pieces[t]) else {
+            break;
+        };
         let mult = multipliers.get(t).copied().unwrap_or(1.0);
-        let gc_insert = garbage_counts.and_then(|counts| counts.get(t)).copied().unwrap_or(0).min(40);
+        let gc_insert = garbage_counts
+            .and_then(|counts| counts.get(t))
+            .copied()
+            .unwrap_or(0)
+            .min(40);
         let mut inserted_bits = 0u64;
-        let grow = garbage_rows.and_then(|rows| rows.get(t)).copied().unwrap_or([0u16; 40]);
+        let grow = garbage_rows
+            .and_then(|rows| rows.get(t))
+            .copied()
+            .unwrap_or([0u16; 40]);
         for (i, row) in grow.iter().enumerate().take(gc_insert) {
             if *row & 0x03ff != 0 {
                 inserted_bits |= 1u64 << i;
@@ -473,7 +504,10 @@ pub fn beam_best(
         }
 
         let mut unique: Vec<Node> = Vec::with_capacity(beam_width.saturating_mul(2));
-        let mut unique_index = FxMap::<usize>::with_capacity_and_hasher(beam.len().saturating_mul(40), Default::default());
+        let mut unique_index = FxMap::<usize>::with_capacity_and_hasher(
+            beam.len().saturating_mul(40),
+            Default::default(),
+        );
         for node in &beam {
             if profile {
                 add_counter(&PROFILE.beam_nodes, 1);
@@ -600,7 +634,9 @@ pub fn compact_gmask_rows(gmask: &[u16; 40], cleared: u64) -> [u16; 40] {
 
 /// Parity target: expand_all_gm enumeration in rankDumpRecallCandidates — one candidate per playable move, no dedup.
 pub fn expand_candidates(s: &FrameRec, piece: i8) -> Vec<Candidate> {
-    let Some(p) = piece_from_external(piece) else { return Vec::new(); };
+    let Some(p) = piece_from_external(piece) else {
+        return Vec::new();
+    };
     let board = board_from_rows(&s.rows);
     let mut moves = MoveBuffer::new();
     generate_playable(&board, &mut moves, p, false);
@@ -634,7 +670,12 @@ pub fn expand_candidates(s: &FrameRec, piece: i8) -> Vec<Candidate> {
 }
 
 /// Parity target: injectGarbage (rank-dump-k7-attack.ts) — bottom garbage insert, shift up, mark gmask.
-pub fn inject_garbage(rows: &[u16; 40], gmask: &[u16; 40], count: usize, garbage: &[u16; 40]) -> ([u16; 40], [u16; 40]) {
+pub fn inject_garbage(
+    rows: &[u16; 40],
+    gmask: &[u16; 40],
+    count: usize,
+    garbage: &[u16; 40],
+) -> ([u16; 40], [u16; 40]) {
     if count == 0 {
         return (*rows, *gmask);
     }

@@ -35,7 +35,6 @@ pub enum PhaseState {
     Endgame,
 }
 
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ClearType {
     None,
@@ -541,12 +540,18 @@ mod tests {
 
         let m_flat = Move::new(Piece::I, Rotation::North, 4, 0, false);
         let (b2b_after_zero, combo_after_zero) = GameState::next_chain_values(3, 4, &m_flat, 0);
-        assert_eq!(b2b_after_zero, 3, "b2b must be preserved when no lines cleared");
+        assert_eq!(
+            b2b_after_zero, 3,
+            "b2b must be preserved when no lines cleared"
+        );
         assert_eq!(combo_after_zero, 0, "combo resets when no lines cleared");
 
         // Non-difficult line clear (e.g., single/double/triple without spin) resets b2b
         let (b2b_after_single, combo_after_single) = GameState::next_chain_values(3, 4, &m_flat, 1);
-        assert_eq!(b2b_after_single, 0, "b2b resets on non-difficult line clear");
+        assert_eq!(
+            b2b_after_single, 0,
+            "b2b resets on non-difficult line clear"
+        );
         assert_eq!(combo_after_single, 5, "combo increments on any line clear");
 
         // Quad preserves/increments b2b

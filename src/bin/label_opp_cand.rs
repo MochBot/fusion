@@ -13,7 +13,7 @@ use std::io::{self, Read, Write};
 use rayon::prelude::*;
 
 use direct_cobra_copy::label_kernel::{
-    beam_best, expand_candidates, inject_garbage, parse_context, record_bytes, reconstruct,
+    beam_best, expand_candidates, inject_garbage, parse_context, reconstruct, record_bytes,
     ContextRec,
 };
 
@@ -55,7 +55,13 @@ fn put_f32(rec: &mut [u8; REC], off: usize, value: f32) {
 
 fn label_position(ctx: &ContextRec, beam: usize) -> Option<PositionOut> {
     let k = ctx.frames.len().checked_sub(1)?;
-    let pieces: Vec<i8> = ctx.frames.iter().take(k).map(|f| f.piece).filter(|&p| p >= 0).collect();
+    let pieces: Vec<i8> = ctx
+        .frames
+        .iter()
+        .take(k)
+        .map(|f| f.piece)
+        .filter(|&p| p >= 0)
+        .collect();
     if pieces.is_empty() || ctx.frames[0].piece < 0 {
         return None;
     }
@@ -70,28 +76,57 @@ fn label_position(ctx: &ContextRec, beam: usize) -> Option<PositionOut> {
 
     let player = match &recon {
         Some((acc, _, _)) => *acc as f32,
-        None => ctx.frames[0..pieces.len()].iter().map(|f| f.atk).sum::<f64>() as f32,
+        None => ctx.frames[0..pieces.len()]
+            .iter()
+            .map(|f| f.atk)
+            .sum::<f64>() as f32,
     };
 
     let mult_full: Vec<f64> = ctx.frames[0..pieces.len()].iter().map(|f| f.mult).collect();
-    let keep_full: Vec<[u16; 40]> = ctx.frames[1..=pieces.len()].iter().map(|f| f.rows).collect();
+    let keep_full: Vec<[u16; 40]> = ctx.frames[1..=pieces.len()]
+        .iter()
+        .map(|f| f.rows)
+        .collect();
     let best = match &recon {
         Some((_, gc, gr)) => beam_best(
-            &f0.rows, &f0.gmask, &pieces, f0.b2b.max(0), f0.combo.max(0), 0,
-            Some(&keep_full), &mult_full, Some(gc), Some(gr), beam, false,
+            &f0.rows,
+            &f0.gmask,
+            &pieces,
+            f0.b2b.max(0),
+            f0.combo.max(0),
+            0,
+            Some(&keep_full),
+            &mult_full,
+            Some(gc),
+            Some(gr),
+            beam,
+            false,
         ),
         None => {
             let mult = vec![f0.mult; pieces.len()];
             beam_best(
-                &f0.rows, &f0.gmask, &pieces, f0.b2b.max(0), f0.combo.max(0), f0.pending.max(0),
-                None, &mult, None, None, beam, false,
+                &f0.rows,
+                &f0.gmask,
+                &pieces,
+                f0.b2b.max(0),
+                f0.combo.max(0),
+                f0.pending.max(0),
+                None,
+                &mult,
+                None,
+                None,
+                beam,
+                false,
             )
         }
     };
 
     let cont_pieces: Vec<i8> = pieces[1..].to_vec();
     let cont_mult: Vec<f64> = ctx.frames[1..pieces.len()].iter().map(|f| f.mult).collect();
-    let cont_keep: Vec<[u16; 40]> = ctx.frames[2..=pieces.len()].iter().map(|f| f.rows).collect();
+    let cont_keep: Vec<[u16; 40]> = ctx.frames[2..=pieces.len()]
+        .iter()
+        .map(|f| f.rows)
+        .collect();
 
     let after_piece = pieces.get(1).copied().unwrap_or(-1);
     let mut after_queue = [-1i8; 5];
@@ -107,14 +142,34 @@ fn label_position(ctx: &ContextRec, beam: usize) -> Option<PositionOut> {
             } else if let Some((_, gc, gr)) = &recon {
                 let (inj_rows, inj_gmask) = inject_garbage(&c.rows, &c.gmask, gc[0], &gr[0]);
                 beam_best(
-                    &inj_rows, &inj_gmask, &cont_pieces, c.b2b.max(0), c.combo.max(0), 0,
-                    Some(&cont_keep), &cont_mult, Some(&gc[1..]), Some(&gr[1..]), beam, false,
+                    &inj_rows,
+                    &inj_gmask,
+                    &cont_pieces,
+                    c.b2b.max(0),
+                    c.combo.max(0),
+                    0,
+                    Some(&cont_keep),
+                    &cont_mult,
+                    Some(&gc[1..]),
+                    Some(&gr[1..]),
+                    beam,
+                    false,
                 )
             } else {
                 let mult = vec![f0.mult; cont_pieces.len()];
                 beam_best(
-                    &c.rows, &c.gmask, &cont_pieces, c.b2b.max(0), c.combo.max(0), 0,
-                    None, &mult, None, None, beam, false,
+                    &c.rows,
+                    &c.gmask,
+                    &cont_pieces,
+                    c.b2b.max(0),
+                    c.combo.max(0),
+                    0,
+                    None,
+                    &mult,
+                    None,
+                    None,
+                    beam,
+                    false,
                 )
             };
             let exact = c.immediate + continuation;
@@ -140,7 +195,12 @@ fn label_position(ctx: &ContextRec, beam: usize) -> Option<PositionOut> {
         })
         .collect();
 
-    Some(PositionOut { records, best: best as f32, player, matched })
+    Some(PositionOut {
+        records,
+        best: best as f32,
+        player,
+        matched,
+    })
 }
 
 fn read_input() -> io::Result<Vec<u8>> {
@@ -154,19 +214,27 @@ fn read_input() -> io::Result<Vec<u8>> {
 }
 
 fn env_usize(name: &str, default: usize) -> usize {
-    env::var(name).ok().and_then(|v| v.parse().ok()).filter(|&v| v > 0).unwrap_or(default)
+    env::var(name)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|&v| v > 0)
+        .unwrap_or(default)
 }
 
 fn main() -> io::Result<()> {
     let k = env_usize("K", DEFAULT_K);
     let beam = env_usize("BEAM", DEFAULT_BEAM);
     let max_positions = env_usize("MAX_POSITIONS", usize::MAX);
-    let out_dir = env::var("OUT_DIR").map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "OUT_DIR required"))?;
+    let out_dir = env::var("OUT_DIR")
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "OUT_DIR required"))?;
 
     let input = read_input()?;
     let rb = record_bytes(k);
     if input.len() % rb != 0 {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, format!("input size {} not a multiple of {rb}", input.len())));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("input size {} not a multiple of {rb}", input.len()),
+        ));
     }
     let total = input.len() / rb;
     let take = total.min(max_positions);
@@ -185,7 +253,11 @@ fn main() -> io::Result<()> {
     let mut group_index: u32 = 0;
     for pos in outs.into_iter().flatten() {
         let size = pos.records.len();
-        if pos.matched { gi_groups += 1; } else { fallback_groups += 1; }
+        if pos.matched {
+            gi_groups += 1;
+        } else {
+            fallback_groups += 1;
+        }
         for mut rec in pos.records {
             put_f32(&mut rec, OFF_GROUP, f32::from_bits(group_index));
             cand.extend_from_slice(&rec);
@@ -222,7 +294,13 @@ mod tests {
         for (i, frame) in ctx.frames.iter_mut().enumerate() {
             frame.piece = seq[i];
             frame.hold = -1;
-            frame.queue = [seq[(i + 1) % 8], seq[(i + 2) % 8], seq[(i + 3) % 8], seq[(i + 4) % 8], seq[(i + 5) % 8]];
+            frame.queue = [
+                seq[(i + 1) % 8],
+                seq[(i + 2) % 8],
+                seq[(i + 3) % 8],
+                seq[(i + 4) % 8],
+                seq[(i + 5) % 8],
+            ];
             frame.mult = 1.0;
         }
         ctx.opp_mult = 1.0;
@@ -253,12 +331,23 @@ mod tests {
         let cands = expand_candidates(&ctx.frames[0], pieces[0]);
         // empty board never reconstructs -> fallback continuation
         for (rec, c) in out.records.iter().zip(cands.iter()) {
-            let immediate = f32::from_le_bytes(rec[OFF_IMMEDIATE..OFF_IMMEDIATE + 4].try_into().unwrap());
+            let immediate =
+                f32::from_le_bytes(rec[OFF_IMMEDIATE..OFF_IMMEDIATE + 4].try_into().unwrap());
             let exact = f32::from_le_bytes(rec[OFF_EXACT..OFF_EXACT + 4].try_into().unwrap());
             let mult = vec![ctx.frames[0].mult; cont_pieces.len()];
             let cont = beam_best(
-                &c.rows, &c.gmask, &cont_pieces, c.b2b.max(0), c.combo.max(0), 0,
-                None, &mult, None, None, 6, false,
+                &c.rows,
+                &c.gmask,
+                &cont_pieces,
+                c.b2b.max(0),
+                c.combo.max(0),
+                0,
+                None,
+                &mult,
+                None,
+                None,
+                6,
+                false,
             );
             assert!((exact - (immediate + cont as f32)).abs() < 1e-3);
         }

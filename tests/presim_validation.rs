@@ -7,8 +7,7 @@ use direct_cobra_copy::eval::{evaluate, EvalWeights};
 use direct_cobra_copy::header::{Piece, SpinType, COL_NB};
 use direct_cobra_copy::movegen::{generate, MoveBuffer};
 use direct_cobra_copy::search::{
-    find_best_move, find_best_move_with_scores, SearchConfig,
-    SearchResult,
+    find_best_move, find_best_move_with_scores, SearchConfig, SearchResult,
 };
 use direct_cobra_copy::state::GameState;
 
@@ -526,21 +525,14 @@ fn generate_calibration_pairs() -> Vec<(f32, f32)> {
     // Scenario 3: Shallow cheese — 3 rows with staggered gaps
     //   Scores around -8 to -12: flat region for X+ (c=-20.9),
     //   steep region for D (c=-13.3) → tier separation.
-    let cheese_board = board_from_bottom_rows(&[
-        row_with_gap(4),
-        row_with_gap(7),
-        row_with_gap(2),
-    ]);
+    let cheese_board = board_from_bottom_rows(&[row_with_gap(4), row_with_gap(7), row_with_gap(2)]);
     let cheese_scores = search_root_scores(&cheese_board, Piece::I);
     collect_pairs(&cheese_scores, &mut pairs);
 
     // Scenario 4: Tuck-dependent — 2 rows with interior gaps
     //   Scores around -6 to -10: well inside X+ flat region,
     //   near D sigmoid center → strong tier separation.
-    let tuck_board = board_from_bottom_rows(&[
-        row_with_gap(5),
-        row_with_gap(3),
-    ]);
+    let tuck_board = board_from_bottom_rows(&[row_with_gap(5), row_with_gap(3)]);
     let tuck_scores = search_root_scores(&tuck_board, Piece::J);
     collect_pairs(&tuck_scores, &mut pairs);
 
@@ -575,8 +567,10 @@ fn diagnostic_dump_win_prob_drops() {
     let k = SIGMOID_K;
 
     eprintln!("\n=== Raw Win-Prob Drops (k={k}, D_c={d_c:.2}, S_c={s_c:.2}, X+_c={xp_c:.2}) ===");
-    eprintln!("{:<4} {:>10} {:>10} {:>10} {:>10} {:>10}  {:>8} {:>8} {:>8}",
-        "#", "best", "actual", "gap", "best_wp", "act_wp", "D_drop", "S_drop", "X+_drop");
+    eprintln!(
+        "{:<4} {:>10} {:>10} {:>10} {:>10} {:>10}  {:>8} {:>8} {:>8}",
+        "#", "best", "actual", "gap", "best_wp", "act_wp", "D_drop", "S_drop", "X+_drop"
+    );
 
     let mut d_drops: Vec<f32> = Vec::new();
     let mut s_drops: Vec<f32> = Vec::new();
@@ -590,10 +584,18 @@ fn diagnostic_dump_win_prob_drops() {
         d_drops.push(d_drop);
         s_drops.push(s_drop);
         xp_drops.push(x_drop);
-        eprintln!("{:<4} {:>10.2} {:>10.2} {:>10.2} {:>10.4} {:>10.4}  {:>8.4} {:>8.4} {:>8.4}",
-            i, best, actual, gap,
-            win_prob(best, k, xp_c), win_prob(actual, k, xp_c),
-            d_drop, s_drop, x_drop);
+        eprintln!(
+            "{:<4} {:>10.2} {:>10.2} {:>10.2} {:>10.4} {:>10.4}  {:>8.4} {:>8.4} {:>8.4}",
+            i,
+            best,
+            actual,
+            gap,
+            win_prob(best, k, xp_c),
+            win_prob(actual, k, xp_c),
+            d_drop,
+            s_drop,
+            x_drop
+        );
     }
 
     // Sort drops and show percentiles
@@ -604,12 +606,30 @@ fn diagnostic_dump_win_prob_drops() {
     eprintln!("\n=== Drop Distribution (sorted) ===");
     eprintln!("Tier  min      p25      p50      p75      max");
     let pct = |v: &[f32], p: usize| v[p * v.len() / 100];
-    eprintln!("D     {:.4}   {:.4}   {:.4}   {:.4}   {:.4}",
-        d_drops[0], pct(&d_drops, 25), pct(&d_drops, 50), pct(&d_drops, 75), d_drops.last().unwrap());
-    eprintln!("S     {:.4}   {:.4}   {:.4}   {:.4}   {:.4}",
-        s_drops[0], pct(&s_drops, 25), pct(&s_drops, 50), pct(&s_drops, 75), s_drops.last().unwrap());
-    eprintln!("X+    {:.4}   {:.4}   {:.4}   {:.4}   {:.4}",
-        xp_drops[0], pct(&xp_drops, 25), pct(&xp_drops, 50), pct(&xp_drops, 75), xp_drops.last().unwrap());
+    eprintln!(
+        "D     {:.4}   {:.4}   {:.4}   {:.4}   {:.4}",
+        d_drops[0],
+        pct(&d_drops, 25),
+        pct(&d_drops, 50),
+        pct(&d_drops, 75),
+        d_drops.last().unwrap()
+    );
+    eprintln!(
+        "S     {:.4}   {:.4}   {:.4}   {:.4}   {:.4}",
+        s_drops[0],
+        pct(&s_drops, 25),
+        pct(&s_drops, 50),
+        pct(&s_drops, 75),
+        s_drops.last().unwrap()
+    );
+    eprintln!(
+        "X+    {:.4}   {:.4}   {:.4}   {:.4}   {:.4}",
+        xp_drops[0],
+        pct(&xp_drops, 25),
+        pct(&xp_drops, 50),
+        pct(&xp_drops, 75),
+        xp_drops.last().unwrap()
+    );
 }
 
 #[test]
@@ -740,7 +760,6 @@ fn severity_ord(s: &Severity) -> u8 {
         Severity::Blunder => 3,
     }
 }
-
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Task 5: Insight primitive fixture scaffolding (MVP)

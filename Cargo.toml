@@ -57,10 +57,12 @@ wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:console_error_panic_hook"]
 # Opt-in beam-search order-independence (Option D). Off by default and absent
 # from the wasm build so shipped behaviour matches the deployed scalar-BFS order.
 deterministic_beam_tiebreak = []
-# Opt-in packed-movegen fast path + its canonical Move::raw() emission order.
-# Off by default and not enabled by the wasm feature because its enumeration
-# order degrades beam coaching quality (REJECTED on the net>=0 bar); the default
-# build stays on the deployed pure-engine BFS-worklist order.
+# Opt-in packed-movegen fast path. Set-equal to the scalar engine for the pieces
+# and heights it covers (I/S/Z/L/J up to height 24; force falls back to the
+# engine on slow-seed boards), verified legal-complete in the movegen tests; it
+# differs from the engine only in emission order, which every consumer tolerates.
+# Off by default so builds opt in explicitly; enabling routes both the search
+# beam and the labeler through the packed generator.
 packed_movegen = []
 
 [dependencies]

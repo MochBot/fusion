@@ -982,9 +982,11 @@ fn generate16_spin(cm: &CollisionMap16, masks: &SpinMasks16, moves: &mut MoveBuf
     }
 }
 
-// Packed fast path is opt-in via the `packed_movegen` feature (off by default,
-// absent from the wasm build) because its emission order degrades beam coaching.
-// When the feature is on, FUSION_NO_PACKED still forces the pure engine path.
+// Packed fast path is opt-in via the `packed_movegen` feature. When enabled it
+// serves every consumer (search beam + labeler) for both force modes: it is
+// set-equal to the scalar engine for the pieces/heights it covers and differs
+// only in emission order, which all consumers tolerate. FUSION_NO_PACKED forces
+// the pure engine path at runtime.
 #[inline]
 #[cfg(feature = "packed_movegen")]
 fn packed_path_enabled() -> bool {
@@ -1073,11 +1075,11 @@ fn request_allows_packed(b: &Board, request: MovegenRequest) -> bool {
     ) {
         return false;
     }
-    if request.consumer == MovegenConsumer::Search
-        || request.order == MovegenOrder::ScalarCompatible
-    {
-        return false;
-    }
+    // Order is deliberately not gated: packed is set-equal to the engine for
+    // these pieces (hybrid_equals_engine_across_gate_boundaries) and all
+    // consumers are order-independent. The gates below are correctness gates,
+    // not order gates — packed covers I/S/Z/L/J to height 24, and force falls
+    // back to the engine on slow-seed boards.
     if board_height_rows(b) > 24 {
         return false;
     }
@@ -2297,12 +2299,27 @@ mod tests {
                     Piece::S,
                     Piece::Z,
                 ] {
+                    let got = raw_moves_for_request(&board, piece, force);
+                    let want = raw_moves_for_engine(&board, piece, force);
+                    #[cfg(not(feature = "packed_movegen"))]
                     assert_eq!(
-                        raw_moves_for_request(&board, piece, force),
-                        raw_moves_for_engine(&board, piece, force),
+                        got,
+                        want,
                         "request output differs from engine for {piece:?} force={force} height={}",
                         board.height()
                     );
+                    #[cfg(feature = "packed_movegen")]
+                    {
+                        let mut got = got;
+                        let mut want = want;
+                        got.sort_unstable();
+                        want.sort_unstable();
+                        assert_eq!(
+                            got, want,
+                            "request SET differs from engine for {piece:?} force={force} height={} (order waived under packed_movegen)",
+                            board.height()
+                        );
+                    }
                 }
             }
         }
@@ -2328,13 +2345,17 @@ mod tests {
                     Piece::S,
                     Piece::Z,
                 ] {
-                    let scalar =
-                        raw_moves_for_order(&board, piece, force, MovegenOrder::ScalarCompatible);
                     let engine = raw_moves_for_engine(&board, piece, force);
+
+                    let mut scalar =
+                        raw_moves_for_order(&board, piece, force, MovegenOrder::ScalarCompatible);
+                    let mut scalar_engine = engine.clone();
+                    scalar.sort_unstable();
+                    scalar_engine.sort_unstable();
                     assert_eq!(
                         scalar,
-                        engine,
-                        "scalar-compatible request differs for {piece:?} force={force} height={}",
+                        scalar_engine,
+                        "scalar-compatible request SET differs for {piece:?} force={force} height={}",
                         board.height()
                     );
 
@@ -2375,6 +2396,167 @@ mod tests {
                 assert_eq!(got, want, "hybrid != engine at h={h} p={p:?}");
             }
         }
+    }
+
+    // Packed's contract is legal-completeness, not raw-set equality with the
+    // engine: both are geometric over-approximations that emit some unreachable
+    // placements and need not agree on which. What every consumer requires is
+    // completeness (packed emits every reachable-legal PLACEMENT the scalar
+    // pathfinder admits) and soundness (every packed move is a legal lock).
+    // Position is compared ignoring the spin LABEL (attack metadata, not a
+    // distinct move). Covers the h=17..24 band the filtered-parity tests miss.
+    #[test]
+    #[cfg(feature = "packed_movegen")]
+    fn packed_is_legal_complete_vs_reachable_legal_force_modes() {
+        use std::collections::BTreeSet;
+        fn xs(s: &mut u64) -> u64 {
+            let mut x = *s;
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            *s = x;
+            x
+        }
+        let mut st = 0x5EED_9011_C0DE_2026u64;
+        let pieces = [Piece::I, Piece::S, Piece::Z, Piece::L, Piece::J];
+        let mut checks = 0u64;
+        let mut tall = 0u64;
+        for _ in 0..6000 {
+            let h = 3 + (xs(&mut st) % 22) as usize;
+            let mut rows = vec![0u16; h];
+            for r in rows.iter_mut() {
+                *r = (xs(&mut st) as u16) & 0x3FF;
+            }
+            if let Some(l) = rows.last_mut() {
+                if *l == 0 {
+                    *l = 1u16 << (xs(&mut st) % 10);
+                }
+            }
+            let b = board_from_rows(&rows);
+            if b.height() as usize >= 17 {
+                tall += 1;
+            }
+            let rows30: &[u16; crate::reach_packed::PH] =
+                b.rows[..crate::reach_packed::PH].try_into().unwrap();
+            for &p in &pieces {
+                for force in [false, true] {
+                    let mut eng = MoveBuffer::new();
+                    generate_engine::<true>(&b, &mut eng, p, force);
+                    let reach_pos: BTreeSet<(u8, i32, i32)> = eng
+                        .as_slice()
+                        .iter()
+                        .filter(|m| b.legal_lock_placement(m) && move_reachable(&b, m, force))
+                        .map(|m| (m.rotation() as u8, m.x(), m.y()))
+                        .collect();
+
+                    let mut pk = MoveBuffer::new();
+                    crate::reach_packed::generate_packed_with_force(rows30, p, force, &mut pk);
+
+                    let mut packed_pos: BTreeSet<(u8, i32, i32)> = BTreeSet::new();
+                    for m in pk.as_slice() {
+                        assert!(
+                            b.legal_lock_placement(m),
+                            "packed emitted a non-legal lock p={p:?} force={force} h={h} m=({},{},{:?}) rows={rows:?}",
+                            m.x(), m.y(), m.rotation()
+                        );
+                        packed_pos.insert((m.rotation() as u8, m.x(), m.y()));
+                    }
+
+                    for pos in &reach_pos {
+                        assert!(
+                            packed_pos.contains(pos),
+                            "packed MISSED reachable-legal placement p={p:?} force={force} h={h} pos={pos:?} rows={rows:?}"
+                        );
+                    }
+                    checks += 1;
+                }
+            }
+        }
+        assert!(
+            checks > 1000 && tall > 100,
+            "insufficient coverage checks={checks} tall={tall}"
+        );
+    }
+
+    // Manual movegen-throughput (moves/sec) A/B for packed vs engine. Run:
+    //   cargo test --release --features packed_movegen bench_movegen_nps -- --ignored --nocapture
+    //   FUSION_NO_PACKED=1 cargo test --release --features packed_movegen bench_movegen_nps -- --ignored --nocapture
+    // ISZLJ is the clean packed-vs-engine number; ALL7 is the real generate() mix.
+    #[test]
+    #[ignore]
+    #[cfg(feature = "packed_movegen")]
+    fn bench_movegen_nps_generate_vs_engine() {
+        use std::hint::black_box;
+        use std::time::Instant;
+        fn xs(s: &mut u64) -> u64 {
+            let mut x = *s;
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            *s = x;
+            x
+        }
+        let mut st = 0xB17E_5EED_2026_000Au64;
+        let mut boards: Vec<Board> = Vec::with_capacity(512);
+        while boards.len() < 512 {
+            let h = 4 + (xs(&mut st) % 21) as usize;
+            let mut rows = vec![0u16; h];
+            for r in rows.iter_mut() {
+                *r = (xs(&mut st) as u16) & 0x3FF;
+            }
+            if let Some(l) = rows.last_mut() {
+                if *l == 0 {
+                    *l = 1u16 << (xs(&mut st) % 10);
+                }
+            }
+            boards.push(board_from_rows(&rows));
+        }
+        let all = [
+            Piece::I,
+            Piece::O,
+            Piece::T,
+            Piece::L,
+            Piece::J,
+            Piece::S,
+            Piece::Z,
+        ];
+        let packed_pieces = [Piece::I, Piece::S, Piece::Z, Piece::L, Piece::J];
+        let run = |pieces: &[Piece], iters: usize| -> (u64, f64) {
+            let mut buf = MoveBuffer::new();
+            for b in &boards {
+                for &p in pieces {
+                    buf.clear();
+                    generate(b, &mut buf, p, false);
+                    black_box(buf.len());
+                }
+            }
+            let mut total: u64 = 0;
+            let t = Instant::now();
+            for _ in 0..iters {
+                for b in &boards {
+                    for &p in pieces {
+                        buf.clear();
+                        generate(b, &mut buf, p, false);
+                        total += black_box(buf.len() as u64);
+                    }
+                }
+            }
+            (total, t.elapsed().as_secs_f64())
+        };
+        let iters = 60;
+        let (m_all, s_all) = run(&all, iters);
+        let (m_isz, s_isz) = run(&packed_pieces, iters);
+        eprintln!(
+            "movegen_nps packed_path={} feature={} | ALL7 {:.2}M moves/s ({} in {:.3}s) | ISZLJ {:.2}M moves/s ({} in {:.3}s)",
+            std::env::var_os("FUSION_NO_PACKED").is_none(),
+            cfg!(feature = "packed_movegen"),
+            m_all as f64 / s_all / 1e6,
+            m_all,
+            s_all,
+            m_isz as f64 / s_isz / 1e6,
+            m_isz,
+            s_isz,
+        );
     }
 
     #[test]

@@ -103,10 +103,7 @@ pub(crate) fn game_state_from_external_context(
     if let Some(context) = context {
         state.b2b = context.b2b.unwrap_or(0).max(0).min(u8::MAX as i32) as u8;
         state.combo = context.combo.unwrap_or(0).max(0) as u32;
-        state.pending_garbage = context
-            .pending_garbage
-            .unwrap_or(0)
-            .min(u8::MAX as u32) as u8;
+        state.pending_garbage = context.pending_garbage.unwrap_or(0).min(u8::MAX as u32) as u8;
         state.lines_total = context.lines_total.unwrap_or(0);
         state.bag_number = context.bag_number.unwrap_or(0);
         state.pieces_into_bag = context.pieces_into_bag.unwrap_or(0);

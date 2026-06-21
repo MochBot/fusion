@@ -6,10 +6,10 @@ Focused notes for the active Mosaic policy/value path so we do not repeat the sa
 
 This document is about the current policy/value training path, not the legacy teacher/student loop:
 
-- local Phase 0: `/home/li859/projects/mosaic-fusion-engine-coaching/fusion-engine/training/scripts/preprocess_replays.py`
-- local Phase 1: `/home/li859/projects/mosaic-fusion-engine-coaching/fusion-engine/training/scripts/generate_policy_value_labels.py`
-- remote train: `/home/li859/projects/mosaic-fusion-engine-coaching/fusion-engine/training/scripts/modal_app.py::train_policy_value_remote`
-- remote full launcher: `/home/li859/projects/mosaic-fusion-engine-coaching/fusion-engine/training/scripts/modal_app.py::launch_policy_value_pipeline`
+- local Phase 0: `training/scripts/preprocess_replays.py`
+- local Phase 1: `training/scripts/generate_policy_value_labels.py`
+- remote train: `training/scripts/modal_app.py::train_policy_value_remote`
+- remote full launcher: `training/scripts/modal_app.py::launch_policy_value_pipeline`
 
 Required artifact set for any dataset `<base>`:
 
@@ -165,8 +165,7 @@ Root cause:
 
 Durable fix:
 
-- `training/scripts/generate_policy_value_labels.py` now falls back to:
-  - `/home/li859/.cargo/bin/cargo`
+- `training/scripts/generate_policy_value_labels.py` now falls back to the standard user Cargo bin path
 - and prepends the resolved Cargo bin dir back into `PATH`
 
 Rule:
@@ -255,7 +254,7 @@ PY
 
 ```bash
 PATH="/usr/bin:/bin" \
-python3 "/home/li859/projects/mosaic-fusion-engine-coaching/fusion-engine/training/scripts/generate_policy_value_labels.py" \
+python3 "training/scripts/generate_policy_value_labels.py" \
   "/tmp/pv_probe_small2.bin"
 ```
 
@@ -263,7 +262,7 @@ python3 "/home/li859/projects/mosaic-fusion-engine-coaching/fusion-engine/traini
 
 ```bash
 python3 -m modal run \
-  /home/li859/projects/mosaic-fusion-engine-coaching/fusion-engine/training/scripts/modal_app.py::upload_policy_value_artifacts \
+  training/scripts/modal_app.py::upload_policy_value_artifacts \
   --local-data-path /tmp/pv_probe_small.bin
 ```
 
@@ -272,7 +271,7 @@ python3 -m modal run \
 ```bash
 FUSION_GPU_PROFILE=a10 \
 python3 -m modal run \
-  /home/li859/projects/mosaic-fusion-engine-coaching/fusion-engine/training/scripts/modal_app.py::train_policy_value_remote \
+  training/scripts/modal_app.py::train_policy_value_remote \
   --data-filename pv_probe_twogroup.bin \
   --run-id pv-twogroup-a10-smoke \
   --batch-size 2 \

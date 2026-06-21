@@ -60,7 +60,11 @@ impl SpinMasks {
             let rc = canonical_r(p, Rotation::from_u8(r_idx as u8));
             for (x, slot) in stuck_r.iter_mut().enumerate() {
                 let left = if x == 0 { !0u64 } else { cm.get(x - 1, rc) };
-                let right = if x >= COL_NB - 1 { !0u64 } else { cm.get(x + 1, rc) };
+                let right = if x >= COL_NB - 1 {
+                    !0u64
+                } else {
+                    cm.get(x + 1, rc)
+                };
                 let here = cm.get(x, rc);
                 let down = (here << 1) | 1;
                 let up = here >> 1;
@@ -75,9 +79,21 @@ impl SpinMasks {
                 // Diagonal corners; off-board and floor count filled, above the
                 // stack counts empty (cols carry no bits at or above ROW_NB).
                 let nw = if x == 0 { !0u64 } else { cols[x - 1] >> 1 };
-                let ne = if x >= COL_NB - 1 { !0u64 } else { cols[x + 1] >> 1 };
-                let se = if x >= COL_NB - 1 { !0u64 } else { (cols[x + 1] << 1) | 1 };
-                let sw = if x == 0 { !0u64 } else { (cols[x - 1] << 1) | 1 };
+                let ne = if x >= COL_NB - 1 {
+                    !0u64
+                } else {
+                    cols[x + 1] >> 1
+                };
+                let se = if x >= COL_NB - 1 {
+                    !0u64
+                } else {
+                    (cols[x + 1] << 1) | 1
+                };
+                let sw = if x == 0 {
+                    !0u64
+                } else {
+                    (cols[x - 1] << 1) | 1
+                };
                 spins3[x] = (nw & ne & (se | sw)) | (se & sw & (nw | ne));
                 front[Rotation::North as usize][x] = nw & ne;
                 front[Rotation::East as usize][x] = ne & se;
@@ -86,7 +102,11 @@ impl SpinMasks {
             }
         }
 
-        SpinMasks { stuck, spins3, front }
+        SpinMasks {
+            stuck,
+            spins3,
+            front,
+        }
     }
 
     /// Splits a wave's arrival bits into (full, mini, nospin) following the
@@ -465,9 +485,8 @@ mod tests {
         let empty = Board::new();
         let holey = board_from_rows(&[0x03BF, 0x036F, 0x03BF, 0x03CF, 0x03C7, 0x0207]);
         let tall = board_from_rows(&[
-            0x03FF, 0x03DF, 0x03EF, 0x03BF, 0x037F, 0x01FF, 0x03FE, 0x03FB, 0x03F7,
-            0x03DF, 0x03EF, 0x03BF, 0x037F, 0x01FF, 0x03FE, 0x03FB, 0x03F7, 0x03DF,
-            0x03EF, 0x03BF, 0x037F, 0x01FF,
+            0x03FF, 0x03DF, 0x03EF, 0x03BF, 0x037F, 0x01FF, 0x03FE, 0x03FB, 0x03F7, 0x03DF, 0x03EF,
+            0x03BF, 0x037F, 0x01FF, 0x03FE, 0x03FB, 0x03F7, 0x03DF, 0x03EF, 0x03BF, 0x037F, 0x01FF,
         ]);
 
         for &piece in &ALL_PIECES {
@@ -542,8 +561,11 @@ mod tests {
         for _ in 0..ITERS {
             for board in &boards {
                 for &piece in &ALL_PIECES {
-                    let reach =
-                        crate::pathfinder::reachable_locks(black_box(board), black_box(piece), false);
+                    let reach = crate::pathfinder::reachable_locks(
+                        black_box(board),
+                        black_box(piece),
+                        false,
+                    );
                     black_box(reach.locks[0][SPAWN_COL][0]);
                     calls += 1;
                 }
