@@ -1,13 +1,13 @@
 use std::env;
 use std::path::PathBuf;
 
-use direct_cobra_copy::board::{Board, BOARD_HEIGHT, FULL_ROW};
-use direct_cobra_copy::eval::EvalWeights;
-use direct_cobra_copy::header::Piece;
-use direct_cobra_copy::header::COL_NB;
-use direct_cobra_copy::policy_value_runtime::{PolicyValueRuntime, PolicyValueRuntimeContext};
-use direct_cobra_copy::search::{find_best_move_with_scores_runtime, SearchConfig};
-use direct_cobra_copy::state::GameState;
+use fusion_engine::board::{Board, BOARD_HEIGHT, FULL_ROW};
+use fusion_engine::eval::EvalWeights;
+use fusion_engine::header::Piece;
+use fusion_engine::header::COL_NB;
+use fusion_engine::policy_value_runtime::{PolicyValueRuntime, PolicyValueRuntimeContext};
+use fusion_engine::search::{find_best_move_with_scores_runtime, SearchConfig};
+use fusion_engine::state::GameState;
 
 fn constrained_board() -> Board {
     let mut board = Board::new();

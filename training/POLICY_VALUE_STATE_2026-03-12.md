@@ -1,4 +1,4 @@
-# Policy+Value State — 2026-03-12
+# Policy+Value State - 2026-03-12
 
 Last updated: 2026-03-12 (UTC, post-Phase-1 comparison and initial Phase 2 slice)
 

@@ -67,8 +67,8 @@ Phase 0 does not yet introduce the final policy head, but the contract reserves 
 
 Flat binary training artifacts must ship with:
 
-- `training_data.bin.metadata.json` — schema/version/order sidecar
-- `training_data.bin.groups.u64` — one stable u64 group hash per sample
+- `training_data.bin.metadata.json` - schema/version/order sidecar
+- `training_data.bin.groups.u64` - one stable u64 group hash per sample
 
 The binary sample file is no longer trusted on shape alone.
 

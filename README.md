@@ -1,6 +1,19 @@
 # Fusion engine
 
-Rust engine and Python training utilities for TETR.IO replay coaching. The Rust package is `direct-cobra-copy`; it owns move generation, search, board evaluation, S2 attack, and native/WASM runtime paths. The `training/` directory contains policy/value data and Modal training/labeling tools.
+Rust engine and Python training utilities for TETR.IO replay coaching. The Rust package is `fusion-engine`; it owns move generation, search, board evaluation, S2 attack, and native/WASM runtime paths. The `training/` directory contains policy/value data and Modal training/labeling tools.
+
+The move generator uses smear boards (row-parallel reachability propagation), an approach borrowed from cobra-movegen. The strict placement-tree semantics, spin labeling, pathfinding, search, eval, and coaching layers are this repo's own. Perft counts match the cobra CLI baselines in `fixtures/perft/baselines.txt` (D1-D5).
+
+## Perft
+
+`perft` walks a strict placement tree: each distinct reachable placement expands exactly once (no spin-label duplicates). D1-D5 counts match the cobra CLI baselines in `fixtures/perft/baselines.txt`; deeper counts are cross-checked in-repo against an independent reference BFS.
+
+`bench_perft` reports two modes because NPS depends on methodology:
+
+- `movelist` builds a move buffer at every level including leaves, the same methodology as the cobra perft CLI. Use this number for cross-engine comparisons.
+- `count-kernel` bulk-counts the last two levels without materializing children. Counts are identical; the NPS is only meaningful against other counting-style harnesses.
+
+`perft_cli` defaults to movelist methodology (`--count` selects the kernel path, `--divide` prints the root breakdown).
 
 ## Fresh clone setup
 

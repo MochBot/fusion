@@ -31,7 +31,7 @@ impl BagTracker {
             self.reset();
         }
         let idx = piece as usize;
-        // If already seen, we've crossed a bag boundary — reset first.
+        // If already seen, we've crossed a bag boundary - reset first.
         if self.seen[idx] {
             self.reset();
         }
@@ -102,7 +102,7 @@ pub(crate) fn extend_queue(queue: &[Piece], current: Piece, hold: Option<Piece>)
     let remaining = tracker.remaining();
     let mut extended = queue.to_vec();
 
-    // Only predict when ≤2 pieces remain — those are guaranteed to appear
+    // Only predict when ≤2 pieces remain - those are guaranteed to appear
     // before the next bag, though their order is unknown.
     if remaining.len() <= 2 && !remaining.is_empty() {
         extended.extend_from_slice(&remaining);
@@ -217,7 +217,7 @@ mod tests {
     #[test]
     fn test_extend_queue_no_prediction_when_too_many_remain() {
         // hold=I, current=O, queue=[T]
-        // That's 3 pieces consumed, 4 remaining — too uncertain
+        // That's 3 pieces consumed, 4 remaining - too uncertain
         let queue = vec![T];
         let extended = extend_queue(&queue, O, Some(I));
 
@@ -228,7 +228,7 @@ mod tests {
     #[test]
     fn test_extend_queue_single_remaining() {
         // hold=I, current=O, queue=[T, L, J, S]
-        // That's 6 pieces consumed, 1 remaining (Z) — guaranteed
+        // That's 6 pieces consumed, 1 remaining (Z) - guaranteed
         let queue = vec![T, L, J, S];
         let extended = extend_queue(&queue, O, Some(I));
 
@@ -253,7 +253,7 @@ mod tests {
     #[test]
     fn test_extend_queue_full_bag_no_prediction() {
         // hold=I, current=O, queue=[T, L, J, S, Z]
-        // That's all 7 consumed — bag complete, nothing remaining
+        // That's all 7 consumed - bag complete, nothing remaining
         let queue = vec![T, L, J, S, Z];
         let extended = extend_queue(&queue, O, Some(I));
 

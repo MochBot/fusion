@@ -73,7 +73,7 @@ The current policy/value path uses `training/scripts/train_policy_value.py`, `tr
 
 The following model notes describe the legacy 854-feature teacher/student pipeline and are retained for archaeology only.
 
-**Teacher** (`models/teacher.py`) — Dual-CNN with fusion MLP.
+**Teacher** (`models/teacher.py`) - Dual-CNN with fusion MLP.
 
 - Two CNN encoders (player + opponent boards): `Conv2d(1→64→128→256)` with BatchNorm, ReLU, MaxPool, AdaptiveAvgPool → 256-dim each
 - Fusion: concat(256 + 256 + 49 pieces + 5 scalars) = 566 → Linear(566,512) → Linear(512,256)
@@ -81,7 +81,7 @@ The following model notes describe the legacy 854-feature teacher/student pipeli
 - 1 classification head: phase (opener / midgame / survival)
 - Loss: Kendall homoscedastic uncertainty weighting (learnable log-variance per task, Huber for regression, CE for classification)
 
-**Student** (`models/student.py`) — 3-layer MLP for WASM.
+**Student** (`models/student.py`) - 3-layer MLP for WASM.
 
 - Architecture: 854 → 192 → 96 → 48 → 9 (SCReLU activations)
 - Output: 6 regression values + 3 phase logits
@@ -109,13 +109,13 @@ training/
 ├── training_data.bin         # Preprocessed replay data (mmap'd f32 binary)
 ├── pyproject.toml            # Python deps (torch, lightning, optuna)
 ├── data/
-│   └── dataset.py            # FusionBinaryDataset — memory-mapped binary loader
+│   └── dataset.py            # FusionBinaryDataset - memory-mapped binary loader
 ├── models/
 │   ├── teacher.py            # TeacherNet (dual-CNN + fusion MLP)
 │   ├── student.py            # StudentNet (3-layer MLP, SCReLU)
 │   └── lit_module.py         # TeacherLitModule + FusionDataModule (Lightning wrappers)
 ├── scripts/
-│   ├── modal_app.py          # Modal app definition — all cloud functions
+│   ├── modal_app.py          # Modal app definition - all cloud functions
 │   ├── optuna_objective.py   # Optuna trial definition for teacher HPO
 │   ├── distill_student.py    # StudentDistillModule + distillation training
 │   ├── preprocess_replays.py # .ttrm → training_data.bin (parallel, SRS simulation)
@@ -152,7 +152,7 @@ PYTHONPATH="$PWD" \
     --workers 10
 ```
 
-Output: `training_data.bin` — contiguous f32 binary, plus `training_data.bin.metadata.json` and `training_data.bin.groups.u64` sidecars used for Phase 0 schema validation and replay-group-aware splitting.
+Output: `training_data.bin` - contiguous f32 binary, plus `training_data.bin.metadata.json` and `training_data.bin.groups.u64` sidecars used for Phase 0 schema validation and replay-group-aware splitting.
 
 ### 3. Upload Data to Modal Volume
 
@@ -181,7 +181,7 @@ modal run training/scripts/modal_app.py::launch_pipeline \
 
 ### Pipeline Phases
 
-**Phase 1 — Teacher HPO** (`fan_out` → `train_teacher_trial` × N)
+**Phase 1 - Teacher HPO** (`fan_out` → `train_teacher_trial` × N)
 
 Each worker runs an independent Optuna study with HyperbandPruner. Workers explore hyperparameter space in parallel with no shared state (in-memory storage per worker).
 
@@ -197,7 +197,7 @@ Search space:
 
 Callbacks: ModelCheckpoint (top-1 by val/total_loss), EarlyStopping (patience=10), PruningCallback.
 
-**Phase 2 — Student Distillation** (`distill_student_remote`)
+**Phase 2 - Student Distillation** (`distill_student_remote`)
 
 Loads the best teacher checkpoint (frozen). Trains StudentNet to mimic teacher outputs:
 - Regression: MSE loss between student and teacher
@@ -205,13 +205,13 @@ Loads the best teacher checkpoint (frozen). Trains StudentNet to mimic teacher o
 - Optimizer: AdamW with CosineAnnealingLR (T_max = max_epochs)
 - EarlyStopping patience: 15
 
-**Phase 3 — Weight Export** (`export_weights_remote`)
+**Phase 3 - Weight Export** (`export_weights_remote`)
 
 Extracts student weights from Lightning checkpoint into flat f32 binary for WASM consumption. Order defined in `config.WEIGHT_EXPORT_ORDER`.
 
 ### LARYNX Pattern
 
-`run_pipeline` is decorated with `@app.function` (not `local_entrypoint`) so it runs inside a Modal container. This survives client disconnects — if your terminal dies, the pipeline continues. `launch_pipeline` is the thin `local_entrypoint` that calls `run_pipeline.remote()` and exits.
+`run_pipeline` is decorated with `@app.function` (not `local_entrypoint`) so it runs inside a Modal container. This survives client disconnects - if your terminal dies, the pipeline continues. `launch_pipeline` is the thin `local_entrypoint` that calls `run_pipeline.remote()` and exits.
 
 ## B200 GPU Optimizations
 
@@ -333,6 +333,6 @@ modal run training/scripts/modal_app.py::launch_pipeline \
 
 ## Known Issues
 
-- **Import resolution**: `training.scripts.*` / `training.utils.*` imports only resolve inside the Modal container (`.add_local_python_source("training")`). Local LSP will show import errors — this is expected.
+- **Import resolution**: `training.scripts.*` / `training.utils.*` imports only resolve inside the Modal container (`.add_local_python_source("training")`). Local LSP will show import errors - this is expected.
 - **PYTHONPATH**: Local scripts require `PYTHONPATH` set to the repo root for proper module resolution.
 - **Large files**: `training_data.bin` (~30 GB) and `data/metadata/replay_manifest.json` (~5.5 MB) are in `.gitignore`. JJ snapshot limit bumped to 15 GiB.

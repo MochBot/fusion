@@ -1,7 +1,5 @@
-// ---------------------------------------------------------------------------
-// Shared feature encoding — used by both native (tract) and WASM targets.
+// Shared feature encoding - used by both native (tract) and WASM targets.
 // These return flat Vecs to avoid any dependency on tract_ndarray.
-// ---------------------------------------------------------------------------
 
 use crate::board::Board;
 use crate::header::{Move, Piece, SpinType};
@@ -93,9 +91,7 @@ pub fn encode_candidate_features_flat(candidates: &[Move]) -> (Vec<f32>, Vec<boo
     (values, mask)
 }
 
-// ---------------------------------------------------------------------------
-// Native target — full tract-based runtime
-// ---------------------------------------------------------------------------
+// Native target - full tract-based runtime
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native {

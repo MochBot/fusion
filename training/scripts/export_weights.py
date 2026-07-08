@@ -54,7 +54,7 @@ def export_student_weights(
     checkpoint_path = Path(checkpoint_path)
     output_path = Path(output_path)
 
-    # Load checkpoint — handle both raw state_dict and Lightning checkpoint
+    # Load checkpoint - handle both raw state_dict and Lightning checkpoint
     ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
 
     if "state_dict" in ckpt:
@@ -98,7 +98,7 @@ def export_student_weights(
     with open(output_path, "wb") as f:
         for key, _shape in WEIGHT_EXPORT_ORDER:
             tensor = state_dict[key].detach().float().contiguous()
-            # Row-major (C-contiguous) flattening — matches Rust SIMD reader
+            # Row-major (C-contiguous) flattening - matches Rust SIMD reader
             flat = tensor.flatten().numpy()
             f.write(flat.tobytes())  # little-endian f32 on x86
             total_floats += flat.shape[0]

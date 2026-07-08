@@ -2,7 +2,7 @@
 //!
 //! Reads `.ctx` records and emits one `STRIDE_F`-float row per decision position
 //! (own board/onehots + opp block + labels best/playerAtk/gap/outcome/matched).
-//! All beam/expansion/reconstruction logic lives in `direct_cobra_copy::label_kernel`
+//! All beam/expansion/reconstruction logic lives in `fusion_engine::label_kernel`
 //! and is shared byte-identically with the per-candidate `label_opp_cand` bin.
 
 use std::env;
@@ -12,7 +12,7 @@ use std::sync::atomic::Ordering;
 
 use rayon::prelude::*;
 
-use direct_cobra_copy::label_kernel::{
+use fusion_engine::label_kernel::{
     beam_best, height_holes, parse_context, reconstruct, ContextRec, PROFILE,
 };
 
@@ -51,7 +51,7 @@ impl LabelConfig {
     }
 
     fn record_bytes(self) -> usize {
-        direct_cobra_copy::label_kernel::record_bytes(self.k)
+        fusion_engine::label_kernel::record_bytes(self.k)
     }
 }
 
@@ -319,7 +319,7 @@ fn main() -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use direct_cobra_copy::label_kernel::ContextRec;
+    use fusion_engine::label_kernel::ContextRec;
 
     #[test]
     fn context_record_size_matches_emitter_schema() {

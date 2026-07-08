@@ -90,6 +90,16 @@ impl GhostMove {
 // split, the kick-index>=4 Full override, and the immobility fallback; other
 // spin-eligible pieces label immobile arrivals as Mini. Keeping one rule here
 // keeps pathfinder retention in agreement with movegen emission.
+/// All four unit shifts collide (canonical frame).
+fn immobile_at(cm: &CollisionMap, x1: i32, y1: i32, rc: Rotation) -> bool {
+    let x1u = x1 as usize;
+    let blocked_left = x1u == 0 || cm.get(x1u - 1, rc) & bb(y1) != 0;
+    let blocked_right = x1u >= COL_NB - 1 || cm.get(x1u + 1, rc) & bb(y1) != 0;
+    let blocked_down = y1 == 0 || cm.get(x1u, rc) & bb(y1 - 1) != 0;
+    let blocked_up = cm.get(x1u, rc) & bb(y1 + 1) != 0;
+    blocked_left && blocked_right && blocked_down && blocked_up
+}
+
 #[allow(clippy::too_many_arguments)]
 fn classify_rotation_spin(
     board: &Board,
@@ -102,12 +112,7 @@ fn classify_rotation_spin(
     rt_c: Rotation,
     kick_idx: usize,
 ) -> SpinType {
-    let x1u = x1 as usize;
-    let blocked_left = x1u == 0 || cm.get(x1u - 1, rt_c) & bb(y1) != 0;
-    let blocked_right = x1u >= COL_NB - 1 || cm.get(x1u + 1, rt_c) & bb(y1) != 0;
-    let blocked_down = y1 == 0 || cm.get(x1u, rt_c) & bb(y1 - 1) != 0;
-    let blocked_up = cm.get(x1u, rt_c) & bb(y1 + 1) != 0;
-    let stuck = blocked_left && blocked_right && blocked_down && blocked_up;
+    let stuck = immobile_at(cm, x1, y1, rt_c);
 
     if is_t {
         let corner = |dx: i32, dy: i32| -> bool {
@@ -178,6 +183,12 @@ fn get_input_inner(
     let mut vec: Vec<PathNode> = Vec::new();
     let mut queue: VecDeque<GhostMove> = VecDeque::new();
 
+    // Strict emission dedup: non-T NoSpin yields to Mini (NoSpin &= !Mini).
+    // A later stuck rotation arrival claims the cell as Mini, invalidating
+    let defer_nospin = is_allspin && target.spin() == SpinType::NoSpin;
+    let mut deferred: Option<Inputs> = None;
+    let mut mini_locks = [[0u64; ROTATION_NB]; COL_NB];
+
     // spawn
     let spawn_y = if force {
         // find lowest valid row >= spawn_row
@@ -210,25 +221,24 @@ fn get_input_inner(
         let y = m.y;
         let rc = canonical_r(p, r);
 
-        // harddrop: contiguous gravity descent from y. Stepping one row at a
-        // time (instead of a bitmask scan for the lowest collision-free row)
-        // stops the piece above the first blocked cell, so it cannot teleport
-        // into a disconnected pocket beneath a capped column.
+        // harddrop: contiguous gravity descent. Steps one row at a time
+        // so the piece cannot teleport into a disconnected pocket.
         let mut drop_y = y;
         while drop_y > 0 && (cm.get(x, rc) & bb((drop_y - 1) as i32)) == 0 {
             drop_y -= 1;
         }
 
         if drop_y >= 0 {
-            // Preserve the rotation's spin label only when the piece is already
-            // resting (drop_y == y); a piece that falls further after rotating
-            // locks as a no-spin, mirroring movegen's lock-row spin tagging.
+            // Lock label: only when piece is already resting (drop_y == y);
+            // falling after rotation locks NoSpin (mirrors movegen).
             let sc = if can_spin && drop_y == y {
                 m.s as usize
             } else {
                 0
             };
-            let _rc_idx = canonical_r(p, r) as usize;
+            if is_allspin && sc == SpinType::Mini as usize {
+                mini_locks[x][rc as usize] |= bb(drop_y as i32);
+            }
 
             // check if this harddrop position == target
             let target_r = target.rotation();
@@ -246,7 +256,13 @@ fn get_input_inner(
                         idx = vec[idx as usize].prev;
                     }
                     result.reverse();
-                    return result;
+                    if defer_nospin {
+                        if deferred.is_none() {
+                            deferred = Some(result);
+                        }
+                    } else {
+                        return result;
+                    }
                 }
             }
         }
@@ -286,6 +302,7 @@ fn get_input_inner(
                     arr.len()
                 };
 
+                let rt_c = canonical_r(p, rt);
                 for (k, &kick) in kick_buf.iter().enumerate().take(kick_count) {
                     let x1 = m.x as i32 + kick.x as i32 + off.x as i32;
                     let y1 = y as i32 + kick.y as i32 + off.y as i32;
@@ -294,14 +311,15 @@ fn get_input_inner(
                         continue;
                     }
                     let x1u = x1 as usize;
-                    if !in_bounds(p, rt, x1) {
+                    // State coords are canonical-frame; column check must use
+                    // canonical rotation cells, not true-rotation table.
+                    if !in_bounds(p, rt_c, x1) {
                         continue;
                     }
                     if y1 >= ROW_NB as i32 {
                         continue;
                     }
 
-                    let rt_c = canonical_r(p, rt);
                     if cm.get(x1u, rt_c) & bb(y1) != 0 {
                         continue;
                     }
@@ -341,10 +359,10 @@ fn get_input_inner(
                 continue;
             }
             let x1u = x1 as usize;
-            if !in_bounds(p, r, x1) {
+            let rc = canonical_r(p, r);
+            if !in_bounds(p, rc, x1) {
                 continue;
             }
-            let rc = canonical_r(p, r);
             if cm.get(x1u, rc) & bb(y as i32) != 0 {
                 continue;
             }
@@ -381,12 +399,12 @@ fn get_input_inner(
         if use_finesse {
             for dx in [-1i8, 1i8] {
                 let mut x1 = m.x as i32 + dx as i32;
+                let rc = canonical_r(p, r);
                 // slide to wall
                 loop {
-                    if x1 < 0 || !in_bounds(p, r, x1) {
+                    if x1 < 0 || !in_bounds(p, rc, x1) {
                         break;
                     }
-                    let rc = canonical_r(p, r);
                     if cm.get(x1 as usize, rc) & bb(y as i32) != 0 {
                         break;
                     }
@@ -457,7 +475,15 @@ fn get_input_inner(
         }
     }
 
-    // target not found
+    if let Some(path) = deferred {
+        let xu = target.x() as usize;
+        let rc = canonical_r(p, target.rotation()) as usize;
+        if mini_locks[xu][rc] & bb(target.y()) == 0 {
+            return path;
+        }
+    }
+
+    // target not found (or the NoSpin cell is Mini-claimed by strict dedup)
     Inputs::new()
 }
 
@@ -472,6 +498,7 @@ impl ReachLocks {
         Self { piece, locks }
     }
 
+    /// True when any label stratum locks at the cell.
     #[inline]
     pub(crate) fn move_reachable(&self, m: &Move) -> bool {
         let x = m.x();
@@ -481,18 +508,8 @@ impl ReachLocks {
         }
         let xu = x as usize;
         let rc = canonical_r(self.piece, m.rotation()) as usize;
-        let nospin = SpinType::NoSpin as usize;
-        if self.locks[nospin][xu][rc] & bb(y) != 0 {
-            return true;
-        }
-        let sp = m.spin();
-        if sp != SpinType::NoSpin {
-            let spi = sp as usize;
-            if spi < SPIN_NB && self.locks[spi][xu][rc] & bb(y) != 0 {
-                return true;
-            }
-        }
-        false
+        let phys = self.locks[0][xu][rc] | self.locks[1][xu][rc] | self.locks[2][xu][rc];
+        phys & bb(y) != 0
     }
 }
 
@@ -552,8 +569,7 @@ pub(crate) fn reachable_locks(board: &Board, p: Piece, force: bool) -> ReachLock
                 drop_y -= 1;
             }
             if drop_y >= 0 {
-                // Spin label survives only when the piece is already resting; a piece
-                // that falls further after rotating locks as no-spin (mirrors get_input).
+                // Arrival-based lock label while resting (mirrors get_input).
                 let sc = if can_spin && drop_y == y {
                     m.s as usize
                 } else {
@@ -588,6 +604,7 @@ pub(crate) fn reachable_locks(board: &Board, p: Piece, force: bool) -> ReachLock
                         arr.len()
                     };
 
+                    let rt_c = canonical_r(p, rt);
                     for (k, &kick) in kick_buf.iter().enumerate().take(kick_count) {
                         let x1 = m.x as i32 + kick.x as i32 + off.x as i32;
                         let y1 = y as i32 + kick.y as i32 + off.y as i32;
@@ -596,14 +613,14 @@ pub(crate) fn reachable_locks(board: &Board, p: Piece, force: bool) -> ReachLock
                             continue;
                         }
                         let x1u = x1 as usize;
-                        if !in_bounds(p, rt, x1) {
+                        // Canonical-frame pivot -> canonical-rotation column check
+                        if !in_bounds(p, rt_c, x1) {
                             continue;
                         }
                         if y1 >= ROW_NB as i32 {
                             continue;
                         }
 
-                        let rt_c = canonical_r(p, rt);
                         if cm.get(x1u, rt_c) & bb(y1) != 0 {
                             continue;
                         }
@@ -642,10 +659,10 @@ pub(crate) fn reachable_locks(board: &Board, p: Piece, force: bool) -> ReachLock
                     continue;
                 }
                 let x1u = x1 as usize;
-                if !in_bounds(p, r, x1) {
+                let rc = canonical_r(p, r);
+                if !in_bounds(p, rc, x1) {
                     continue;
                 }
-                let rc = canonical_r(p, r);
                 if cm.get(x1u, rc) & bb(y as i32) != 0 {
                     continue;
                 }
@@ -695,6 +712,16 @@ pub(crate) fn reachable_locks(board: &Board, p: Piece, force: bool) -> ReachLock
             }
         }
 
+        if is_allspin {
+            // Strict emission dedup: Mini wins the cell for non-T.
+            let mini = locks[SpinType::Mini as usize];
+            for (ns_col, mini_col) in locks[SpinType::NoSpin as usize].iter_mut().zip(mini.iter()) {
+                for (b, m) in ns_col.iter_mut().zip(mini_col.iter()) {
+                    *b &= !m;
+                }
+            }
+        }
+
         ReachLocks { piece: p, locks }
     })
 }
@@ -723,8 +750,8 @@ mod tests {
     }
 
     // Frozen pre-strict semantics (later-kick phantom states, face-cell T
-    // labels, no T immobility fallback). Kept verbatim so the strict-vs-legacy
-    // diff harness can classify every behavior change; do not "fix" this copy.
+    // labels, no T immobility fallback). Kept verbatim for the
+    // strict-vs-legacy diff harness; do not "fix" this copy.
     fn reachable_locks_legacy(
         board: &Board,
         p: Piece,
@@ -1056,11 +1083,11 @@ mod tests {
                             continue;
                         }
                         let x1u = x1 as usize;
-                        if !in_bounds(p, rt, x1) || y1 >= ROW_NB as i32 {
+                        let rt_c = canonical_r(p, rt);
+                        if !in_bounds(p, rt_c, x1) || y1 >= ROW_NB as i32 {
                             continue;
                         }
 
-                        let rt_c = canonical_r(p, rt);
                         if cm.get(x1u, rt_c) & bb(y1) != 0 {
                             continue;
                         }
@@ -1097,10 +1124,10 @@ mod tests {
                     continue;
                 }
                 let x1u = x1 as usize;
-                if !in_bounds(p, r, x1) {
+                let rc = canonical_r(p, r);
+                if !in_bounds(p, rc, x1) {
                     continue;
                 }
-                let rc = canonical_r(p, r);
                 if cm.get(x1u, rc) & bb(y as i32) != 0 {
                     continue;
                 }
@@ -1146,6 +1173,15 @@ mod tests {
                             s: SpinType::NoSpin,
                         });
                     }
+                }
+            }
+        }
+
+        if is_allspin {
+            let mini = locks[SpinType::Mini as usize];
+            for (ns_col, mini_col) in locks[SpinType::NoSpin as usize].iter_mut().zip(mini.iter()) {
+                for (b, m) in ns_col.iter_mut().zip(mini_col.iter()) {
+                    *b &= !m;
                 }
             }
         }
@@ -1272,10 +1308,9 @@ mod tests {
         bug_examples: Vec<String>,
     }
 
-    // Strict-vs-legacy diff classification. Every changed lock bit must be a
-    // phantom removal (no strict input path), a label loss whose physical
-    // placement survives, or a label gain backed by a strict input path;
-    // anything else is a regression in the strict rewrite.
+    // Diff classification: every changed lock bit must be a phantom removal,
+    // label loss whose physical placement survives, or label gain backed by
+    // a strict input path; anything else is a regression.
     fn classify_diffs_on_corpus(n_boards: u64, seed: u64) -> DiffCounts {
         let mut st = seed;
         let mut counts = DiffCounts::default();
@@ -1455,7 +1490,7 @@ mod tests {
                     let dx = if inp == Input::ShiftLeft { -1 } else { 1 };
                     let x1 = x + dx;
                     let rc = canonical_r(p, r);
-                    if x1 < 0 || !in_bounds(p, r, x1) || cm.get(x1 as usize, rc) & bb(y) != 0 {
+                    if x1 < 0 || !in_bounds(p, rc, x1) || cm.get(x1 as usize, rc) & bb(y) != 0 {
                         return None;
                     }
                     x = x1;
@@ -1467,7 +1502,7 @@ mod tests {
                     let mut x1 = x;
                     loop {
                         let nx = x1 + dx;
-                        if nx < 0 || !in_bounds(p, r, nx) || cm.get(nx as usize, rc) & bb(y) != 0 {
+                        if nx < 0 || !in_bounds(p, rc, nx) || cm.get(nx as usize, rc) & bb(y) != 0 {
                             break;
                         }
                         x1 = nx;
@@ -1514,13 +1549,13 @@ mod tests {
                         arr.len()
                     };
                     let mut applied = false;
+                    let rt_c = canonical_r(p, rt);
                     for (k, &kick) in kick_buf.iter().enumerate().take(kick_count) {
                         let x1 = x + kick.x as i32 + off.x as i32;
                         let y1 = y + kick.y as i32 + off.y as i32;
-                        if x1 < 0 || y1 < 0 || !in_bounds(p, rt, x1) || y1 >= ROW_NB as i32 {
+                        if x1 < 0 || y1 < 0 || !in_bounds(p, rt_c, x1) || y1 >= ROW_NB as i32 {
                             continue;
                         }
-                        let rt_c = canonical_r(p, rt);
                         if cm.get(x1 as usize, rt_c) & bb(y1) != 0 {
                             continue;
                         }
@@ -1574,7 +1609,6 @@ mod tests {
         let mut st = 0x5EED_50F7_D40B_2026u64;
         let mut boards = 0u64;
         let mut positives = 0u64;
-        let mut negatives = 0u64;
         while boards < 150 {
             let Some(rows) = seeded_holey_rows(&mut st) else {
                 continue;
@@ -1640,15 +1674,251 @@ mod tests {
                             "cube vs get_input disagree m={m:?} p={p:?} force={force} \
                              rows={rows:?}"
                         );
-                        if !retained {
-                            negatives += 1;
-                        }
+                        // Shared left-edge canonical-frame blind spot is
+                        // gone; every strict emission must be retained.
+                        assert!(
+                            retained,
+                            "strict emission not reachable m={m:?} p={p:?} force={force} \
+                             rows={rows:?}"
+                        );
                     }
                 }
             }
         }
         assert!(positives > 10_000, "positives={positives}");
-        assert!(negatives > 100, "negatives={negatives}");
+    }
+
+    // Arbiter = production movegen (smear-core strict; reference-BFS-exact
+    // on the 42k corpus). Contract per labeled lock key (spin, x, y, r):
+    //   completeness - get_input finds a path for every key generate() emits;
+    //   soundness    - get_input finds no path for any key generate() omits;
+    //   validity     - every returned path replays on the true-physics
+    //                  simulator to exactly its target key.
+    fn assert_pathfinder_matches_strict(b: &Board, p: Piece, force: bool, ctx: &str) {
+        use std::collections::BTreeSet;
+
+        let is_t = p == Piece::T && ACTIVE_RULES.enable_tspin;
+        let is_allspin = p != Piece::T && p != Piece::O && ACTIVE_RULES.enable_allspin;
+        let can_spin = is_t || is_allspin;
+
+        let mut buf = crate::move_buffer::MoveBuffer::new();
+        crate::movegen::generate(b, &mut buf, p, force);
+        let mut emitted: BTreeSet<(usize, i32, i32, usize)> = BTreeSet::new();
+        for m in buf.as_slice() {
+            emitted.insert((
+                m.spin() as usize,
+                m.x(),
+                m.y(),
+                canonical_r(p, m.rotation()) as usize,
+            ));
+        }
+
+        let h = b
+            .rows
+            .iter()
+            .rposition(|&r| r != 0)
+            .map(|y| y + 1)
+            .unwrap_or(0) as i32;
+        let y_hi = (h + 3).min(ROW_NB as i32 - 1);
+        for &(_, _, y, _) in &emitted {
+            assert!(
+                y <= y_hi,
+                "emission above sweep box y={y} y_hi={y_hi} {ctx}"
+            );
+        }
+
+        for s_idx in 0..SPIN_NB {
+            if s_idx > 0 && !can_spin {
+                continue;
+            }
+            for x in 0..COL_NB as i32 {
+                for ri in 0..canonical_size(p) {
+                    for y in 0..=y_hi {
+                        let Some(target) = move_for_lock(p, s_idx, x, y, ri) else {
+                            continue;
+                        };
+                        let inputs = get_input(b, &target, false, force);
+                        let in_emission = emitted.contains(&(s_idx, x, y, ri));
+                        if inputs.data.is_empty() {
+                            assert!(
+                                !in_emission,
+                                "MISSING PATH s={s_idx} x={x} y={y} ri={ri} p={p:?} \
+                                 force={force} {ctx}"
+                            );
+                        } else {
+                            assert!(
+                                in_emission,
+                                "PHANTOM PATH s={s_idx} x={x} y={y} ri={ri} p={p:?} \
+                                 force={force} inputs={:?} {ctx}",
+                                inputs.data
+                            );
+                            let sim = simulate_inputs(b, p, force, &inputs);
+                            assert_eq!(
+                                sim,
+                                Some((
+                                    x,
+                                    y,
+                                    Rotation::from_u8(ri as u8),
+                                    SpinType::from_u8(s_idx as u8)
+                                )),
+                                "WRONG-TARGET path s={s_idx} x={x} y={y} ri={ri} p={p:?} \
+                                 force={force} inputs={:?} {ctx}",
+                                inputs.data
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        // The retained-cube lane must agree with strict emission label-exactly.
+        let reach = reachable_locks(b, p, force);
+        let mut cube: BTreeSet<(usize, i32, i32, usize)> = BTreeSet::new();
+        for (s_idx, sl) in reach.locks.iter().enumerate() {
+            if s_idx > 0 && !can_spin {
+                continue;
+            }
+            for (x, xl) in sl.iter().enumerate() {
+                for (ri, &bits) in xl.iter().enumerate().take(canonical_size(p)) {
+                    let mut bits = bits;
+                    while bits != 0 {
+                        let y = ctz(bits) as i32;
+                        bits &= bits - 1;
+                        cube.insert((s_idx, x as i32, y, ri));
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            cube.difference(&emitted).collect::<Vec<_>>(),
+            Vec::<&(usize, i32, i32, usize)>::new(),
+            "cube-only locks p={p:?} force={force} {ctx}"
+        );
+        assert_eq!(
+            emitted.difference(&cube).collect::<Vec<_>>(),
+            Vec::<&(usize, i32, i32, usize)>::new(),
+            "emission-only locks p={p:?} force={force} {ctx}"
+        );
+    }
+
+    // Pinned boards from smear_core disqualification probes (P1) and the
+    // T3b diagnosis. case-13/case-4: strict-reachable left-edge locks;
+    // case-353: force lane whose old kick resolution was wrong-target;
+    // case-1: raw engine over-produces 9 phantoms (soundness side).
+    #[test]
+    fn group2_fold_probe_boards_pin() {
+        // case13: I North (1,1) in a left-edge slot
+        let b13 = board_from_rows(&[634, 208, 972]);
+        assert_pathfinder_matches_strict(&b13, Piece::I, false, "case13 rows=[634,208,972]");
+        let bare13 = Move::new(Piece::I, Rotation::North, 1, 1, false);
+        assert!(b13.legal_lock_placement(&bare13));
+        assert!(
+            crate::movegen::move_reachable(&b13, &bare13, false),
+            "case13 placement-level reachability (move_reachable strata union)"
+        );
+
+        // case4: S East (1,15), an isolated pocket (P1's original
+        // finding; T3b table mis-read it as pathfinder miss).
+        // Strict arbiter omits it; pin is soundness direction.
+        let b4 = board_from_rows(&[
+            531, 182, 32, 710, 608, 683, 985, 727, 402, 562, 545, 977, 414, 691, 779, 97, 468, 708,
+        ]);
+        assert_pathfinder_matches_strict(&b4, Piece::S, false, "case4 pocket board");
+        let bare4 = Move::new(Piece::S, Rotation::East, 1, 15, false);
+        assert!(b4.legal_lock_placement(&bare4));
+        let mut s4 = crate::move_buffer::MoveBuffer::new();
+        crate::movegen::generate(&b4, &mut s4, Piece::S, false);
+        assert!(
+            !s4.iter()
+                .any(|m| (m.x(), m.y(), canonical_r(Piece::S, m.rotation()))
+                    == (1, 15, Rotation::East)),
+            "case4 pocket entered the strict emission set; re-audit"
+        );
+        assert!(
+            !crate::movegen::move_reachable(&b4, &bare4, false),
+            "case4 isolated pocket must stay unreachable (soundness)"
+        );
+
+        // case353: I force lane on a tall board; old path to (4,25,East)
+        // was [Ccw,Ccw,Cw,HardDrop] which true physics locks elsewhere.
+        let b353 = board_from_rows(&[
+            532, 186, 142, 497, 630, 526, 937, 37, 190, 398, 549, 82, 398, 355, 18, 23, 45, 404,
+            278, 651, 818, 276, 16,
+        ]);
+        assert_pathfinder_matches_strict(&b353, Piece::I, true, "case353 force tall board");
+
+        // case1: raw engine emits 9 phantom I locks; strict omits them.
+        let b1 = board_from_rows(&[527, 263, 30, 60, 898, 821, 581, 746]);
+        assert_pathfinder_matches_strict(&b1, Piece::I, false, "case1 engine-phantom board");
+    }
+
+    #[test]
+    fn get_input_matches_strict_generate_on_seeded_boards() {
+        let mut st = 0x6F1D_F01D_2026_0707u64;
+        let mut boards = 0u64;
+        while boards < 40 {
+            let h = 2 + (xs(&mut st) % 25) as usize;
+            let mut rows = vec![0u16; h];
+            for r in rows.iter_mut() {
+                *r = (xs(&mut st) as u16) & 0x03FF;
+            }
+            if let Some(last) = rows.last_mut() {
+                if *last == 0 {
+                    *last = 1u16 << (xs(&mut st) % 10);
+                }
+            }
+            let b = board_from_rows(&rows);
+            if !crate::movegen::needs_reachability_filter(&b) {
+                continue;
+            }
+            boards += 1;
+            for &p in &ALL_PIECES {
+                for force in [false, true] {
+                    assert_pathfinder_matches_strict(
+                        &b,
+                        p,
+                        force,
+                        &format!("seeded rows={rows:?}"),
+                    );
+                }
+            }
+        }
+        assert_eq!(boards, 40);
+    }
+
+    #[test]
+    #[ignore]
+    fn get_input_matches_strict_generate_on_2k_boards() {
+        let mut st = 0x6F1D_F01D_2026_0707u64;
+        let mut boards = 0u64;
+        while boards < 2_000 {
+            let h = 2 + (xs(&mut st) % 25) as usize;
+            let mut rows = vec![0u16; h];
+            for r in rows.iter_mut() {
+                *r = (xs(&mut st) as u16) & 0x03FF;
+            }
+            if let Some(last) = rows.last_mut() {
+                if *last == 0 {
+                    *last = 1u16 << (xs(&mut st) % 10);
+                }
+            }
+            let b = board_from_rows(&rows);
+            if !crate::movegen::needs_reachability_filter(&b) {
+                continue;
+            }
+            boards += 1;
+            for &p in &ALL_PIECES {
+                for force in [false, true] {
+                    assert_pathfinder_matches_strict(
+                        &b,
+                        p,
+                        force,
+                        &format!("seeded rows={rows:?}"),
+                    );
+                }
+            }
+        }
+        assert_eq!(boards, 2_000);
     }
 
     #[test]

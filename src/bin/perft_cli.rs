@@ -1,8 +1,15 @@
 // perft_cli.rs -- perft driver, matches cobra-movegen CLI output format
-use direct_cobra_copy::board::{Board, State};
-use direct_cobra_copy::header::Piece;
-use direct_cobra_copy::movegen::MoveList;
+use fusion_engine::board::{Board, State};
+use fusion_engine::header::Piece;
+use fusion_engine::move_buffer::MoveBuffer;
+use fusion_engine::smear_core::generate_placements;
 use std::time::Instant;
+
+fn placements(board: &Board, p: Piece) -> MoveBuffer {
+    let mut moves = MoveBuffer::new();
+    generate_placements(board, &mut moves, p, false);
+    moves
+}
 
 fn perft(state: &State, queue: &[Piece], depth: usize) -> u64 {
     if depth == 0 {
@@ -10,9 +17,9 @@ fn perft(state: &State, queue: &[Piece], depth: usize) -> u64 {
     }
     let p = queue[0];
     let remaining = &queue[1..];
-    let ml = MoveList::new(&state.board, p);
+    let ml = placements(&state.board, p);
     if depth == 1 {
-        return ml.size() as u64;
+        return std::hint::black_box(&ml).len() as u64;
     }
     let mut count = 0u64;
     for m in ml.iter() {
@@ -26,13 +33,13 @@ fn perft(state: &State, queue: &[Piece], depth: usize) -> u64 {
 fn perft_divide(state: &State, queue: &[Piece], depth: usize) {
     let p = queue[0];
     let remaining = &queue[1..];
-    let ml = MoveList::new(&state.board, p);
+    let ml = placements(&state.board, p);
     let mut total = 0u64;
     for m in ml.iter() {
         let mut next = state.clone();
         next.do_move(m);
         let count = if depth <= 2 {
-            MoveList::new(&next.board, remaining[0]).size() as u64
+            placements(&next.board, remaining[0]).len() as u64
         } else {
             perft(&next, remaining, depth - 1)
         };
@@ -50,6 +57,9 @@ fn main() {
         5
     };
     let divide = args.iter().any(|a| a == "--divide" || a == "-d");
+    // --count switches to the bulk-counting kernel (same counts, faster,
+    // NPS not comparable to movelist-style CLIs)
+    let count_kernel = args.iter().any(|a| a == "--count" || a == "-c");
 
     // default queue: IOLJSZT repeating
     let queue_pieces = [
@@ -89,7 +99,11 @@ fn main() {
             println!("\nDepth {} (divide):", depth);
             perft_divide(&state, &queue[..depth], depth);
         } else {
-            let count = perft(&state, &queue[..depth], depth);
+            let count = if count_kernel {
+                fusion_engine::perft::perft(&state.board, 0, depth)
+            } else {
+                perft(&state, &queue[..depth], depth)
+            };
             let elapsed = start.elapsed();
             println!("Depth {}: {} ({:.3}s)", depth, count, elapsed.as_secs_f64());
         }

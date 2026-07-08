@@ -3,11 +3,9 @@ use wasm_bindgen::prelude::*;
 use crate::board::Board;
 use crate::header::COL_NB;
 
-// ---------------------------------------------------------------------------
 // Board row ↔ column conversion
 // Board.rows[y] (u16): bit x set if cell (x,y) is filled
 // WASM rows[y] (u64): bit x set if cell (x,y) is filled (same semantics, wider type)
-// ---------------------------------------------------------------------------
 
 pub(crate) fn board_from_row_bitmasks(rows: &[u64]) -> Board {
     let mut board = Board::new();
@@ -42,9 +40,7 @@ fn board_to_row_bitmasks(board: &Board) -> Vec<u64> {
     rows
 }
 
-// ---------------------------------------------------------------------------
 // JsBoard
-// ---------------------------------------------------------------------------
 
 #[wasm_bindgen]
 pub struct JsBoard {

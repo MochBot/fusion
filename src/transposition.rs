@@ -59,7 +59,7 @@ impl Default for ZobristKeys {
     }
 }
 
-/// Cached static ZobristKeys — initialized once, reused across all search calls.
+/// Cached static ZobristKeys - initialized once, reused across all search calls.
 /// Avoids re-computing 400 random keys per find_best_move invocation.
 pub(crate) fn get_zobrist_keys() -> &'static ZobristKeys {
     use std::sync::OnceLock;

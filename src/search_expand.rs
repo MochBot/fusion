@@ -5,6 +5,7 @@ use crate::eval::{evaluate, EvalWeights};
 use crate::header::{Move, Piece};
 use crate::movegen::generate_search;
 use crate::search_config::{SearchExpansionContext, SearchNode};
+use crate::search_config::{MAX_DEPTH_FACTOR, POLICY_BONUS_WEIGHT};
 use crate::state::{
     ClearEvent, ClearType, CoachingState, FatalityState, GameState, ObligationState, PhaseState,
     SurgeState, TransitionObservation,
@@ -760,19 +761,7 @@ fn evaluate_child_state(
         coaching,
         ctx,
     ) {
-        let heuristic_tail = if ctx.config.heuristic_fallback_weight > 0.0 {
-            ctx.config.heuristic_fallback_weight
-                * assemble_composite(
-                    0.0,
-                    fallback_attack,
-                    fallback_chain,
-                    fallback_context,
-                    ctx.config,
-                )
-        } else {
-            0.0
-        };
-        let score = value_score + ctx.config.policy_bonus_weight * policy_score + heuristic_tail;
+        let score = value_score + POLICY_BONUS_WEIGHT * policy_score;
         return ChildEval {
             score,
             board_score: value_score,
@@ -794,7 +783,6 @@ fn evaluate_child_state(
         fallback_attack,
         fallback_chain,
         fallback_context,
-        ctx.config,
     );
     ChildEval {
         score,
@@ -995,7 +983,7 @@ pub(crate) fn expand_node(
 
     let depth_factor = (parent.path.len() as f32 + 1.0)
         .sqrt()
-        .min(ctx.config.max_depth_factor);
+        .min(MAX_DEPTH_FACTOR);
 
     for (action, policy_score) in actions.into_iter().zip(policy_scores) {
         let mut result_board = parent.board.clone();
@@ -1470,24 +1458,19 @@ clear:43
 27138:3231920948:1:1077936128:3
 27202:3229194648:1:1077936128:3";
 
-        #[cfg(not(feature = "packed_movegen"))]
-        assert_eq!(actual, expected);
-        #[cfg(feature = "packed_movegen")]
-        {
-            let normalize = |s: &str| -> String {
-                s.split("\n--\n")
-                    .map(|section| {
-                        let mut lines: Vec<&str> = section.lines().collect();
-                        if lines.len() > 1 {
-                            lines[1..].sort_unstable();
-                        }
-                        lines.join("\n")
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n--\n")
-            };
-            assert_eq!(normalize(&actual), normalize(&expected));
-        }
+        let normalize = |s: &str| -> String {
+            s.split("\n--\n")
+                .map(|section| {
+                    let mut lines: Vec<&str> = section.lines().collect();
+                    if lines.len() > 1 {
+                        lines[1..].sort_unstable();
+                    }
+                    lines.join("\n")
+                })
+                .collect::<Vec<_>>()
+                .join("\n--\n")
+        };
+        assert_eq!(normalize(&actual), normalize(&expected));
     }
 
     #[test]

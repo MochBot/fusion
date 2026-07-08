@@ -760,7 +760,7 @@ Canonical ledger for every saturation benchmark attempt in `fusion-engine/traini
 - Interpretation: the A10 branch is compute-dominated at these tuned loader settings, so pushing batch size higher does not max the card in a useful way; it just raises memory pressure without improving throughput.
 - Practical takeaway: the global ranking remains **B200 Attempt 013 > A10 Attempt 017 > L4 Attempt 015**. If the goal is absolute throughput, stay on B200 at `12288 / 8 / 6`; if the goal is cheaper-card efficiency, the best validated A10 point is `8192 / 8 / 6`.
 
-## Stage 6 — B200 high-pressure falsification
+## Stage 6 - B200 high-pressure falsification
 
 - Purpose: test whether the current single-instance benchmark path can materially exceed Attempt 013 by pushing batch pressure far above the practical knee while holding the best loader settings fixed.
 - Rationale: Oracle judged that blindly chasing ~120 GiB reserved VRAM is probably wasteful on this benchmark path, but recommended one clean larger-batch falsification before concluding the path is intrinsically too small. Stage 6 therefore uses only B200 and changes only `FUSION_PROBE_BATCH_SIZE`, keeping `FUSION_PROBE_NUM_WORKERS=8` and `FUSION_PROBE_PREFETCH_FACTOR=6` fixed.
@@ -852,7 +852,7 @@ Canonical ledger for every saturation benchmark attempt in `fusion-engine/traini
 - Interpretation: for this single-instance benchmark path, chasing much higher B200 memory occupancy with batch size alone is not productive. The useful B200 optimum remains **Attempt 013 / batch_size=12288 / num_workers=8 / prefetch_factor=6**.
 - Next step returns to the cheaper-card branch: tune the A10 locally with Attempts 017 and 018 rather than continue escalating B200 pressure.
 
-## Stage 7 — B200 host-input maximization
+## Stage 7 - B200 host-input maximization
 
 - Purpose: maximize **input throughput** for the current single-instance B200 benchmark path rather than chasing raw VRAM occupancy.
 - Rationale: the benchmark code and the recorded attempts show that larger batch sizes pushed `data_wait_s` and `data_fraction` sharply upward without allocator retries or OOMs, which means the next limiter is the host-side feeder path (`np.memmap` -> per-sample CPU copies -> DataLoader workers -> pinned-memory handoff). The current best point remains Attempt 013 (`B200 / batch_size=12288 / num_workers=8 / prefetch_factor=6`), so Stage 7 keeps that compute point fixed and tests whether additional host resources can feed it faster.

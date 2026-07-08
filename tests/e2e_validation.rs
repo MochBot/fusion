@@ -3,7 +3,7 @@
 //! composite channel scores, insight tags, and move recommendations for
 //! expert analysis.
 
-use direct_cobra_copy::{
+use fusion_engine::{
     analysis::{compute_sigmoid_c, detect_insights, InsightDetectorInput, PlayerSkill, SIGMOID_K},
     board::{Board, FULL_ROW},
     eval::{evaluate, EvalWeights},
@@ -12,7 +12,7 @@ use direct_cobra_copy::{
     state::GameState,
 };
 
-// ── Board helpers ──────────────────────────────────────────────────────
+// Board helpers
 
 fn board_from_bottom_rows(bottom_rows: &[u16]) -> Board {
     assert!(
@@ -62,7 +62,7 @@ fn weights() -> EvalWeights {
     EvalWeights::default()
 }
 
-// ── Scenario definitions ──────────────────────────────────────────────
+// Scenario definitions
 
 struct Scenario {
     name: &'static str,
@@ -89,7 +89,7 @@ impl Scenario {
 
 fn build_scenarios() -> Vec<Scenario> {
     vec![
-        // ── 1. Clean flat board with T piece ──
+        // 1. Clean flat board with T piece
         // Should prefer T-spin setup or clean placement
         Scenario {
             name: "clean_flat_t_setup",
@@ -107,7 +107,7 @@ fn build_scenarios() -> Vec<Scenario> {
                 Attack score should be moderate if T-spin detected.",
         },
 
-        // ── 2. I-piece with deep well (col 9) ──
+        // 2. I-piece with deep well (col 9)
         // Classic Tetris quad setup: exactly 4 rows so I-piece completes all 4
         Scenario {
             name: "quad_well_i_piece",
@@ -128,7 +128,7 @@ fn build_scenarios() -> Vec<Scenario> {
                 dramatically (4 rows cleared to empty).",
         },
 
-        // ── 3. Active combo with S piece ──
+        // 3. Active combo with S piece
         // Mid-combo, should maintain chain
         Scenario {
             name: "active_combo_maintain",
@@ -150,7 +150,7 @@ fn build_scenarios() -> Vec<Scenario> {
                 ChainBreak insight should NOT fire if combo is maintained.",
         },
 
-        // ── 4. Garbage cheese board with J piece ──
+        // 4. Garbage cheese board with J piece
         // Downstacking scenario
         Scenario {
             name: "garbage_downstack",
@@ -174,7 +174,7 @@ fn build_scenarios() -> Vec<Scenario> {
                 better at cleaning than chosen move.",
         },
 
-        // ── 5. Near-death survival with O piece ──
+        // 5. Near-death survival with O piece
         // Stack at row 16+, survival mode
         Scenario {
             name: "near_death_survival",
@@ -202,12 +202,12 @@ fn build_scenarios() -> Vec<Scenario> {
             hold: None,
             combo: 0,
             b2b: 0,
-            expert_expectation: "Pure survival. Must not top out. board_score is paramount — \
+            expert_expectation: "Pure survival. Must not top out. board_score is paramount - \
                 attack doesn't matter when you're about to die. \
                 Engine should prioritize height reduction.",
         },
 
-        // ── 6. B2B active with L piece, T-spin opportunity ──
+        // 6. B2B active with L piece, T-spin opportunity
         Scenario {
             name: "b2b_tspin_opportunity",
             description: "3-row stack with T-slot, b2b=2, L piece (hold T available).",
@@ -226,7 +226,7 @@ fn build_scenarios() -> Vec<Scenario> {
                 If engine uses L instead, attack_window_miss may fire.",
         },
 
-        // ── 7. Perfect flat board, Z piece ──
+        // 7. Perfect flat board, Z piece
         // Test that engine doesn't over-prioritize attack on clean board
         Scenario {
             name: "flat_clean_z_piece",
@@ -242,10 +242,10 @@ fn build_scenarios() -> Vec<Scenario> {
             b2b: 0,
             expert_expectation: "With 2 full rows, any placement that doesn't create holes is fine. \
                 board_score should remain stable. attack_score low (no clears from Z placement). \
-                No insights should fire — this is a neutral position.",
+                No insights should fire - this is a neutral position.",
         },
 
-        // ── 8. High combo staircase with clearable setup ──
+        // 8. High combo staircase with clearable setup
         // combo=5, tall stack where I-piece must clear to avoid height penalty
         Scenario {
             name: "combo_break_scenario",
@@ -275,7 +275,7 @@ fn build_scenarios() -> Vec<Scenario> {
     ]
 }
 
-// ── Analysis runner ───────────────────────────────────────────────────
+// Analysis runner
 
 struct ScenarioResult {
     name: String,
@@ -310,7 +310,7 @@ struct ScenarioResult {
     win_prob_after: f32,
 }
 
-fn format_move(m: &direct_cobra_copy::search::SearchResult) -> String {
+fn format_move(m: &fusion_engine::search::SearchResult) -> String {
     let mv = m.best_move;
     format!(
         "{}@r{:?}({},{}){}{}",
@@ -339,7 +339,7 @@ fn piece_name(p: Piece) -> &'static str {
     }
 }
 
-fn format_root_move(mv: &direct_cobra_copy::header::Move) -> String {
+fn format_root_move(mv: &fusion_engine::header::Move) -> String {
     format!(
         "{}@r{:?}({},{})",
         piece_name(mv.piece()),
@@ -446,7 +446,7 @@ fn run_scenario(scenario: &Scenario, config: &SearchConfig) -> Option<ScenarioRe
     })
 }
 
-// ── Test runner ────────────────────────────────────────────────────────
+// Test runner
 
 #[test]
 fn e2e_composite_scoring_validation() {
@@ -456,7 +456,7 @@ fn e2e_composite_scoring_validation() {
 
     for scenario in &scenarios {
         eprintln!("\n{}", "=".repeat(60));
-        eprintln!("Running: {} — {}", scenario.name, scenario.description);
+        eprintln!("Running: {} - {}", scenario.name, scenario.description);
 
         match run_scenario(scenario, &config) {
             Some(r) => {
@@ -508,7 +508,7 @@ fn e2e_composite_scoring_validation() {
     );
     eprintln!("{}", "=".repeat(60));
 
-    // ── Sanity assertions ──
+    // Sanity assertions
     // Every scenario should produce a result
     assert_eq!(
         results.len(),
@@ -556,7 +556,7 @@ fn e2e_composite_scoring_validation() {
         );
     }
 
-    // ── Scenario-specific assertions ──
+    // Scenario-specific assertions
 
     // Quad well: I piece should clear lines (high attack)
     let quad = results

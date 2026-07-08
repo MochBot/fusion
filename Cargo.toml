@@ -1,5 +1,5 @@
 [package]
-name = "direct-cobra-copy"
+name = "fusion-engine"
 version = "0.1.0"
 edition = "2021"
 
@@ -15,20 +15,8 @@ name = "perft_cli"
 path = "src/bin/perft_cli.rs"
 
 [[bin]]
-name = "profile_perft"
-path = "src/bin/profile_perft.rs"
-
-[[bin]]
 name = "bench_perft"
 path = "src/bin/bench_perft.rs"
-
-[[bin]]
-name = "calibrate_skill_buckets"
-path = "src/bin/calibrate_skill_buckets.rs"
-
-[[bin]]
-name = "replay_validation_gate"
-path = "src/bin/replay_validation_gate.rs"
 
 [[bin]]
 name = "generate_policy_value_labels"
@@ -39,14 +27,6 @@ name = "policy_value_runtime_parity_fixture"
 path = "src/bin/policy_value_runtime_parity_fixture.rs"
 
 [[bin]]
-name = "policy_value_infer_bench"
-path = "src/bin/policy_value_infer_bench.rs"
-
-[[bin]]
-name = "bench_search_throughput"
-path = "src/bin/bench_search_throughput.rs"
-
-[[bin]]
 name = "bench_smear"
 path = "src/bin/bench_smear.rs"
 
@@ -54,16 +34,6 @@ path = "src/bin/bench_smear.rs"
 default = ["rayon"]
 rayon = ["dep:rayon"]
 wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:console_error_panic_hook"]
-# Opt-in beam-search order-independence (Option D). Off by default and absent
-# from the wasm build so shipped behaviour matches the deployed scalar-BFS order.
-deterministic_beam_tiebreak = []
-# Opt-in packed-movegen fast path. Set-equal to the scalar engine for the pieces
-# and heights it covers (I/S/Z/L/J up to height 24; force falls back to the
-# engine on slow-seed boards), verified legal-complete in the movegen tests; it
-# differs from the engine only in emission order, which every consumer tolerates.
-# Off by default so builds opt in explicitly; enabling routes both the search
-# beam and the labeler through the packed generator.
-packed_movegen = []
 
 [dependencies]
 rayon = { version = "1.10", optional = true }

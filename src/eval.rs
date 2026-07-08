@@ -40,18 +40,17 @@ impl Default for EvalWeights {
 }
 
 #[inline]
-fn column_heights(board: &Board) -> [usize; COL_NB] {
+fn column_heights(board: &Board) -> ([usize; COL_NB], usize) {
     let mut heights = [0usize; COL_NB];
+    let mut occupied = 0u64;
     for (x, h) in heights.iter_mut().enumerate() {
-        // Use leading_zeros on cached column bitboard: O(1) per column vs O(40) scan
+        // O(1) per column via leading_zeros on cached column bitboard
         let col = board.cols[x];
-        *h = if col == 0 {
-            0
-        } else {
-            (64 - col.leading_zeros()) as usize
-        };
+        occupied |= col;
+        *h = 64 - col.leading_zeros() as usize;
     }
-    heights
+    let max_h = 64 - occupied.leading_zeros() as usize;
+    (heights, max_h)
 }
 
 /// count holes and covered cells per column
@@ -122,7 +121,7 @@ fn holes_and_covered_oracle(board: &Board, heights: &[usize; COL_NB]) -> (i32, i
     (holes, covered)
 }
 
-/// bumpiness — sum of |h[i]-h[i+1]| and (h[i]-h[i+1])^2
+/// bumpiness: sum of |h[i]-h[i+1]| and (h[i]-h[i+1])^2
 /// skips the well column (deepest col with both neighbors taller)
 #[inline]
 fn bumpiness(heights: &[usize; COL_NB], well_col: Option<usize>) -> (i32, i32) {
@@ -144,27 +143,49 @@ fn bumpiness(heights: &[usize; COL_NB], well_col: Option<usize>) -> (i32, i32) {
     (bump, bump_sq)
 }
 
-/// row transitions — count bit transitions in each occupied row
-/// XOR adjacent cells, count 1-bits
+/// row transitions. XOR adjacent cells, count 1-bits; empty rows = 0.
+///
+/// SWAR over 4 rows per u64 lane group. Row values use 10 bits;
+/// `v + 0x7FFF` per lane sets bit 15 iff nonzero without carrying
+/// into the neighbor. Internal transitions collapse into one popcount.
+/// Rows >= max_height are empty by definition and self-exclude.
 #[inline]
 fn row_transitions(board: &Board, max_height: usize) -> i32 {
+    const LANE_LSB: u64 = 0x0001_0001_0001_0001;
+    const LANE_LOW9: u64 = 0x01FF_01FF_01FF_01FF;
+    const LANE_SHIFT_GUARD: u64 = 0x7FFF_7FFF_7FFF_7FFF;
+
+    let mut total = 0u32;
+    let mut y = 0usize;
+    while y < max_height {
+        let v = (board.rows[y] as u64)
+            | (board.rows[y + 1] as u64) << 16
+            | (board.rows[y + 2] as u64) << 32
+            | (board.rows[y + 3] as u64) << 48;
+        let nz = ((v + LANE_SHIFT_GUARD) >> 15) & LANE_LSB;
+        let xor = v ^ ((v >> 1) & LANE_SHIFT_GUARD);
+        total += (xor & LANE_LOW9).count_ones();
+        total += ((!v) & LANE_LSB & nz).count_ones();
+        total += ((!(v >> 9)) & LANE_LSB & nz).count_ones();
+        y += 4;
+    }
+    total as i32
+}
+
+#[cfg(test)]
+fn row_transitions_oracle(board: &Board, max_height: usize) -> i32 {
     let mut total = 0i32;
     for y in 0..max_height {
         let row = board.row(y);
         if row == 0 {
             continue;
         }
-        // transitions within the row: XOR row with shifted version
-        // also count wall transitions (bit 0 and bit 9 borders)
         let shifted = row >> 1;
         let xor = row ^ shifted;
-        // count internal transitions (bits 0..8 of xor)
         total += (xor & 0x1FF).count_ones() as i32;
-        // left wall transition
         if row & 1 == 0 {
             total += 1;
         }
-        // right wall transition
         if row & (1 << 9) == 0 {
             total += 1;
         }
@@ -202,15 +223,12 @@ fn find_well(heights: &[usize; COL_NB]) -> (Option<usize>, i32) {
 
 /// Detect T-spin double overhang setups.
 ///
-/// A TSD requires a T-shaped cavity: an overhang cell (filled) with empty
-/// space below it, flanked by a wall on one side. We scan for the minimal
-/// geometric signature:
-///
+/// Scans for the minimal geometric signature:
 ///   col c:   filled at h, empty at h-1  (overhang)
-///   col c±1: filled at h-1 AND h        (wall providing the T-slot)
-///   col c:   empty at h-2 OR h-2 < 0    (cavity below overhang)
+///   col c+/-1: filled at h-1 AND h (wall for the T-slot)
+///   col c:   empty at h-2 OR h-2 < 0 (cavity)
 ///
-/// Returns count of detected TSD-ready overhangs (0, 1, or rarely 2).
+/// Returns count of detected TSD-ready overhangs (0, 1, or 2).
 #[inline]
 fn count_tsd_overhangs(board: &Board, heights: &[usize; COL_NB]) -> i32 {
     let mut count = 0i32;
@@ -314,10 +332,6 @@ fn count_tsd_overhangs_oracle(board: &Board, heights: &[usize; COL_NB]) -> i32 {
 
 /// Detect 4-wide combo well on either board edge.
 ///
-/// A 4-wide well exists when 4 consecutive edge columns (0-3 or 6-9) are
-/// all significantly lower than the average of the remaining 6 columns.
-/// The depth score scales with how much lower the well columns are.
-///
 /// Returns a continuous score (0.0 if no 4-wide detected).
 #[inline]
 fn four_wide_well_score(heights: &[usize; COL_NB]) -> f32 {
@@ -347,8 +361,7 @@ fn four_wide_well_score(heights: &[usize; COL_NB]) -> f32 {
 }
 
 pub fn evaluate(board: &Board, weights: &EvalWeights) -> f32 {
-    let heights = column_heights(board);
-    let max_h = heights.iter().copied().max().unwrap_or(0);
+    let (heights, max_h) = column_heights(board);
 
     let (holes, covered) = holes_and_covered(board, &heights);
     let (well_col, well_depth) = find_well(&heights);
@@ -552,7 +565,7 @@ mod tests {
     }
 
     fn check_holes_covered_parity(board: &Board, label: &str) {
-        let heights = column_heights(board);
+        let (heights, _) = column_heights(board);
         assert_eq!(
             holes_and_covered(board, &heights),
             holes_and_covered_oracle(board, &heights),
@@ -562,7 +575,7 @@ mod tests {
     }
 
     fn check_tsd_overhang_parity(board: &Board, label: &str) {
-        let heights = column_heights(board);
+        let (heights, _) = column_heights(board);
         assert_eq!(
             count_tsd_overhangs(board, &heights),
             count_tsd_overhangs_oracle(board, &heights),
@@ -581,6 +594,34 @@ mod tests {
         for case in 0..100_000 {
             let board = random_board(&mut rng, case);
             check_holes_covered_parity(&board, &format!("random case {case}"));
+        }
+    }
+
+    fn check_row_transitions_parity(board: &Board, label: &str) {
+        let (heights, max_h) = column_heights(board);
+        assert_eq!(
+            max_h,
+            heights.iter().copied().max().unwrap_or(0),
+            "{label} fused max_h mismatch"
+        );
+        assert_eq!(
+            row_transitions(board, max_h),
+            row_transitions_oracle(board, max_h),
+            "{label} rows {:?}",
+            board.rows
+        );
+    }
+
+    #[test]
+    fn swar_row_transitions_matches_oracle() {
+        for (case, board) in edge_case_boards().into_iter().enumerate() {
+            check_row_transitions_parity(&board, &format!("edge case {case}"));
+        }
+
+        let mut rng = SplitMix64::new(0x5851_F42D_4C95_7F2D);
+        for case in 0..100_000 {
+            let board = random_board(&mut rng, case);
+            check_row_transitions_parity(&board, &format!("random case {case}"));
         }
     }
 
@@ -655,7 +696,7 @@ mod tests {
         board.rows[4] = 1 << 3;
         board.cols[3] = (1u64 << 0) | (1u64 << 4);
 
-        let heights = column_heights(&board);
+        let (heights, _) = column_heights(&board);
         assert_eq!(heights[3], 5);
         assert_eq!(heights[0], 0);
     }

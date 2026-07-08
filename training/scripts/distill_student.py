@@ -76,7 +76,7 @@ class StudentDistillModule(L.LightningModule):
         self.temperature = temperature
 
     def configure_model(self) -> None:
-        """Compile student network for kernel fusion on B200 (no CUDA Graphs — batch sizes vary)."""
+        """Compile student network for kernel fusion on B200 (no CUDA Graphs - batch sizes vary)."""
         self.student = cast(StudentNet, torch.compile(self.student, mode="default", dynamic=False))
 
     def forward(self, features: torch.Tensor) -> torch.Tensor:

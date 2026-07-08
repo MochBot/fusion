@@ -619,7 +619,7 @@ pub struct Candidate {
     pub immediate: f64,
 }
 
-/// Parity target: compactGmask (rank-dump-recall.ts) — drop cleared rows from gmask VALUES, not a bitmask.
+/// Parity target: compactGmask (rank-dump-recall.ts) - drop cleared rows from gmask VALUES, not a bitmask.
 pub fn compact_gmask_rows(gmask: &[u16; 40], cleared: u64) -> [u16; 40] {
     let mut out = [0u16; 40];
     let mut write = 0usize;
@@ -632,7 +632,7 @@ pub fn compact_gmask_rows(gmask: &[u16; 40], cleared: u64) -> [u16; 40] {
     out
 }
 
-/// Parity target: expand_all_gm enumeration in rankDumpRecallCandidates — one candidate per playable move, no dedup.
+/// Parity target: expand_all_gm enumeration in rankDumpRecallCandidates - one candidate per playable move, no dedup.
 pub fn expand_candidates(s: &FrameRec, piece: i8) -> Vec<Candidate> {
     let Some(p) = piece_from_external(piece) else {
         return Vec::new();
@@ -669,7 +669,7 @@ pub fn expand_candidates(s: &FrameRec, piece: i8) -> Vec<Candidate> {
     out
 }
 
-/// Parity target: injectGarbage (rank-dump-k7-attack.ts) — bottom garbage insert, shift up, mark gmask.
+/// Parity target: injectGarbage (rank-dump-k7-attack.ts) - bottom garbage insert, shift up, mark gmask.
 pub fn inject_garbage(
     rows: &[u16; 40],
     gmask: &[u16; 40],

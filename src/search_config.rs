@@ -14,40 +14,32 @@ thread_local! {
     static SEARCH_MOVE_SCRATCH: RefCell<MoveBuffer> = RefCell::new(MoveBuffer::new());
 }
 
+pub const FUTILITY_DELTA: f32 = 15.0;
+/// Multiplier for the offensive attack term (lines sent, B2B, combo).
+pub const ATTACK_WEIGHT: f32 = 0.50;
+/// Multiplier for the chain maintenance term (offensive momentum).
+pub const CHAIN_WEIGHT: f32 = 0.15;
+/// Multiplier for the context-sensitive term (phase/state modifiers).
+pub const CONTEXT_WEIGHT: f32 = 0.10;
+/// Multiplier for the core board evaluation term.
+pub const BOARD_WEIGHT: f32 = 1.0;
+/// Cap for sqrt(depth) normalization of cumulative attack/chain terms.
+/// sqrt(6) ~= 2.45; depths 7+ treated as depth-6 for scoring.
+pub const MAX_DEPTH_FACTOR: f32 = 2.45;
+pub const POLICY_BONUS_WEIGHT: f32 = 0.10;
+
 pub struct SearchConfig {
     pub beam_width: usize,
     pub depth: usize,
-    pub futility_delta: f32,
     pub time_budget_ms: Option<u64>,
     pub use_tt: bool,
     pub extend_queue_7bag: bool,
     pub attack_config: AttackConfig,
-    /// Multiplier for the offensive attack term. Determines how much weight is given
-    /// to lines sent, B2B, and combo potential in the composite score.
-    pub attack_weight: f32,
-    /// Multiplier for the chain maintenance term. Weight given to sustaining current
-    /// offensive momentum vs board cleanliness.
-    pub chain_weight: f32,
-    /// Multiplier for the context-sensitive term. Applies phase-specific or state-dependent
-    /// score modifiers (e.g. Surge/Fatal multipliers).
-    pub context_weight: f32,
-    /// Multiplier for the core board evaluation term. The primary weight for structural
-    /// cleanliness and height management.
-    pub board_weight: f32,
-    /// Cap for sqrt(depth) normalization of cumulative attack/chain terms.
-    /// Prevents deep paths from over-discounting accumulated offensive value.
-    /// sqrt(6) ≈ 2.45 means depths 1-6 get increasing normalization, depths 7+
-    /// are treated as depth-6 for scoring purposes.
-    pub max_depth_factor: f32,
-    /// Maximum additional depths to extend "loud" nodes (mid-combo, mid-B2B,
-    /// active setup) past the normal depth boundary. Prevents horizon effect
-    /// where investment moves get evaluated before their payoff resolves.
+    /// Max additional depths to extend "loud" nodes (mid-combo, mid-B2B,
+    /// active setup) past normal depth, preventing horizon effect.
     pub quiescence_max_extensions: usize,
-    /// Fraction of beam_width allocated to quiescence extension beam.
-    /// Keeps quiescence cost bounded: 0.15 = top 15% of loud nodes extended.
+    /// Fraction of beam_width for quiescence extension beam (0.15 = top 15%).
     pub quiescence_beam_fraction: f32,
-    pub policy_bonus_weight: f32,
-    pub heuristic_fallback_weight: f32,
     pub policy_guided_expansion_cap: usize,
 }
 
@@ -56,20 +48,16 @@ impl Default for SearchConfig {
         Self {
             beam_width: 800,
             depth: 14,
-            futility_delta: 15.0,
             time_budget_ms: None,
-            use_tt: true,
+            // TT off: 23-28% hit rate, net-negative wall time (-5..-6%
+            // at depths 5/7/14). Cache only pays above ~80% hit rate.
+            // Results identical either way (pinned by
+            // tt_does_not_change_search_result).
+            use_tt: false,
             extend_queue_7bag: true,
             attack_config: AttackConfig::tetra_league(),
-            attack_weight: 0.50,
-            chain_weight: 0.15,
-            context_weight: 0.10,
-            board_weight: 1.0,
-            max_depth_factor: 2.45,
             quiescence_max_extensions: 3,
             quiescence_beam_fraction: 0.15,
-            policy_bonus_weight: 0.10,
-            heuristic_fallback_weight: 0.0,
             policy_guided_expansion_cap: 32,
         }
     }
@@ -85,19 +73,15 @@ pub struct SearchResult {
     pub pv_clear_events: Vec<ClearEvent>,
 }
 
-/// Extended search result that includes per-root-move scores from the final
-/// beam iteration. Each entry maps a root move to the best leaf-node score
-/// achieved by any beam path originating from that root placement.
-/// This enables "free" quality scoring: the player's move score can be looked
-/// up without running a second search.
+/// Extended search result with per-root-move scores from the final beam
+/// iteration. Enables quality scoring without a second search.
 pub struct SearchResultFull {
     pub best: SearchResult,
-    /// (root_move, best_leaf_score) for every root move that survived to the
-    /// final beam. Sorted descending by score. Typically ~34 entries (one per
-    /// legal placement of the current piece).
+    /// (root_move, best_leaf_score) for every root move surviving to the
+    /// final beam, sorted descending. Typically ~34 entries.
     pub root_scores: Vec<(Move, f32)>,
     /// Position complexity: variance of top-10 root_scores.
-    /// Low variance = flat position (dampen severity). High = sharp (amplify).
+    /// Low = flat position (dampen severity). High = sharp (amplify).
     pub position_complexity: f32,
     /// Static board evaluation score.
     pub board_score: f32,
@@ -107,9 +91,8 @@ pub struct SearchResultFull {
     pub chain_score: f32,
     /// Contextual multiplier/penalty.
     pub context_score: f32,
-    /// Cumulative attack value along the best search path.
-    /// Unlike attack_score (which is the leaf node's single-move attack),
-    /// this accumulates all attack values from root to leaf.
+    /// Cumulative attack value along the best search path
+    /// (leaf attack_score is single-move only).
     pub path_attack: f32,
     /// Cumulative chain value along the best search path.
     pub path_chain: f32,
@@ -120,8 +103,7 @@ pub struct SearchResultFull {
     pub fallback_used: bool,
 }
 
-/// Shared context for node expansion functions (`gen_and_eval_root`, `expand_node`).
-/// Groups evaluation weights, attack config, depth tracking, and transposition table refs.
+/// Shared context for node expansion (weights, attack config, depth, TT).
 pub(crate) struct SearchExpansionContext<'a> {
     pub config: &'a SearchConfig,
     pub current_beam_width: usize,
@@ -145,7 +127,6 @@ impl SearchExpansionContext<'_> {
 }
 
 /// Parameters for a single beam search iteration.
-/// Groups game state, queue, configuration, and search infrastructure.
 pub(crate) struct SearchIterationParams<'a> {
     pub state: &'a GameState,
     pub config: &'a SearchConfig,
@@ -197,9 +178,8 @@ pub struct SearchNode {
 }
 
 impl SearchNode {
-    /// A node is "loud" if it has unresolved tactical activity that makes
-    /// leaf evaluation unreliable — analogous to chess quiescence search
-    /// refusing to evaluate mid-capture positions.
+    /// A node is "loud" if it has unresolved tactical activity making
+    /// leaf evaluation unreliable (analogous to chess quiescence search).
     #[inline]
     pub fn is_loud(&self) -> bool {
         self.combo > 0 || self.b2b > 0 || !self.path_clear_events.is_empty()

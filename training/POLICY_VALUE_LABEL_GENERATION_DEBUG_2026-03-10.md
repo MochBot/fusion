@@ -1,4 +1,4 @@
-# Policy/Value Label Generation Debug Report — 2026-03-10
+# Policy/Value Label Generation Debug Report - 2026-03-10
 
 ## Exact observed failure state
 

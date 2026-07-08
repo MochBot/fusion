@@ -6,14 +6,14 @@ Last updated: 2026-03-09 (UTC)
 
 Phase 1 replaces legacy proxy teacher supervision with two explicit supervision lanes:
 
-- **Phase 1a — search-aligned control lane** for tactical move-quality and value strength
-- **Phase 1b — player-context lane** for elite-player next-action and trajectory intent
+- **Phase 1a - search-aligned control lane** for tactical move-quality and value strength
+- **Phase 1b - player-context lane** for elite-player next-action and trajectory intent
 
 The core contract is that these lanes stay semantically separate. Search truth and player-intent truth must never be collapsed into one unlabeled target.
 
 ## Lane Definitions
 
-### Phase 1a — Search-Aligned Control Lane
+### Phase 1a - Search-Aligned Control Lane
 
 Phase 1a uses the current search engine as the first oracle.
 
@@ -22,7 +22,7 @@ Phase 1a uses the current search engine as the first oracle.
 
 This is the strength-first default for immediate move quality. Replay behavior and human-likeness are not the normative target in this lane.
 
-### Phase 1b — Player-Context Lane
+### Phase 1b - Player-Context Lane
 
 Phase 1b uses elite-player replay decisions as the primary policy/trajectory signal.
 

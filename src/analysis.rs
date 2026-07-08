@@ -5,7 +5,10 @@ use crate::calibration::{
 };
 use crate::eval::{evaluate, EvalWeights};
 use crate::header::Move;
-use crate::search::{find_best_move_with_scores, SearchConfig};
+use crate::search::find_best_move_with_scores;
+use crate::search_config::{
+    SearchConfig, ATTACK_WEIGHT, BOARD_WEIGHT, CHAIN_WEIGHT, CONTEXT_WEIGHT,
+};
 use crate::state::{CoachingState, FatalityState, GameState, ObligationState, SurgeState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,9 +100,8 @@ pub fn normalize_meter(raw_eval: f32) -> f32 {
     (clamped / 15.0) * 100.0
 }
 
-/// Player skill profile derived from TetraStats-style metrics.
-/// Used to shift the sigmoid inflection point so that severity
-/// classifications are relative to the player's skill tier.
+/// Player skill profile (TetraStats-style metrics).
+/// Shifts the sigmoid inflection point per skill tier.
 #[derive(Debug, Clone, Copy)]
 pub struct PlayerSkill {
     /// Pieces per second (mechanical speed)
@@ -121,74 +123,60 @@ impl Default for PlayerSkill {
     }
 }
 
-/// Sigmoid steepness — controls sharpness of win-probability transitions.
-/// Higher k = sharper transitions around the inflection point.
+/// Sigmoid steepness. Higher k = sharper win-probability transitions.
 pub const SIGMOID_K: f32 = 0.10;
 
-/// Base inflection point for the sigmoid (score where win_prob = 50%).
+/// Base inflection point (score where win_prob = 50%).
 /// Shifted by player skill via `compute_sigmoid_c`.
 const SIGMOID_C_BASE: f32 = -13.5;
 
 /// Compute skill-adaptive sigmoid inflection point.
 ///
-/// Higher-skilled players maintain cleaner boards (higher eval scores),
-/// so their inflection point shifts deeper negative — they tolerate
-/// worse absolute positions before "losing". The formula:
+/// Higher-skilled players tolerate worse absolute positions before
+/// "losing", so their inflection shifts deeper negative. The formula:
 ///
-///   c = BASE + α·ln(pps) + β·app + γ·dsp
-///
-/// - ln(pps): mechanical recovery speed (diminishing returns via log)
-/// - app: attack efficiency — high APP = cleaner boards, deeper tolerance
-/// - dsp: garbage clearing — recovers from negative eval faster
+///   c = BASE + alpha * ln(pps) + beta * app + gamma * dsp
 ///
 /// Calibrated against TetraStats rank data (D through X+):
-///   D (pps=0.69): c ≈ -13.5 + 1.30 + (-0.60) + (-0.50) ≈ -13.3
-///   S (pps=1.57): c ≈ -13.5 + (-1.58) + (-0.96) + (-1.00) ≈ -17.0
-///   X (pps=2.81): c ≈ -13.5 + (-3.62) + (-1.50) + (-1.40) ≈ -20.0
-///   X+(pps=3.27): c ≈ -13.5 + (-4.15) + (-1.50) + (-1.75) ≈ -20.9
+///   D (pps=0.69): c ~= -13.3
+///   S (pps=1.57): c ~= -17.0
+///   X (pps=2.81): c ~= -20.0
+///   X+(pps=3.27): c ~= -20.9
 pub fn compute_sigmoid_c(skill: &PlayerSkill) -> f32 {
-    const ALPHA: f32 = -3.5; // ln(pps) coefficient (attenuated to reduce X+ false positives)
+    const ALPHA: f32 = -3.5; // ln(pps) coefficient (attenuated for X+)
     const BETA: f32 = -2.0; // app coefficient
-    const GAMMA: f32 = -5.0; // dsp coefficient (reduced from -8.0 to prevent over-shifting)
+    const GAMMA: f32 = -5.0; // dsp coefficient (reduced from -8.0)
 
     SIGMOID_C_BASE + ALPHA * skill.pps.max(0.1).ln() + BETA * skill.app + GAMMA * skill.dsp
 }
 
-/// Convert a search score to win/survival probability via sigmoid.
-/// k controls steepness (higher = sharper transitions),
-/// c is the inflection point (score where probability = 50%).
+/// Convert search score to win/survival probability via sigmoid.
+/// k = steepness, c = inflection point (50% probability).
 pub fn win_prob(search_score: f32, k: f32, c: f32) -> f32 {
     1.0 / (1.0 + (-k * (search_score - c)).exp())
 }
 
 /// Classify severity by win-probability drop between best and actual move.
 ///
-/// Thresholds calibrated for Tetris eval scale (wider than chess due to
-/// board-eval variance across placement quality):
-///   ≥25% drop = Blunder (catastrophic misplacement)
-///   ≥12% drop = Mistake (significant quality loss)
-///   ≥ 6% drop = Inaccuracy (suboptimal but recoverable)
+/// Thresholds calibrated for Tetris eval scale:
+///   >=25% drop = Blunder
+///   >=12% drop = Mistake
+///   >= 6% drop = Inaccuracy
 ///
-/// **Dual-metric fallback (KataGo-inspired):** When both scores are deep
-/// in the sigmoid tail (both < c−TAIL_MARGIN or both > c+TAIL_MARGIN),
-/// the sigmoid is flat and WP drop ≈ 0 regardless of actual quality
-/// difference. In this region, we fall back to raw score delta
-/// classification, which is linear and still discriminative.
-///
-/// Use `compute_sigmoid_c` to get skill-adaptive `c`, or pass
-/// `SIGMOID_K` / manual `c` for fixed-skill analysis.
+/// When both scores are deep in the sigmoid tail (both < c - TAIL_MARGIN
+/// or both > c + TAIL_MARGIN), the sigmoid is flat and WP drop ~= 0.
+/// Falls back to raw score delta classification in that region.
 pub fn classify_win_prob_drop(best_score: f32, actual_score: f32, k: f32, c: f32) -> Severity {
     // Tail detection: both scores in sigmoid flat zone where WP drop
-    // is uninformative (both far below or far above inflection point c).
+    // is uninformative (both far below or far above inflection point).
     const TAIL_MARGIN: f32 = 20.0;
     let in_lower_tail = best_score < c - TAIL_MARGIN && actual_score < c - TAIL_MARGIN;
     let in_upper_tail = best_score > c + TAIL_MARGIN && actual_score > c + TAIL_MARGIN;
 
     if in_lower_tail || in_upper_tail {
-        // Raw score delta — linear metric where sigmoid is flat.
-        // Thresholds wider than WP-drop because raw scores have larger
-        // variance. In tail regions, score gaps of 1-2 are placement-order
-        // noise yielding the same practical outcome.
+        // Raw score delta, linear metric where sigmoid is flat.
+        // Thresholds wider than WP-drop: raw scores have larger variance
+        // and small gaps in garbage states are placement-order noise.
         let raw_delta = (best_score - actual_score).max(0.0);
         return classify_raw_delta(raw_delta);
     }
@@ -210,9 +198,7 @@ pub fn classify_win_prob_drop(best_score: f32, actual_score: f32, k: f32, c: f32
 }
 
 /// Raw score delta classification for sigmoid tail regions.
-/// Thresholds wider than WP-drop because raw scores have larger variance
-/// and small gaps (1-2 points) in garbage/near-death states are often
-/// placement-order noise with identical practical outcome.
+/// Thresholds wider than WP-drop due to larger raw-score variance.
 fn classify_raw_delta(delta: f32) -> Severity {
     if delta >= 8.0 {
         Severity::Blunder
@@ -225,9 +211,8 @@ fn classify_raw_delta(delta: f32) -> Severity {
     }
 }
 
-/// Coaching-state ΔP multiplier. Amplifies the win-probability drop
-/// based on the coaching state *after* the player's move.
-/// The worst (highest-multiplier) dimension wins.
+/// Coaching-state DP multiplier. Amplifies the WP drop based on
+/// the coaching state after the player's move.
 pub fn coaching_dp_multiplier(coaching_after: &CoachingState) -> f32 {
     let fatality_mul: f32 = match coaching_after.fatality {
         FatalityState::Fatal => 1.5,
@@ -286,20 +271,11 @@ pub fn shape_context_modifier(raw_modifier: f32) -> f32 {
     raw_modifier.clamp(-1.0, 1.0)
 }
 
-pub fn assemble_composite(
-    board: f32,
-    attack: f32,
-    chain: f32,
-    context: f32,
-    config: &SearchConfig,
-) -> f32 {
-    board * config.board_weight
-        + attack * config.attack_weight
-        + chain * config.chain_weight
-        + context * config.context_weight
+pub fn assemble_composite(board: f32, attack: f32, chain: f32, context: f32) -> f32 {
+    board * BOARD_WEIGHT + attack * ATTACK_WEIGHT + chain * CHAIN_WEIGHT + context * CONTEXT_WEIGHT
 }
 
-/// Input for MVP insight detection — compares best node's composite channels
+/// Input for insight detection. Compares best node composite channels
 /// against the player's actual move outcome.
 #[derive(Debug, Clone)]
 pub struct InsightDetectorInput {
@@ -340,7 +316,7 @@ pub fn detect_insights(input: &InsightDetectorInput) -> Vec<InsightResult> {
         .unwrap_or(0.0);
 
     // --- AttackWindowMiss ---
-    // Best path had a significant attack opportunity that the player's move missed.
+    // Best path had a significant attack opportunity the player missed.
     if input.best_attack_score > ATTACK_WINDOW_THRESHOLD && eval_loss > ATTACK_WINDOW_MIN_LOSS {
         let delta = input.best_attack_score;
         let severity = (delta / 5.0).clamp(0.0, 1.0);
@@ -352,10 +328,8 @@ pub fn detect_insights(input: &InsightDetectorInput) -> Vec<InsightResult> {
     }
 
     // --- ChainBreak ---
-    // Best path maintained a combo (chain_score > threshold) but player broke it
-    // (combo dropped to 0 after their move). Only fires when the player had an
-    // active combo before their move (combo_before > 0) to avoid flagging moves
-    // where no combo was in progress.
+    // Best path maintained a combo (chain_score > threshold) but player
+    // broke it (combo dropped to 0). Only fires with active pre-move combo.
     if input.best_chain_score > CHAIN_RELEVANCE_THRESHOLD
         && input.actual_combo_after == 0
         && input.actual_combo_before > 0
@@ -370,8 +344,7 @@ pub fn detect_insights(input: &InsightDetectorInput) -> Vec<InsightResult> {
     }
 
     // --- DownstackEfficiencyMiss ---
-    // Best path had a significantly better board score than what the player achieved.
-    // Only fires when the player's board actually got worse (negative delta) while
+    // Best path had a better board score; player's board got worse while
     // best would have improved it.
     let board_gap = input.best_board_score - input.board_eval_delta;
     if board_gap > DOWNSTACK_BOARD_GAP && input.board_eval_delta < 0.0 {
@@ -487,8 +460,8 @@ fn analyze_move_inner(
             Some(full) => {
                 let best_search_score = full.best.score;
 
-                // Look up player's actual move in root_scores (free quality scoring).
-                // root_scores contains max leaf-node score per root move from beam search.
+                // Look up player's actual move in root_scores.
+                // root_scores has max leaf-node score per root move.
                 let actual_search_score = full
                     .root_scores
                     .iter()
@@ -501,7 +474,7 @@ fn analyze_move_inner(
                 let (loss, sev) = match actual_search_score {
                     Some(actual_s) => {
                         let loss = (best_search_score - actual_s).max(0.0);
-                        // Task 6: Scale ΔP by coaching state multiplier BEFORE classification
+                        // Scale DP by coaching state multiplier before classification
                         let dp_mul = coaching_dp_multiplier(&coaching_after);
                         let amplified_actual = best_search_score - loss * dp_mul;
                         let sev = classify_win_prob_drop(best_search_score, amplified_actual, k, c);
@@ -515,9 +488,8 @@ fn analyze_move_inner(
                         (loss, max_severity(sev, coaching_sev))
                     }
                     None => {
-                        // Actual move not in root_scores — can't classify quality.
-                        // This can happen when forced move is dropped from beam or
-                        // frame context has a piece ordering mismatch.
+                        // Actual move not in root_scores (dropped from beam or
+                        // piece ordering mismatch).
                         #[cfg(debug_assertions)]
                         eprintln!(
                             "[analysis] actual move (piece={:?}, raw={}) not found in root_scores ({} entries)",
@@ -944,16 +916,15 @@ mod tests {
 
     #[test]
     fn test_assemble_composite_applies_coefficients() {
-        let config = SearchConfig::default();
         let board = 2.0;
         let attack = 3.0;
         let chain = 4.0;
         let context = -1.0;
-        let composite = assemble_composite(board, attack, chain, context, &config);
-        let expected = board * config.board_weight
-            + attack * config.attack_weight
-            + chain * config.chain_weight
-            + context * config.context_weight;
+        let composite = assemble_composite(board, attack, chain, context);
+        let expected = board * BOARD_WEIGHT
+            + attack * ATTACK_WEIGHT
+            + chain * CHAIN_WEIGHT
+            + context * CONTEXT_WEIGHT;
         assert_eq!(composite, expected);
     }
 

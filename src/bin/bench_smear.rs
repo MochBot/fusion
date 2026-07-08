@@ -4,7 +4,7 @@
 //! (e.g. "IOLJSZT") and the same one-line output format, so the two binaries
 //! can be compared directly.
 
-use direct_cobra_copy::smear;
+use fusion_engine::smear;
 use std::time::Instant;
 
 /// Dispatch to the multithreaded driver when requested and available.

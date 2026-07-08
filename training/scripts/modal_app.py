@@ -185,9 +185,7 @@ def validate_policy_value_artifacts(
     )
 
 
-# ---------------------------------------------------------------------------
 # Modal app & image
-# ---------------------------------------------------------------------------
 app = modal.App("fusion-training")
 
 ACTIVE_PROFILE_NAME = os.environ.get("FUSION_GPU_PROFILE", default_profile_name)
@@ -253,9 +251,7 @@ training_image = (
     )
 )
 
-# ---------------------------------------------------------------------------
 # Volumes
-# ---------------------------------------------------------------------------
 data_vol = modal.Volume.from_name(DATA_VOLUME_NAME, create_if_missing=True)
 ckpt_vol = modal.Volume.from_name(CHECKPOINT_VOLUME_NAME, create_if_missing=True)
 compile_cache_vol = modal.Volume.from_name(COMPILE_CACHE_VOLUME_NAME, create_if_missing=True)
@@ -271,9 +267,7 @@ def checkpoint_relative_path(path: str | Path) -> str:
     return str(checkpoint_path.relative_to(checkpoint_root))
 
 
-# ---------------------------------------------------------------------------
 # Upload data
-# ---------------------------------------------------------------------------
 
 
 @app.local_entrypoint()
@@ -1423,9 +1417,7 @@ def launch_policy_value_sweep_smoke(
     )
 
 
-# ---------------------------------------------------------------------------
 # Teacher training (Optuna HPO)
-# ---------------------------------------------------------------------------
 
 
 @app.function(
@@ -1485,7 +1477,7 @@ def train_teacher_trial(
         print(f"[worker {trial_number}] Ready {size_gb:.1f} GB at /tmp")
 
     # Each worker runs its own independent study with in-memory storage.
-    # No shared DB needed — workers explore independently and we pick
+    # No shared DB needed - workers explore independently and we pick
     # the overall best result from all workers at the end.
     study = optuna.create_study(
         study_name=f"fusion-teacher-worker-{trial_number}",
@@ -1528,9 +1520,7 @@ def train_teacher_trial(
     }
 
 
-# ---------------------------------------------------------------------------
 # Fan-out: parallel workers
-# ---------------------------------------------------------------------------
 
 
 @app.local_entrypoint()
@@ -1589,9 +1579,7 @@ def fan_out(
     print(f"{'=' * 60}")
 
 
-# ---------------------------------------------------------------------------
 # Checkpoint discovery (runs on Modal to access volume)
-# ---------------------------------------------------------------------------
 
 
 @app.function(
@@ -1613,9 +1601,7 @@ def find_best_checkpoint(worker_number: int, trial_number: int) -> str | None:
     return str(ckpt_files[0]).removeprefix(f"{CKPT_DIR}/")
 
 
-# ---------------------------------------------------------------------------
 # Student distillation
-# ---------------------------------------------------------------------------
 
 
 @app.function(
@@ -1705,9 +1691,7 @@ def distill_student_remote(
     return os.path.relpath(real_best, real_ckpt_dir)
 
 
-# ---------------------------------------------------------------------------
 # Weight export
-# ---------------------------------------------------------------------------
 
 
 @app.function(
@@ -1735,9 +1719,7 @@ def export_weights_remote(student_checkpoint: str) -> None:
     ckpt_vol.commit()
 
 
-# ---------------------------------------------------------------------------
 # Full pipeline
-# ---------------------------------------------------------------------------
 
 
 @app.function(
@@ -1753,7 +1735,7 @@ def run_pipeline(
 ) -> dict[str, object]:
     """Run the complete training pipeline on Modal: teacher HPO → distill → export.
 
-    Runs entirely server-side — survives client disconnection.
+    Runs entirely server-side - survives client disconnection.
     Returns dict with pipeline results.
     """
     num_workers = min(num_workers, PROFILE.settings.max_parallel_workers)
@@ -1853,7 +1835,7 @@ def launch_pipeline(
     teacher_epochs: int = PROFILE.settings.teacher_epochs,
     student_epochs: int = PROFILE.settings.student_epochs,
 ) -> None:
-    """Thin launcher — schedules run_pipeline asynchronously and exits.
+    """Thin launcher - schedules run_pipeline asynchronously and exits.
 
     Usage: modal run training/scripts/modal_app.py::launch_pipeline
     """

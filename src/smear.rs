@@ -11,10 +11,10 @@
 //! The module is self-contained on purpose: it uses the upstream piece order,
 //! coordinate conventions, and ruleset (SRS kicks, no 180, no spins, spawn at
 //! x=4 y=19) so its node counts are directly comparable with the upstream
-//! `bench` binary. Production movegen and `ACTIVE_RULES` are not involved.
+//! `bench` binary. Production movegen and ACTIVE_RULES are not involved.
 
-const WIDTH: i32 = 10;
-const TLINES: i32 = 6;
+pub const WIDTH: i32 = 10;
+pub const TLINES: i32 = 6;
 const TALL: u64 = (1u64 << 60) - 1;
 
 pub const SPAWN_X: i32 = 4;
@@ -235,7 +235,7 @@ impl<const N: usize> SBoard<N> {
         Self { d: out }
     }
 
-    /// Remove the rows flagged in `lines` (column-9 bits) and pack everything
+    /// Remove rows flagged in lines (column-9 bits) and pack everything
     /// above downwards, in-word first and then across words.
     pub fn clear_lines(&mut self, lines: &Self) {
         let mut prefix = [0i32; N];
@@ -301,11 +301,9 @@ impl<const N: usize> SBoard<N> {
         }
     }
 
-    /// `do_move` for boards with no pre-existing full rows: ORs a precomputed
+    /// do_move for boards with no pre-existing full rows: ORs a precomputed
     /// two-word cell pattern and probes only the touched words for full rows.
-    /// Every locked board has its clears resolved eagerly, so the
-    /// precondition holds on all perft paths; the no-clear branch asserts it
-    /// in debug builds.
+    /// The no-clear branch asserts the precondition in debug builds.
     #[inline(always)]
     pub fn do_move_masked(&mut self, p: usize, rc: usize, x: i32, y: i32) -> u32 {
         let (lo, hi, boff, xb) = PMASK[p][rc][(y % TLINES) as usize];
@@ -368,7 +366,251 @@ impl<const N: usize> SBoard<N> {
     }
 }
 
-// ---------------------------------------------------------------------------
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+use core::arch::aarch64::{
+    uint64x2_t, vandq_u64, vbicq_u64, vdupq_n_s64, vdupq_n_u64, veorq_u64, vgetq_lane_u64,
+    vorrq_u64, vsetq_lane_u64, vshlq_u64,
+};
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[derive(Clone, Copy)]
+struct PBoard<const N: usize> {
+    d: [uint64x2_t; N],
+}
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+impl<const N: usize> PBoard<N> {
+    const EMPTY: Self = Self {
+        // SAFETY: all-zero is a valid uint64x2_t bit pattern.
+        d: [unsafe { core::mem::zeroed() }; N],
+    };
+
+    #[inline(always)]
+    fn from_pair(a: &SBoard<N>, b: &SBoard<N>) -> Self {
+        let mut out = Self::EMPTY.d;
+        let mut i = 0;
+        while i < N {
+            // SAFETY: NEON guaranteed by cfg; lane indices 0/1 in bounds.
+            out[i] = unsafe {
+                let v = vdupq_n_u64(0);
+                let v = vsetq_lane_u64::<0>(a.d[i], v);
+                vsetq_lane_u64::<1>(b.d[i], v)
+            };
+            i += 1;
+        }
+        Self { d: out }
+    }
+
+    #[inline(always)]
+    fn splat(word: u64) -> uint64x2_t {
+        // SAFETY: NEON guaranteed by cfg.
+        unsafe { vdupq_n_u64(word) }
+    }
+
+    #[inline(always)]
+    fn lane_mask(a: bool, b: bool) -> uint64x2_t {
+        // SAFETY: NEON guaranteed by cfg; lane indices 0/1 in bounds.
+        unsafe {
+            let v = vdupq_n_u64(0);
+            let v = vsetq_lane_u64::<0>(if a { u64::MAX } else { 0 }, v);
+            vsetq_lane_u64::<1>(if b { u64::MAX } else { 0 }, v)
+        }
+    }
+
+    #[inline(always)]
+    fn shift_bits(v: uint64x2_t, bits: i32) -> uint64x2_t {
+        if bits == 0 {
+            v
+        } else {
+            // SAFETY: NEON guaranteed by cfg. Shift counts are in the
+            // scalar kernel's proven 1..=60 (vertical) or -3..=3
+            // (horizontal); AArch64 vector shifts zero out-of-range.
+            unsafe { vshlq_u64(v, vdupq_n_s64(bits as i64)) }
+        }
+    }
+
+    #[inline(always)]
+    fn any_either(&self) -> bool {
+        let mut t = 0u64;
+        let mut i = 0;
+        while i < N {
+            // SAFETY: NEON guaranteed by cfg; lane indices 0/1 in bounds.
+            unsafe {
+                t |= vgetq_lane_u64::<0>(self.d[i]) | vgetq_lane_u64::<1>(self.d[i]);
+            }
+            i += 1;
+        }
+        t != 0
+    }
+
+    #[inline(always)]
+    fn any_lane(&self, lane: usize) -> bool {
+        let mut t = 0u64;
+        let mut i = 0;
+        while i < N {
+            // SAFETY: NEON guaranteed by cfg. Lane is 0 or 1 only.
+            unsafe {
+                t |= if lane == 0 {
+                    vgetq_lane_u64::<0>(self.d[i])
+                } else {
+                    vgetq_lane_u64::<1>(self.d[i])
+                };
+            }
+            i += 1;
+        }
+        t != 0
+    }
+
+    #[inline(always)]
+    fn popcount_lane(&self, lane: usize) -> u32 {
+        let mut t = 0u32;
+        let mut i = 0;
+        while i < N {
+            // SAFETY: NEON guaranteed by cfg. Lane is 0 or 1 only.
+            unsafe {
+                let bits = if lane == 0 {
+                    vgetq_lane_u64::<0>(self.d[i])
+                } else {
+                    vgetq_lane_u64::<1>(self.d[i])
+                };
+                t += bits.count_ones();
+            }
+            i += 1;
+        }
+        t
+    }
+
+    #[inline(always)]
+    fn and_lane_mask(&self, a: bool, b: bool) -> Self {
+        let mask = Self::lane_mask(a, b);
+        let mut out = Self::EMPTY.d;
+        let mut i = 0;
+        while i < N {
+            // SAFETY: NEON guaranteed by cfg.
+            out[i] = unsafe { vandq_u64(self.d[i], mask) };
+            i += 1;
+        }
+        Self { d: out }
+    }
+
+    #[inline(always)]
+    fn not(&self) -> Self {
+        let mask = Self::splat(TALL);
+        let mut out = Self::EMPTY.d;
+        let mut i = 0;
+        while i < N {
+            // SAFETY: NEON guaranteed by cfg.
+            out[i] = unsafe { vandq_u64(mask, veorq_u64(self.d[i], Self::splat(u64::MAX))) };
+            i += 1;
+        }
+        Self { d: out }
+    }
+
+    #[inline(always)]
+    fn shifted(&self, dx: i32, dy: i32) -> Self {
+        let mut out = Self::EMPTY.d;
+        if dy == 0 {
+            out = self.d;
+        } else if dy > 0 {
+            let q = ((dy - 1) / TLINES) as usize;
+            let hi = (((dy - 1) % TLINES) + 1) * WIDTH;
+            let lo = 60 - hi;
+            let mut i = 0;
+            while i < N {
+                let mut w = Self::EMPTY.d[0];
+                if i >= q {
+                    w = Self::shift_bits(Self::shift_bits(self.d[i - q], hi - 1), 1);
+                }
+                if i > q {
+                    // SAFETY: NEON guaranteed by cfg.
+                    w = unsafe { vorrq_u64(w, Self::shift_bits(self.d[i - q - 1], -lo)) };
+                }
+                out[i] = w;
+                i += 1;
+            }
+        } else {
+            let q = ((-dy - 1) / TLINES) as usize;
+            let lo = (((-dy - 1) % TLINES) + 1) * WIDTH;
+            let hi = 60 - lo;
+            let mut i = 0;
+            while i < N {
+                let mut w = Self::EMPTY.d[0];
+                if i + q < N {
+                    w = Self::shift_bits(Self::shift_bits(self.d[i + q], -(lo - 1)), -1);
+                }
+                if i + q + 1 < N {
+                    // SAFETY: NEON guaranteed by cfg.
+                    w = unsafe { vorrq_u64(w, Self::shift_bits(self.d[i + q + 1], hi)) };
+                }
+                out[i] = w;
+                i += 1;
+            }
+        }
+
+        let m = Self::splat(dx_mask(dx));
+        let mut i = 0;
+        while i < N {
+            let w = if dx != 0 {
+                Self::shift_bits(out[i], dx)
+            } else {
+                out[i]
+            };
+            // SAFETY: NEON guaranteed by cfg.
+            out[i] = unsafe { vandq_u64(w, m) };
+            i += 1;
+        }
+        Self { d: out }
+    }
+
+    #[inline(always)]
+    fn and(&self, o: &Self) -> Self {
+        let mut out = Self::EMPTY.d;
+        let mut i = 0;
+        while i < N {
+            // SAFETY: NEON guaranteed by cfg.
+            out[i] = unsafe { vandq_u64(self.d[i], o.d[i]) };
+            i += 1;
+        }
+        Self { d: out }
+    }
+
+    #[inline(always)]
+    fn or(&self, o: &Self) -> Self {
+        let mut out = Self::EMPTY.d;
+        let mut i = 0;
+        while i < N {
+            // SAFETY: NEON guaranteed by cfg.
+            out[i] = unsafe { vorrq_u64(self.d[i], o.d[i]) };
+            i += 1;
+        }
+        Self { d: out }
+    }
+
+    #[inline(always)]
+    fn xor(&self, o: &Self) -> Self {
+        let mut out = Self::EMPTY.d;
+        let mut i = 0;
+        while i < N {
+            // SAFETY: NEON guaranteed by cfg.
+            out[i] = unsafe { veorq_u64(self.d[i], o.d[i]) };
+            i += 1;
+        }
+        Self { d: out }
+    }
+
+    #[inline(always)]
+    fn andnot(&self, o: &Self) -> Self {
+        let mut out = Self::EMPTY.d;
+        let mut i = 0;
+        while i < N {
+            // SAFETY: NEON guaranteed by cfg.
+            out[i] = unsafe { vbicq_u64(self.d[i], o.d[i]) };
+            i += 1;
+        }
+        Self { d: out }
+    }
+}
+
 // Piece data (upstream conventions).
 
 const fn base_cells(p: usize) -> [(i8, i8); 3] {
@@ -414,13 +656,9 @@ const fn build_pcells() -> [[[(i8, i8); 3]; 4]; 7] {
 
 pub const PCELLS: [[[(i8, i8); 3]; 4]; 7] = build_pcells();
 
-// Placement masks for `do_move_masked`: per (piece, rotation, y % TLINES) a
-// two-word bit pattern of all four cells, anchored at column `xbase`, plus
-// the word offset of the lower pattern word relative to `y / TLINES`. Cell
-// dy spans at most -1..=1, so the pattern always fits two adjacent words;
-// the offset is -1 exactly when y % TLINES == 0 and the piece has a dy=-1
-// cell (valid placements then have y >= 1, so the word index never
-// underflows).
+// Placement masks for do_move_masked: per (piece, rotation, y%TLINES) a
+// two-word cell pattern anchored at xbase, with word offset relative to
+// y/TLINES. Cell dy is -1..=1, so pattern fits two adjacent words.
 type PlaceMask = (u64, u64, i8, i8);
 type PlaceMaskTable = [[[PlaceMask; 6]; 4]; 7];
 
@@ -606,6 +844,40 @@ const KICKS_I: [[K5; 4]; 2] = [
     ],
 ];
 
+// SRS+ production-rules kick variants (from engine gen.rs). I-piece kick
+// preference reordered; 180 flips use dedicated 6-entry rows.
+// Plain tables above define the racer (cobra) configuration.
+const KICKS_I_PLUS: [[K5; 4]; 2] = [
+    [
+        [(1, 0), (2, 0), (-1, 0), (-1, -1), (2, 2)],
+        [(0, -1), (-1, -1), (2, -1), (-1, 1), (2, -2)],
+        [(-1, 0), (1, 0), (-2, 0), (1, 1), (-2, -2)],
+        [(0, 1), (1, 1), (-2, 1), (1, -1), (-2, 2)],
+    ],
+    [
+        [(0, -1), (-1, -1), (2, -1), (2, -2), (-1, 1)],
+        [(-1, 0), (-2, 0), (1, 0), (-2, -2), (1, 1)],
+        [(0, 1), (-2, 1), (1, 1), (-2, 2), (1, -1)],
+        [(1, 0), (2, 0), (-1, 0), (2, 2), (-1, -1)],
+    ],
+];
+
+type K6 = [(i8, i8); 6];
+
+const KICKS_180_LJSZT: [K6; 4] = [
+    [(0, 0), (0, 1), (1, 1), (-1, 1), (1, 0), (-1, 0)],
+    [(0, 0), (1, 0), (1, 2), (1, 1), (0, 2), (0, 1)],
+    [(0, 0), (0, -1), (-1, -1), (1, -1), (-1, 0), (1, 0)],
+    [(0, 0), (-1, 0), (-1, 2), (-1, 1), (0, 2), (0, 1)],
+];
+
+const KICKS_180_I: [K6; 4] = [
+    [(1, -1), (1, 0), (2, 0), (0, 0), (2, -1), (0, -1)],
+    [(-1, -1), (0, -1), (0, 1), (0, 0), (-1, 1), (-1, 0)],
+    [(-1, 1), (-1, 0), (-2, 0), (0, 0), (-2, 1), (0, 1)],
+    [(1, 1), (0, 1), (0, 3), (0, 2), (1, 3), (1, 2)],
+];
+
 const fn kick_row_const(p: usize, d: usize, r: usize) -> K5 {
     if p == PI_I {
         KICKS_I[d][r]
@@ -614,8 +886,16 @@ const fn kick_row_const(p: usize, d: usize, r: usize) -> K5 {
     }
 }
 
-/// Per-(piece, direction, source-rotation) kick data as associated consts so
-/// the BFS kick waves compile to constant-offset shifts.
+const fn kick_row_rules(p: usize, d: usize, r: usize) -> K5 {
+    if p == PI_I {
+        KICKS_I_PLUS[d][r]
+    } else {
+        KICKS_LJSZT[d][r]
+    }
+}
+
+/// Per-(piece, direction, source-rotation) kick data as associated consts
+/// so the BFS kick waves compile to constant-offset shifts.
 struct KickTab<const P: usize, const D: usize, const R: usize>;
 
 impl<const P: usize, const D: usize, const R: usize> KickTab<P, D, R> {
@@ -626,7 +906,31 @@ impl<const P: usize, const D: usize, const R: usize> KickTab<P, D, R> {
     const ROW: K5 = kick_row_const(P, D, R);
 }
 
-/// Bounding box of every kick displacement leaving rotation `r` in either
+struct KickTabR<const P: usize, const D: usize, const R: usize>;
+
+impl<const P: usize, const D: usize, const R: usize> KickTabR<P, D, R> {
+    const R1: usize = if D == 0 { (R + 1) & 3 } else { (R + 3) & 3 };
+    const R1C: usize = canon_r(P, Self::R1);
+    const OFF_X: i32 = canon_off(P, R).0 - canon_off(P, Self::R1).0;
+    const OFF_Y: i32 = canon_off(P, R).1 - canon_off(P, Self::R1).1;
+    const ROW: K5 = kick_row_rules(P, D, R);
+}
+
+struct KickTab180<const P: usize, const R: usize>;
+
+impl<const P: usize, const R: usize> KickTab180<P, R> {
+    const R1: usize = (R + 2) & 3;
+    const R1C: usize = canon_r(P, Self::R1);
+    const OFF_X: i32 = canon_off(P, R).0 - canon_off(P, Self::R1).0;
+    const OFF_Y: i32 = canon_off(P, R).1 - canon_off(P, Self::R1).1;
+    const ROW: K6 = if P == PI_I {
+        KICKS_180_I[R]
+    } else {
+        KICKS_180_LJSZT[R]
+    };
+}
+
+/// Bounding box of every kick displacement leaving rotation r in either
 /// direction, canonical offsets included. Any wave result is contained in the
 /// source set dilated by this box, which makes it a sound skip test.
 const fn env_union(p: usize, r: usize) -> (i32, i32, i32, i32) {
@@ -666,8 +970,56 @@ impl<const P: usize, const R: usize> EnvTab<P, R> {
     const E: (i32, i32, i32, i32) = env_union(P, R);
 }
 
-/// Dilate `s` by the constant envelope box. The if-chains fold to straight
-/// shift/or sequences when the bounds are compile-time constants; spans never
+const fn env_union_rules(p: usize, r: usize) -> (i32, i32, i32, i32) {
+    let (mut xmin, mut xmax, mut ymin, mut ymax) = (i32::MAX, i32::MIN, i32::MAX, i32::MIN);
+    let mut d = 0;
+    while d < 3 {
+        let r1 = match d {
+            0 => (r + 1) & 3,
+            1 => (r + 3) & 3,
+            _ => (r + 2) & 3,
+        };
+        let off_x = canon_off(p, r).0 - canon_off(p, r1).0;
+        let off_y = canon_off(p, r).1 - canon_off(p, r1).1;
+        let row5 = kick_row_rules(p, if d < 2 { d } else { 0 }, r);
+        let row6 = if p == PI_I {
+            KICKS_180_I[r]
+        } else {
+            KICKS_180_LJSZT[r]
+        };
+        let n = if d < 2 { 5 } else { 6 };
+        let mut i = 0;
+        while i < n {
+            let (rx, ry) = if d < 2 { row5[i] } else { row6[i] };
+            let kx = rx as i32 + off_x;
+            let ky = ry as i32 + off_y;
+            if kx < xmin {
+                xmin = kx;
+            }
+            if kx > xmax {
+                xmax = kx;
+            }
+            if ky < ymin {
+                ymin = ky;
+            }
+            if ky > ymax {
+                ymax = ky;
+            }
+            i += 1;
+        }
+        d += 1;
+    }
+    (xmin, xmax, ymin, ymax)
+}
+
+struct EnvTabR<const P: usize, const R: usize>;
+
+impl<const P: usize, const R: usize> EnvTabR<P, R> {
+    const E: (i32, i32, i32, i32) = env_union_rules(P, R);
+}
+
+/// Dilate s by the constant envelope box. The if-chains fold to straight
+/// shift/or sequences when bounds are compile-time constants; spans never
 /// exceed 3 cells per axis (I-piece kicks plus canonical offsets).
 #[inline(always)]
 fn env_probe<const N: usize>(s: &SBoard<N>, e: (i32, i32, i32, i32)) -> SBoard<N> {
@@ -714,7 +1066,6 @@ fn env_probe<const N: usize>(s: &SBoard<N>, e: (i32, i32, i32, i32)) -> SBoard<N
     v
 }
 
-// ---------------------------------------------------------------------------
 // Move generation.
 
 pub struct SMoves<const N: usize> {
@@ -738,10 +1089,8 @@ impl<const N: usize> SMoves<N> {
     }
 }
 
-/// One non-anchor cell's contribution to the usable map. `R` and `I` are
-/// const generics so the table lookups and shift offsets fold to immediates;
-/// a runtime loop over the cells defeated that folding and dominated the
-/// profile.
+/// One non-anchor cell's contribution to the usable map. R and I are
+/// const generics so table lookups fold to immediates.
 #[inline(always)]
 fn usable_cell<const P: usize, const R: usize, const I: usize, const N: usize>(
     b: &SBoard<N>,
@@ -766,10 +1115,9 @@ fn usable_rot<const P: usize, const R: usize, const N: usize>(
         .and(&usable_cell::<P, R, 2, N>(b, nb))
 }
 
-/// Anchor positions where the piece can collision-freely exist, per canonical
-/// rotation. Cells above the band top do not collide ("don't kick against
-/// the ceiling"); the routing layer guarantees the band is tall enough that
-/// real placements stay inside it.
+/// Anchor positions where the piece can exist, per canonical rotation.
+/// Cells above the band top do not collide. The routing layer guarantees
+/// the band is tall enough for real placements.
 #[inline(always)]
 fn usable_map<const P: usize, const N: usize>(b: &SBoard<N>) -> [SBoard<N>; 4] {
     let nb = b.not();
@@ -802,9 +1150,114 @@ fn landable_map<const N: usize>(u: &[SBoard<N>; 4], cs: usize) -> [SBoard<N>; 4]
     c
 }
 
-/// One first-valid-kick wave step. `I` is a const generic for the same
-/// reason as `usable_cell`: the kick offsets must fold to immediate shift
-/// amounts, and a runtime 0..5 loop did not unroll.
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[inline(always)]
+fn usable_cell_p<const P: usize, const R: usize, const I: usize, const N: usize>(
+    b: &PBoard<N>,
+    nb: &PBoard<N>,
+) -> PBoard<N> {
+    let cx = PCELLS[P][R][I].0 as i32;
+    let cy = PCELLS[P][R][I].1 as i32;
+    if cy > 0 {
+        b.shifted(0, -cy).not().shifted(-cx, 0)
+    } else {
+        nb.shifted(-cx, -cy)
+    }
+}
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[inline(always)]
+fn usable_rot_p<const P: usize, const R: usize, const N: usize>(
+    b: &PBoard<N>,
+    nb: &PBoard<N>,
+) -> PBoard<N> {
+    nb.and(&usable_cell_p::<P, R, 0, N>(b, nb))
+        .and(&usable_cell_p::<P, R, 1, N>(b, nb))
+        .and(&usable_cell_p::<P, R, 2, N>(b, nb))
+}
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[inline(always)]
+fn usable_map_p<const P: usize, const N: usize>(b: &PBoard<N>) -> [PBoard<N>; 4] {
+    let nb = b.not();
+    let mut u = [PBoard::EMPTY; 4];
+    u[0] = usable_rot_p::<P, 0, N>(b, &nb);
+    if csize(P) > 1 {
+        u[1] = usable_rot_p::<P, 1, N>(b, &nb);
+    }
+    if csize(P) > 2 {
+        u[2] = usable_rot_p::<P, 2, N>(b, &nb);
+        u[3] = usable_rot_p::<P, 3, N>(b, &nb);
+    }
+    u
+}
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[inline(always)]
+fn landable_map_p<const N: usize>(u: &[PBoard<N>; 4], cs: usize) -> [PBoard<N>; 4] {
+    let mut c = [PBoard::EMPTY; 4];
+    macro_rules! land {
+        ($r:literal) => {
+            if $r < cs {
+                c[$r] = u[$r].andnot(&u[$r].shifted(0, 1));
+            }
+        };
+    }
+    land!(0);
+    land!(1);
+    land!(2);
+    land!(3);
+    c
+}
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[inline(always)]
+fn env_probe_p<const N: usize>(s: &PBoard<N>, e: (i32, i32, i32, i32)) -> PBoard<N> {
+    let (xmin, xmax, ymin, ymax) = e;
+    let mut h = *s;
+    if xmin <= -1 {
+        h = h.or(&s.shifted(-1, 0));
+    }
+    if xmin <= -2 {
+        h = h.or(&s.shifted(-2, 0));
+    }
+    if xmin <= -3 {
+        h = h.or(&s.shifted(-3, 0));
+    }
+    if xmax >= 1 {
+        h = h.or(&s.shifted(1, 0));
+    }
+    if xmax >= 2 {
+        h = h.or(&s.shifted(2, 0));
+    }
+    if xmax >= 3 {
+        h = h.or(&s.shifted(3, 0));
+    }
+    let hh = h;
+    let mut v = hh;
+    if ymin <= -1 {
+        v = v.or(&hh.shifted(0, -1));
+    }
+    if ymin <= -2 {
+        v = v.or(&hh.shifted(0, -2));
+    }
+    if ymin <= -3 {
+        v = v.or(&hh.shifted(0, -3));
+    }
+    if ymax >= 1 {
+        v = v.or(&hh.shifted(0, 1));
+    }
+    if ymax >= 2 {
+        v = v.or(&hh.shifted(0, 2));
+    }
+    if ymax >= 3 {
+        v = v.or(&hh.shifted(0, 3));
+    }
+    v
+}
+
+/// One first-valid-kick wave step. I is a const generic so kick
+/// offsets fold to immediate shift amounts.
 #[inline(always)]
 fn kick_step<const P: usize, const D: usize, const R: usize, const I: usize, const N: usize>(
     temp: &mut SBoard<N>,
@@ -819,27 +1272,1039 @@ fn kick_step<const P: usize, const D: usize, const R: usize, const I: usize, con
     }
 }
 
+#[inline(always)]
+fn kick_step_r<const P: usize, const D: usize, const R: usize, const I: usize, const N: usize>(
+    temp: &mut SBoard<N>,
+    result: &mut SBoard<N>,
+    usable_r1c: &SBoard<N>,
+) {
+    let kx = KickTabR::<P, D, R>::ROW[I].0 as i32 + KickTabR::<P, D, R>::OFF_X;
+    let ky = KickTabR::<P, D, R>::ROW[I].1 as i32 + KickTabR::<P, D, R>::OFF_Y;
+    *result = result.or(&temp.shifted(kx, ky));
+    if I != 4 {
+        *temp = temp.andnot(&usable_r1c.shifted(-kx, -ky));
+    }
+}
+
+#[inline(always)]
+fn kick_step180<const P: usize, const R: usize, const I: usize, const N: usize>(
+    temp: &mut SBoard<N>,
+    result: &mut SBoard<N>,
+    usable_r1c: &SBoard<N>,
+) {
+    let kx = KickTab180::<P, R>::ROW[I].0 as i32 + KickTab180::<P, R>::OFF_X;
+    let ky = KickTab180::<P, R>::ROW[I].1 as i32 + KickTab180::<P, R>::OFF_Y;
+    *result = result.or(&temp.shifted(kx, ky));
+    if I != 5 {
+        *temp = temp.andnot(&usable_r1c.shifted(-kx, -ky));
+    }
+}
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[inline(always)]
+fn kick_step_r_p<const P: usize, const D: usize, const R: usize, const I: usize, const N: usize>(
+    temp: &mut PBoard<N>,
+    result: &mut PBoard<N>,
+    usable_r1c: &PBoard<N>,
+) {
+    let kx = KickTabR::<P, D, R>::ROW[I].0 as i32 + KickTabR::<P, D, R>::OFF_X;
+    let ky = KickTabR::<P, D, R>::ROW[I].1 as i32 + KickTabR::<P, D, R>::OFF_Y;
+    *result = result.or(&temp.shifted(kx, ky));
+    if I != 4 {
+        *temp = temp.andnot(&usable_r1c.shifted(-kx, -ky));
+    }
+}
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[inline(always)]
+fn kick_step180_p<const P: usize, const R: usize, const I: usize, const N: usize>(
+    temp: &mut PBoard<N>,
+    result: &mut PBoard<N>,
+    usable_r1c: &PBoard<N>,
+) {
+    let kx = KickTab180::<P, R>::ROW[I].0 as i32 + KickTab180::<P, R>::OFF_X;
+    let ky = KickTab180::<P, R>::ROW[I].1 as i32 + KickTab180::<P, R>::OFF_Y;
+    *result = result.or(&temp.shifted(kx, ky));
+    if I != 5 {
+        *temp = temp.andnot(&usable_r1c.shifted(-kx, -ky));
+    }
+}
+
+/// T move boards with spin strata, one board per stratum per rotation.
+/// Strata are emission-masked (subsets of `m`) and NOT mutually exclusive:
+/// the engine emits full/mini/nospin independently per placement, so one
+/// cell can carry up to three labels (spin duals).
+pub struct STMoves<const N: usize> {
+    pub m: [SBoard<N>; 4],
+    pub full: [SBoard<N>; 4],
+    pub mini: [SBoard<N>; 4],
+    pub nospin: [SBoard<N>; 4],
+}
+
+impl<const N: usize> STMoves<N> {
+    pub const EMPTY: Self = Self {
+        m: [SBoard::EMPTY; 4],
+        full: [SBoard::EMPTY; 4],
+        mini: [SBoard::EMPTY; 4],
+        nospin: [SBoard::EMPTY; 4],
+    };
+}
+
+/// Column mask: bit pattern of column x repeated in every word
+/// (each word holds six 10-bit rows).
+#[inline(always)]
+fn col_mask_sb<const N: usize>(x: usize) -> SBoard<N> {
+    let mut b = SBoard::EMPTY;
+    let m = 0x0004_0100_4010_0401u64 << x;
+    let mut w = 0;
+    while w < N {
+        b.d[w] = m;
+        w += 1;
+    }
+    b
+}
+
+struct TCorners<const N: usize> {
+    spins3: SBoard<N>,
+    front: [SBoard<N>; 4],
+}
+
+impl<const N: usize> TCorners<N> {
+    const EMPTY: TCorners<N> = TCorners {
+        spins3: SBoard::EMPTY,
+        front: [SBoard::EMPTY; 4],
+    };
+}
+
+#[cfg(test)]
+pub fn usable_map_probe<const P: usize, const N: usize>(b: &SBoard<N>) -> [SBoard<N>; 4] {
+    usable_map::<P, N>(b)
+}
+
+#[cfg(test)]
+pub fn imm_rot_probe<const N: usize>(u: &SBoard<N>) -> SBoard<N> {
+    imm_rot(u)
+}
+
+/// Board-shaped mirror of the engine's T spin_map: for a T anchored at
+/// each cell, spins3 marks 3-corner satisfaction and front[r] marks both
+/// facing corners filled. Walls and floor count as occupied.
+#[inline(always)]
+fn t_corner_masks<const N: usize>(b: &SBoard<N>) -> TCorners<N> {
+    let col0 = col_mask_sb::<N>(0);
+    let col9 = col_mask_sb::<N>(9);
+    let mut floor = SBoard::<N>::EMPTY;
+    floor.d[0] = 0x3FF;
+    let c0 = b.shifted(1, -1).or(&col0);
+    let c1 = b.shifted(-1, -1).or(&col9);
+    let c2 = b.shifted(-1, 1).or(&col9).or(&floor);
+    let c3 = b.shifted(1, 1).or(&col0).or(&floor);
+    let spins3 = c0
+        .and(&c1)
+        .and(&c2.or(&c3))
+        .or(&c2.and(&c3).and(&c0.or(&c1)));
+    TCorners {
+        spins3,
+        front: [c0.and(&c1), c1.and(&c2), c2.and(&c3), c3.and(&c0)],
+    }
+}
+
+/// Immobile anchors for one rotation: all four unit shifts collide. Matches
+/// the engine's imm table (left & right & up & down collision); walls and
+/// the floor collide via zero-fill, and cells above the stack can never be
+/// immobile because their down-shift is always free.
+#[inline(always)]
+fn imm_rot<const N: usize>(u: &SBoard<N>) -> SBoard<N> {
+    u.shifted(1, 0)
+        .not()
+        .and(&u.shifted(-1, 0).not())
+        .and(&u.shifted(0, -1).not())
+        .and(&u.shifted(0, 1).not())
+}
+
+/// Labeled kick step: first-valid-kick bookkeeping plus engine-exact
+/// spin tagging of valid arrivals (pre-dedup). Kick index >= 4 forces
+/// Full on 3-corner arrivals per the engine's SRS+ rule.
+/// Non-T pieces: immobile arrivals are all-spin Minis, rest is NoSpin.
+#[allow(clippy::too_many_arguments)]
+#[inline(always)]
+fn kick_step_r_lab<
+    const P: usize,
+    const D: usize,
+    const R: usize,
+    const I: usize,
+    const N: usize,
+>(
+    temp: &mut SBoard<N>,
+    result: &mut SBoard<N>,
+    usable_r1: &SBoard<N>,
+    tc: &TCorners<N>,
+    imm_r1: &SBoard<N>,
+    full: &mut SBoard<N>,
+    mini: &mut SBoard<N>,
+    nospin: &mut SBoard<N>,
+) {
+    let kx = KickTabR::<P, D, R>::ROW[I].0 as i32 + KickTabR::<P, D, R>::OFF_X;
+    let ky = KickTabR::<P, D, R>::ROW[I].1 as i32 + KickTabR::<P, D, R>::OFF_Y;
+    let r1 = KickTabR::<P, D, R>::R1;
+    let landed = temp.shifted(kx, ky).and(usable_r1);
+    // Empty arrivals contribute nothing; one or-reduction test
+    // replaces eight vector ops on the (common) empty kick.
+    if landed.any() {
+        let stuck = landed.and(imm_r1);
+        if P == PI_T {
+            let spins = landed.and(&tc.spins3);
+            if I >= 4 {
+                *full = full.or(&spins);
+            } else {
+                *full = full.or(&spins.and(&tc.front[r1]));
+                *mini = mini.or(&spins.andnot(&tc.front[r1]));
+            }
+            *mini = mini.or(&stuck.andnot(&spins));
+            *nospin = nospin.or(&landed.xor(&spins.or(&stuck)));
+        } else {
+            *mini = mini.or(&stuck);
+            *nospin = nospin.or(&landed.xor(&stuck));
+        }
+        *result = result.or(&landed);
+    }
+    if I != 4 {
+        *temp = temp.andnot(&usable_r1.shifted(-kx, -ky));
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+#[inline(always)]
+fn kick_step180_lab<const P: usize, const R: usize, const I: usize, const N: usize>(
+    temp: &mut SBoard<N>,
+    result: &mut SBoard<N>,
+    usable_r1: &SBoard<N>,
+    tc: &TCorners<N>,
+    imm_r1: &SBoard<N>,
+    full: &mut SBoard<N>,
+    mini: &mut SBoard<N>,
+    nospin: &mut SBoard<N>,
+) {
+    let kx = KickTab180::<P, R>::ROW[I].0 as i32 + KickTab180::<P, R>::OFF_X;
+    let ky = KickTab180::<P, R>::ROW[I].1 as i32 + KickTab180::<P, R>::OFF_Y;
+    let r1 = KickTab180::<P, R>::R1;
+    let landed = temp.shifted(kx, ky).and(usable_r1);
+    if landed.any() {
+        let stuck = landed.and(imm_r1);
+        if P == PI_T {
+            let spins = landed.and(&tc.spins3);
+            if I >= 4 {
+                *full = full.or(&spins);
+            } else {
+                *full = full.or(&spins.and(&tc.front[r1]));
+                *mini = mini.or(&spins.andnot(&tc.front[r1]));
+            }
+            *mini = mini.or(&stuck.andnot(&spins));
+            *nospin = nospin.or(&landed.xor(&spins.or(&stuck)));
+        } else {
+            *mini = mini.or(&stuck);
+            *nospin = nospin.or(&landed.xor(&stuck));
+        }
+        *result = result.or(&landed);
+    }
+    if I != 5 {
+        *temp = temp.andnot(&usable_r1.shifted(-kx, -ky));
+    }
+}
+
 /// Generate all reachable lock positions for piece `P` on an `N`-word band.
-/// `y` is the stack height (`max_y`), `force` extends the spawn scan upward.
+/// y is the stack height (max_y), force extends the spawn scan upward.
 pub fn generate<const P: usize, const N: usize>(b: &SBoard<N>, y: i32, force: i32) -> SMoves<N> {
-    gen_impl::<P, N, true>(b, y, force).0
+    gen_impl::<P, N, true, false>(b, y, force).0
 }
 
-/// Count reachable lock positions without materializing the move boards.
-/// Identical closure to `generate`; used by perft leaves where only the
-/// popcount is consumed, which keeps four fewer boards live across the BFS.
+/// Count reachable lock positions without materializing move boards.
+/// Same closure as generate; keeps four fewer boards live across the BFS.
 pub fn count_locks<const P: usize, const N: usize>(b: &SBoard<N>, y: i32, force: i32) -> u32 {
-    gen_impl::<P, N, false>(b, y, force).1
+    gen_impl::<P, N, false, false>(b, y, force).1
 }
 
-// Shared closure body. Tracks `missing[rc] = cands[rc] & !reached` instead of
-// the reached move boards themselves: every harvest becomes a single andnot
-// and every "all candidates covered?" test becomes an any() test, while the
-// landable map stops being live across the BFS (count mode folds it into a
-// scalar total; emit mode rebuilds `moves = cands & !missing` at the exits).
-// The unused half of the return pair is dead code per EMIT instantiation.
-fn gen_impl<const P: usize, const N: usize, const EMIT: bool>(
+/// Production-rules variants with SRS+ I kicks and 180 flips.
+/// Plain entries above keep the racer (cobra) configuration.
+pub fn generate_rules<const P: usize, const N: usize>(
     b: &SBoard<N>,
+    y: i32,
+    force: i32,
+) -> SMoves<N> {
+    gen_impl::<P, N, true, true>(b, y, force).0
+}
+
+pub fn count_locks_rules<const P: usize, const N: usize>(b: &SBoard<N>, y: i32, force: i32) -> u32 {
+    gen_impl::<P, N, false, true>(b, y, force).1
+}
+
+#[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+pub fn count_locks_rules_pair<const P: usize, const N: usize>(
+    a: &SBoard<N>,
+    ya: i32,
+    b: &SBoard<N>,
+    yb: i32,
+    force: i32,
+) -> (u32, u32) {
+    (
+        count_locks_rules::<P, N>(a, ya, force),
+        count_locks_rules::<P, N>(b, yb, force),
+    )
+}
+
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+pub fn count_locks_rules_pair<const P: usize, const N: usize>(
+    a: &SBoard<N>,
+    ya: i32,
+    b: &SBoard<N>,
+    yb: i32,
+    force: i32,
+) -> (u32, u32) {
+    const { assert!(P < 7) };
+    let h: i32 = TLINES * N as i32;
+    let cs = csize(P);
+    let ss = ssize(P);
+    let all_done: u32 = (1u32 << ss) - 1;
+    let spawn_row = crate::default_ruleset::ACTIVE_RULES.spawn_row;
+    let slow_a = h > spawn_row && ya > spawn_row - 3;
+    let slow_b = h > spawn_row && yb > spawn_row - 3;
+    if force != 0 || slow_a || slow_b {
+        return (
+            count_locks_rules::<P, N>(a, ya, force),
+            count_locks_rules::<P, N>(b, yb, force),
+        );
+    }
+
+    let pair = PBoard::from_pair(a, b);
+    let usable = usable_map_p::<P, N>(&pair);
+    let cands = landable_map_p(&usable, cs);
+    let mut missing = [PBoard::<N>::EMPTY; 4];
+    let mut search = [PBoard::<N>::EMPTY; 4];
+    let mut remaining_a: u32 = 0;
+    let mut remaining_b: u32 = 0;
+    let mut done_a: u32 = 0;
+    let mut done_b: u32 = 0;
+    let mut total_a: u32 = 0;
+    let mut total_b: u32 = 0;
+    let mut out_a: u32 = 0;
+    let mut out_b: u32 = 0;
+    let mut active_a = true;
+    let mut active_b = true;
+
+    macro_rules! unroll_rc {
+        ($r:ident, $limit:expr, $body:block) => {{
+            {
+                #[allow(non_upper_case_globals)]
+                const $r: usize = 0;
+                if $r < $limit $body
+            }
+            {
+                #[allow(non_upper_case_globals)]
+                const $r: usize = 1;
+                if $r < $limit $body
+            }
+            {
+                #[allow(non_upper_case_globals)]
+                const $r: usize = 2;
+                if $r < $limit $body
+            }
+            {
+                #[allow(non_upper_case_globals)]
+                const $r: usize = 3;
+                if $r < $limit $body
+            }
+        }};
+    }
+
+    macro_rules! fold_count_a {
+        () => {{
+            let mut miss = 0u32;
+            unroll_rc!(r, 4, {
+                if remaining_a & (1 << r) != 0 {
+                    miss += missing[r].popcount_lane(0);
+                }
+            });
+            total_a - miss
+        }};
+    }
+
+    macro_rules! fold_count_b {
+        () => {{
+            let mut miss = 0u32;
+            unroll_rc!(r, 4, {
+                if remaining_b & (1 << r) != 0 {
+                    miss += missing[r].popcount_lane(1);
+                }
+            });
+            total_b - miss
+        }};
+    }
+
+    macro_rules! fold_a {
+        () => {{
+            out_a = fold_count_a!();
+            active_a = false;
+            done_a = all_done;
+        }};
+    }
+
+    macro_rules! fold_b {
+        () => {{
+            out_b = fold_count_b!();
+            active_b = false;
+            done_b = all_done;
+        }};
+    }
+
+    unroll_rc!(r, cs, {
+        total_a += cands[r].popcount_lane(0);
+        total_b += cands[r].popcount_lane(1);
+    });
+
+    let ceiling = h - h_gen(P);
+    unroll_rc!(r, cs, {
+        let mut surface = usable[r].not();
+        if ceiling >= 1 {
+            surface = surface.or(&surface.shifted(0, -1));
+        }
+        if ceiling >= 2 {
+            surface = surface.or(&surface.shifted(0, -2));
+        }
+        if ceiling >= 4 {
+            surface = surface.or(&surface.shifted(0, -4));
+        }
+        if ceiling >= 8 {
+            surface = surface.or(&surface.shifted(0, -8));
+        }
+        if ceiling >= 16 {
+            surface = surface.or(&surface.shifted(0, -16));
+        }
+        search[r] = surface.not();
+        missing[r] = cands[r].andnot(&search[r]);
+        if missing[r].any_lane(0) {
+            remaining_a |= 1 << r;
+        }
+        if missing[r].any_lane(1) {
+            remaining_b |= 1 << r;
+        }
+    });
+    if remaining_a == 0 {
+        fold_a!();
+    }
+    if remaining_b == 0 {
+        fold_b!();
+    }
+    if !active_a && !active_b {
+        return (out_a, out_b);
+    }
+
+    unroll_rc!(r, cs, {
+        let mut s = search[r].and_lane_mask(active_a, active_b);
+        s = s.or(&s.shifted(-1, 0).or(&s.shifted(1, 0)).and(&usable[r]));
+        s = s.or(&s.shifted(-1, 0).or(&s.shifted(1, 0)).and(&usable[r]));
+        search[r] = s.and_lane_mask(active_a, active_b);
+    });
+
+    if group3(P) {
+        unroll_rc!(r, 4, {
+            search[r] = search[r]
+                .or(&search[(r + 1) & 3].or(&search[(r + 3) & 3]).and(&usable[r]))
+                .and_lane_mask(active_a, active_b);
+        });
+    }
+
+    remaining_a = 0;
+    remaining_b = 0;
+    unroll_rc!(r, cs, {
+        missing[r] = missing[r].andnot(&search[r]);
+        if active_a && missing[r].any_lane(0) {
+            remaining_a |= 1 << r;
+        }
+        if active_b && missing[r].any_lane(1) {
+            remaining_b |= 1 << r;
+        }
+    });
+    if active_a && remaining_a == 0 {
+        fold_a!();
+    }
+    if active_b && remaining_b == 0 {
+        fold_b!();
+    }
+    if !active_a && !active_b {
+        return (out_a, out_b);
+    }
+    if group2(P) {
+        search[2] = search[0];
+        search[3] = search[1];
+    }
+
+    let mut unsearched = [PBoard::<N>::EMPTY; 4];
+    unroll_rc!(rs, ss, {
+        unsearched[rs] = search[rs]
+            .not()
+            .and(&usable[const { canon_r(P, rs) }])
+            .and_lane_mask(active_a, active_b);
+    });
+
+    macro_rules! refresh_remaining {
+        ($rc:expr) => {{
+            if active_a {
+                if missing[$rc].any_lane(0) {
+                    remaining_a |= 1 << $rc;
+                } else {
+                    remaining_a &= !(1u32 << $rc);
+                }
+            }
+            if active_b {
+                if missing[$rc].any_lane(1) {
+                    remaining_b |= 1 << $rc;
+                } else {
+                    remaining_b &= !(1u32 << $rc);
+                }
+            }
+        }};
+    }
+
+    macro_rules! rot_kick_r_p {
+        ($r:literal, $d:literal, $probe:ident) => {{
+            let r1 = const { KickTabR::<P, $d, $r>::R1 };
+            let r1c = const { KickTabR::<P, $d, $r>::R1C };
+            if $probe.and(&unsearched[r1]).any_either() {
+                let mut temp = search[$r].and_lane_mask(active_a, active_b);
+                let mut result = PBoard::<N>::EMPTY;
+                kick_step_r_p::<P, $d, $r, 0, N>(&mut temp, &mut result, &usable[r1c]);
+                kick_step_r_p::<P, $d, $r, 1, N>(&mut temp, &mut result, &usable[r1c]);
+                kick_step_r_p::<P, $d, $r, 2, N>(&mut temp, &mut result, &usable[r1c]);
+                kick_step_r_p::<P, $d, $r, 3, N>(&mut temp, &mut result, &usable[r1c]);
+                kick_step_r_p::<P, $d, $r, 4, N>(&mut temp, &mut result, &usable[r1c]);
+                let res = result.and(&unsearched[r1]);
+                if res.any_either() {
+                    search[r1] = search[r1].or(&res);
+                    unsearched[r1] = unsearched[r1].andnot(&res);
+                    if res.any_lane(0) {
+                        done_a &= !(1u32 << r1);
+                    }
+                    if res.any_lane(1) {
+                        done_b &= !(1u32 << r1);
+                    }
+                    missing[r1c] = missing[r1c].andnot(&res);
+                    refresh_remaining!(r1c);
+                }
+            }
+        }};
+    }
+
+    macro_rules! rot_kick180_p {
+        ($r:literal, $probe:ident) => {{
+            let r1 = const { KickTab180::<P, $r>::R1 };
+            let r1c = const { KickTab180::<P, $r>::R1C };
+            if $probe.and(&unsearched[r1]).any_either() {
+                let mut temp = search[$r].and_lane_mask(active_a, active_b);
+                let mut result = PBoard::<N>::EMPTY;
+                kick_step180_p::<P, $r, 0, N>(&mut temp, &mut result, &usable[r1c]);
+                kick_step180_p::<P, $r, 1, N>(&mut temp, &mut result, &usable[r1c]);
+                kick_step180_p::<P, $r, 2, N>(&mut temp, &mut result, &usable[r1c]);
+                kick_step180_p::<P, $r, 3, N>(&mut temp, &mut result, &usable[r1c]);
+                kick_step180_p::<P, $r, 4, N>(&mut temp, &mut result, &usable[r1c]);
+                kick_step180_p::<P, $r, 5, N>(&mut temp, &mut result, &usable[r1c]);
+                let res = result.and(&unsearched[r1]);
+                if res.any_either() {
+                    search[r1] = search[r1].or(&res);
+                    unsearched[r1] = unsearched[r1].andnot(&res);
+                    if res.any_lane(0) {
+                        done_a &= !(1u32 << r1);
+                    }
+                    if res.any_lane(1) {
+                        done_b &= !(1u32 << r1);
+                    }
+                    missing[r1c] = missing[r1c].andnot(&res);
+                    refresh_remaining!(r1c);
+                }
+            }
+        }};
+    }
+
+    macro_rules! process_rot_pair {
+        ($r:literal) => {{
+            let need_a = active_a && $r < ss && done_a & (1 << $r) == 0;
+            let need_b = active_b && $r < ss && done_b & (1 << $r) == 0;
+            if need_a || need_b {
+                if need_a {
+                    done_a |= 1 << $r;
+                }
+                if need_b {
+                    done_b |= 1 << $r;
+                }
+                let rc = const { canon_r(P, $r) };
+
+                loop {
+                    let s = search[$r].and_lane_mask(need_a, need_b);
+                    let temp = s
+                        .shifted(-1, 0)
+                        .or(&s.shifted(1, 0))
+                        .or(&s.shifted(0, -1))
+                        .and(&unsearched[$r]);
+                    if !temp.any_either() {
+                        break;
+                    }
+                    search[$r] = search[$r].or(&temp);
+                    unsearched[$r] = unsearched[$r].xor(&temp);
+                }
+
+                let reached = search[$r].and_lane_mask(need_a, need_b);
+                missing[rc] = missing[rc].andnot(&reached);
+                refresh_remaining!(rc);
+
+                if active_a && remaining_a == 0 {
+                    fold_a!();
+                }
+                if active_b && remaining_b == 0 {
+                    fold_b!();
+                }
+                if (active_a && need_a) || (active_b && need_b) {
+                    if P != PI_O {
+                        let probe = env_probe_p(
+                            &search[$r].and_lane_mask(active_a, active_b),
+                            EnvTabR::<P, $r>::E,
+                        );
+                        rot_kick_r_p!($r, 0, probe);
+                        rot_kick_r_p!($r, 1, probe);
+                        rot_kick180_p!($r, probe);
+                        if active_a && remaining_a == 0 {
+                            fold_a!();
+                        }
+                        if active_b && remaining_b == 0 {
+                            fold_b!();
+                        }
+                    }
+                    let keep_a = !(active_a && need_a && done_a != all_done);
+                    let keep_b = !(active_b && need_b && done_b != all_done);
+                    search[$r] = search[$r].and_lane_mask(keep_a, keep_b);
+                }
+            }
+        }};
+    }
+
+    while (active_a && done_a != all_done) || (active_b && done_b != all_done) {
+        process_rot_pair!(0);
+        process_rot_pair!(1);
+        process_rot_pair!(2);
+        process_rot_pair!(3);
+    }
+    if active_a {
+        out_a = fold_count_a!();
+    }
+    if active_b {
+        out_b = fold_count_b!();
+    }
+    (out_a, out_b)
+}
+
+/// T generation under production rules with engine-exact spin labels.
+/// When no landable cell can be a 3-corner spin or immobile, every emission
+/// is NoSpin and the plain closure (with its early exits) is exact.
+/// Otherwise runs the labeled closure to full fixpoint: later arrivals
+/// at already-claimed cells still add strata (spin duals).
+pub fn generate_t_rules<const N: usize>(b: &SBoard<N>, y: i32, force: i32) -> STMoves<N> {
+    generate_labeled_rules::<PI_T, N>(b, y, force)
+}
+
+/// Labeled generation under production rules for any spinnable piece.
+/// T carries the 3-corner Full/Mini strata; other pieces carry all-spin
+/// Minis on immobile arrivals. O never spins: callers use the plain path.
+pub fn generate_labeled_rules<const P: usize, const N: usize>(
+    b: &SBoard<N>,
+    y: i32,
+    force: i32,
+) -> STMoves<N> {
+    const { assert!(P != PI_O) };
+    let cs = csize(P);
+    let usable = usable_map::<P, N>(b);
+    let cands = landable_map(&usable, cs);
+    let tc = if P == PI_T {
+        t_corner_masks(b)
+    } else {
+        TCorners::EMPTY
+    };
+    let mut imm = [SBoard::<N>::EMPTY; 4];
+    let mut gate = SBoard::<N>::EMPTY;
+    let mut rc = 0;
+    while rc < cs {
+        imm[rc] = imm_rot(&usable[rc]);
+        let spin_targets = if P == PI_T {
+            tc.spins3.or(&imm[rc])
+        } else {
+            imm[rc]
+        };
+        gate = gate.or(&cands[rc].and(&spin_targets));
+        rc += 1;
+    }
+    if !gate.any() {
+        let ml = gen_impl_with_usable::<P, N, true, true>(&usable, y, force).0;
+        return STMoves {
+            nospin: ml.m,
+            m: ml.m,
+            full: [SBoard::EMPTY; 4],
+            mini: [SBoard::EMPTY; 4],
+        };
+    }
+    gen_labels_impl::<P, N>(y, force, &usable, &cands, &tc, &imm)
+}
+
+// Labeled twin of gen_impl under production rules. Structural
+// differences required for engine-exact strata:
+// (1) no missing-based early exits; closure runs to full fixpoint.
+// (2) kick waves fire while any landable target could gain a stratum
+//     (probe & (unsearched | cands)), not only while unclaimed cells remain.
+// Batches partition each rotation's closure; per-batch pre-dedup tagging
+// accumulates the engine's exact tag union independent of visit order.
+// NoSpin drop/lateral coverage is applied once at the end from the final
+// reach sets (equal to the engine's per-batch union).
+// Group2 pieces run the same 4-state split BFS as the engine's
+// searched[x][ri] (independent per-nominal-rotation worklists, mirror
+// states seeded by copy) so per-state closures and arrival-driven tag
+// unions match the engine's exactly.
+fn gen_labels_impl<const P: usize, const N: usize>(
+    y: i32,
+    force: i32,
+    usable: &[SBoard<N>; 4],
+    cands: &[SBoard<N>; 4],
+    tc: &TCorners<N>,
+    imm: &[SBoard<N>; 4],
+) -> STMoves<N> {
+    let h: i32 = TLINES * N as i32;
+    let cs = csize(P);
+    let all_done: u32 = 0b1111;
+
+    let mut search = [SBoard::<N>::EMPTY; 4];
+    let mut full = [SBoard::<N>::EMPTY; 4];
+    let mut mini = [SBoard::<N>::EMPTY; 4];
+    let mut nospin = [SBoard::<N>::EMPTY; 4];
+    let mut done: u32;
+
+    macro_rules! unroll_rc {
+        ($r:ident, $limit:expr, $body:block) => {{
+            {
+                #[allow(non_upper_case_globals)]
+                const $r: usize = 0;
+                if $r < $limit $body
+            }
+            {
+                #[allow(non_upper_case_globals)]
+                const $r: usize = 1;
+                if $r < $limit $body
+            }
+            {
+                #[allow(non_upper_case_globals)]
+                const $r: usize = 2;
+                if $r < $limit $body
+            }
+            {
+                #[allow(non_upper_case_globals)]
+                const $r: usize = 3;
+                if $r < $limit $body
+            }
+        }};
+    }
+
+    let spawn_row: i32 = crate::default_ruleset::ACTIVE_RULES.spawn_row;
+    let slow = h > spawn_row && y > spawn_row - 3;
+    if slow {
+        let threshold = (spawn_row + force + 1).min(h);
+        let mut s = spawn_row;
+        while s < threshold && !usable[0].get(SPAWN_X, s) {
+            s += 1;
+        }
+        if s == threshold {
+            return STMoves::EMPTY;
+        }
+        search[0].set(SPAWN_X, s);
+        nospin[0].set(SPAWN_X, s);
+        done = all_done & !1;
+    } else {
+        let ceiling = h - h_gen(P);
+        unroll_rc!(r, cs, {
+            let mut surface = usable[r].not();
+            if ceiling >= 1 {
+                surface = surface.or(&surface.shifted(0, -1));
+            }
+            if ceiling >= 2 {
+                surface = surface.or(&surface.shifted(0, -2));
+            }
+            if ceiling >= 4 {
+                surface = surface.or(&surface.shifted(0, -4));
+            }
+            if ceiling >= 8 {
+                surface = surface.or(&surface.shifted(0, -8));
+            }
+            if ceiling >= 16 {
+                surface = surface.or(&surface.shifted(0, -16));
+            }
+            search[r] = surface.not();
+            nospin[r] = search[r];
+        });
+
+        unroll_rc!(r, cs, {
+            let mut s = search[r];
+            s = s.or(&s.shifted(-1, 0).or(&s.shifted(1, 0)).and(&usable[r]));
+            s = s.or(&s.shifted(-1, 0).or(&s.shifted(1, 0)).and(&usable[r]));
+            search[r] = s;
+        });
+
+        // Rotation seeds stay untagged; exact strata come from kick
+        // waves below, which fire from neighbor rotation's batch.
+        if group3(P) {
+            unroll_rc!(r, 4, {
+                search[r] =
+                    search[r].or(&search[(r + 1) & 3].or(&search[(r + 3) & 3]).and(&usable[r]));
+            });
+        }
+        if group2(P) {
+            search[2] = search[0];
+            search[3] = search[1];
+        }
+        done = 0;
+    }
+
+    let mut unsearched = [SBoard::<N>::EMPTY; 4];
+    unroll_rc!(rs, 4, {
+        unsearched[rs] = search[rs].not().and(&usable[const { canon_r(P, rs) }]);
+    });
+
+    macro_rules! rot_kick_lab {
+        ($r:expr, $d:literal, $probe:ident) => {{
+            let r1 = const { KickTabR::<P, $d, { $r }>::R1 };
+            let r1c = const { canon_r(P, KickTabR::<P, $d, { $r }>::R1) };
+            if $probe.and(&unsearched[r1].or(&cands[r1c])).any() {
+                let mut temp = search[{ $r }];
+                let mut result = SBoard::<N>::EMPTY;
+                kick_step_r_lab::<P, $d, { $r }, 0, N>(
+                    &mut temp,
+                    &mut result,
+                    &usable[r1c],
+                    tc,
+                    &imm[r1c],
+                    &mut full[r1c],
+                    &mut mini[r1c],
+                    &mut nospin[r1c],
+                );
+                kick_step_r_lab::<P, $d, { $r }, 1, N>(
+                    &mut temp,
+                    &mut result,
+                    &usable[r1c],
+                    tc,
+                    &imm[r1c],
+                    &mut full[r1c],
+                    &mut mini[r1c],
+                    &mut nospin[r1c],
+                );
+                kick_step_r_lab::<P, $d, { $r }, 2, N>(
+                    &mut temp,
+                    &mut result,
+                    &usable[r1c],
+                    tc,
+                    &imm[r1c],
+                    &mut full[r1c],
+                    &mut mini[r1c],
+                    &mut nospin[r1c],
+                );
+                kick_step_r_lab::<P, $d, { $r }, 3, N>(
+                    &mut temp,
+                    &mut result,
+                    &usable[r1c],
+                    tc,
+                    &imm[r1c],
+                    &mut full[r1c],
+                    &mut mini[r1c],
+                    &mut nospin[r1c],
+                );
+                kick_step_r_lab::<P, $d, { $r }, 4, N>(
+                    &mut temp,
+                    &mut result,
+                    &usable[r1c],
+                    tc,
+                    &imm[r1c],
+                    &mut full[r1c],
+                    &mut mini[r1c],
+                    &mut nospin[r1c],
+                );
+                let res = result.and(&unsearched[r1]);
+                if res.any() {
+                    search[r1] = search[r1].or(&res);
+                    unsearched[r1] = unsearched[r1].andnot(&res);
+                    done &= !(1u32 << r1);
+                }
+            }
+        }};
+    }
+
+    macro_rules! rot_kick180_lab {
+        ($r:expr, $probe:ident) => {{
+            let r1 = const { KickTab180::<P, { $r }>::R1 };
+            let r1c = const { canon_r(P, KickTab180::<P, { $r }>::R1) };
+            if $probe.and(&unsearched[r1].or(&cands[r1c])).any() {
+                let mut temp = search[{ $r }];
+                let mut result = SBoard::<N>::EMPTY;
+                kick_step180_lab::<P, { $r }, 0, N>(
+                    &mut temp,
+                    &mut result,
+                    &usable[r1c],
+                    tc,
+                    &imm[r1c],
+                    &mut full[r1c],
+                    &mut mini[r1c],
+                    &mut nospin[r1c],
+                );
+                kick_step180_lab::<P, { $r }, 1, N>(
+                    &mut temp,
+                    &mut result,
+                    &usable[r1c],
+                    tc,
+                    &imm[r1c],
+                    &mut full[r1c],
+                    &mut mini[r1c],
+                    &mut nospin[r1c],
+                );
+                kick_step180_lab::<P, { $r }, 2, N>(
+                    &mut temp,
+                    &mut result,
+                    &usable[r1c],
+                    tc,
+                    &imm[r1c],
+                    &mut full[r1c],
+                    &mut mini[r1c],
+                    &mut nospin[r1c],
+                );
+                kick_step180_lab::<P, { $r }, 3, N>(
+                    &mut temp,
+                    &mut result,
+                    &usable[r1c],
+                    tc,
+                    &imm[r1c],
+                    &mut full[r1c],
+                    &mut mini[r1c],
+                    &mut nospin[r1c],
+                );
+                kick_step180_lab::<P, { $r }, 4, N>(
+                    &mut temp,
+                    &mut result,
+                    &usable[r1c],
+                    tc,
+                    &imm[r1c],
+                    &mut full[r1c],
+                    &mut mini[r1c],
+                    &mut nospin[r1c],
+                );
+                kick_step180_lab::<P, { $r }, 5, N>(
+                    &mut temp,
+                    &mut result,
+                    &usable[r1c],
+                    tc,
+                    &imm[r1c],
+                    &mut full[r1c],
+                    &mut mini[r1c],
+                    &mut nospin[r1c],
+                );
+                let res = result.and(&unsearched[r1]);
+                if res.any() {
+                    search[r1] = search[r1].or(&res);
+                    unsearched[r1] = unsearched[r1].andnot(&res);
+                    done &= !(1u32 << r1);
+                }
+            }
+        }};
+    }
+
+    macro_rules! process_rot_lab {
+        ($r:literal) => {
+            if done & (1 << $r) == 0 {
+                done |= 1 << $r;
+                loop {
+                    let temp = search[$r]
+                        .shifted(-1, 0)
+                        .or(&search[$r].shifted(1, 0))
+                        .or(&search[$r].shifted(0, -1))
+                        .and(&unsearched[$r]);
+                    if !temp.any() {
+                        break;
+                    }
+                    search[$r] = search[$r].or(&temp);
+                    unsearched[$r] = unsearched[$r].xor(&temp);
+                }
+
+                let probe = env_probe(&search[$r], EnvTabR::<P, $r>::E);
+                rot_kick_lab!($r, 0, probe);
+                rot_kick_lab!($r, 1, probe);
+                rot_kick180_lab!($r, probe);
+
+                if done != all_done {
+                    search[$r] = SBoard::EMPTY;
+                }
+            }
+        };
+    }
+
+    while done != all_done {
+        process_rot_lab!(0);
+        process_rot_lab!(1);
+        process_rot_lab!(2);
+        process_rot_lab!(3);
+    }
+
+    let mut out = STMoves::EMPTY;
+    unroll_rc!(r, cs, {
+        let unreached = if group2(P) {
+            unsearched[r].and(&unsearched[(r + 2) & 3])
+        } else {
+            unsearched[r]
+        };
+        let reach = usable[r].andnot(&unreached);
+        // NoSpin coverage from drops and laterals, applied once from
+        // final reach: lateral arrivals one step out, plus occluded
+        // downward fill (drop-through below reach cells).
+        let lat = reach
+            .shifted(-1, 0)
+            .or(&reach.shifted(1, 0))
+            .and(&usable[r]);
+        let u1 = usable[r];
+        let mut d = reach.shifted(0, -1).and(&u1);
+        d = d.or(&d.shifted(0, -1).and(&u1));
+        let u2 = u1.and(&u1.shifted(0, -1));
+        d = d.or(&d.shifted(0, -2).and(&u2));
+        let u4 = u2.and(&u2.shifted(0, -2));
+        d = d.or(&d.shifted(0, -4).and(&u4));
+        let u8 = u4.and(&u4.shifted(0, -4));
+        d = d.or(&d.shifted(0, -8).and(&u8));
+        let u16 = u8.and(&u8.shifted(0, -8));
+        d = d.or(&d.shifted(0, -16).and(&u16));
+        nospin[r] = nospin[r].or(&lat).or(&d);
+
+        let m = cands[r].and(&reach);
+        out.m[r] = m;
+        out.full[r] = m.and(&full[r]);
+        out.mini[r] = m.and(&mini[r]);
+        out.nospin[r] = m.and(&nospin[r]);
+    });
+    out
+}
+
+// Shared closure body. Tracks missing[rc] = cands[rc] & !reached instead of
+// the reached move boards: every harvest is a single andnot and every
+// "all candidates covered?" test is a single any() test.
+fn gen_impl<const P: usize, const N: usize, const EMIT: bool, const RULES: bool>(
+    b: &SBoard<N>,
+    y: i32,
+    force: i32,
+) -> (SMoves<N>, u32) {
+    let usable = usable_map::<P, N>(b);
+    gen_impl_with_usable::<P, N, EMIT, RULES>(&usable, y, force)
+}
+
+// Core of gen_impl taking prebuilt usable maps. Split out so the labeled
+// gate-fail path can reuse them without rebuilding.
+#[inline(always)]
+fn gen_impl_with_usable<const P: usize, const N: usize, const EMIT: bool, const RULES: bool>(
+    usable: &[SBoard<N>; 4],
     y: i32,
     force: i32,
 ) -> (SMoves<N>, u32) {
@@ -849,18 +2314,14 @@ fn gen_impl<const P: usize, const N: usize, const EMIT: bool>(
     let ss = ssize(P);
     let all_done: u32 = (1u32 << ss) - 1;
 
-    let usable = usable_map::<P, N>(b);
-
     let mut missing = [SBoard::<N>::EMPTY; 4];
     let mut search = [SBoard::<N>::EMPTY; 4];
     let mut remaining: u32 = 0;
     let mut done: u32;
     let mut total: u32 = 0;
 
-    // A variable array index pins the whole array to stack memory (SROA cannot
-    // split an alloca that is indexed dynamically), turning every board op in
-    // the closure into load/store traffic. Each per-rotation loop is therefore
-    // unrolled with const indices.
+    // Variable array indices prevent SROA from splitting the alloca,
+    // so each per-rotation loop is unrolled with const indices.
     macro_rules! unroll_rc {
         ($r:ident, $limit:expr, $body:block) => {{
             {
@@ -889,16 +2350,15 @@ fn gen_impl<const P: usize, const N: usize, const EMIT: bool>(
     macro_rules! finish {
         () => {{
             if EMIT {
-                let cands = landable_map(&usable, cs);
+                let cands = landable_map(usable, cs);
                 let mut m = [SBoard::<N>::EMPTY; 4];
                 unroll_rc!(r, cs, {
                     m[r] = cands[r].andnot(&missing[r]);
                 });
                 return (SMoves { m }, 0);
             } else {
-                // `remaining` bit r is set iff missing[r] is non-empty, so
-                // popcounting only those rotations is exact and skips all
-                // four boards on fully covered exits.
+                // remaining bit r is set iff missing[r] is non-empty,
+                // so popcounting only those rotations is exact.
                 let mut miss = 0u32;
                 unroll_rc!(r, 4, {
                     if remaining & (1 << r) != 0 {
@@ -911,18 +2371,28 @@ fn gen_impl<const P: usize, const N: usize, const EMIT: bool>(
     }
 
     {
-        let cands = landable_map(&usable, cs);
+        let cands = landable_map(usable, cs);
         if !EMIT {
             unroll_rc!(r, cs, {
                 total += cands[r].popcount();
             });
         }
 
-        if h > SPAWN_Y && y > SPAWN_Y - h_spawn(P) {
-            // Slow init: the stack reaches the spawn area, so reachability has
-            // to start from the actual spawn cell (scanning upward by `force`).
-            let threshold = (SPAWN_Y + force + 1).min(h);
-            let mut s = SPAWN_Y;
+        // Under production rules, spawn scan starts at the engine's spawn
+        // row (21); the racer uses spawn 19 and piece-scaled thresholds.
+        let spawn_row: i32 = if RULES {
+            crate::default_ruleset::ACTIVE_RULES.spawn_row
+        } else {
+            SPAWN_Y
+        };
+        let slow = if RULES {
+            h > spawn_row && y > spawn_row - 3
+        } else {
+            h > SPAWN_Y && y > SPAWN_Y - h_spawn(P)
+        };
+        if slow {
+            let threshold = (spawn_row + force + 1).min(h);
+            let mut s = spawn_row;
             while s < threshold && !usable[0].get(SPAWN_X, s) {
                 s += 1;
             }
@@ -938,11 +2408,8 @@ fn gen_impl<const P: usize, const N: usize, const EMIT: bool>(
             });
             done = all_done & !1;
         } else {
-            // Fast init: smear the blocked map downward so `search` starts as
-            // the sky-droppable set. Sky-drop reachability is a sound subset of
-            // full reachability, so if it already covers every landable
-            // candidate the tuck/seed/BFS phases cannot change the answer;
-            // most open boards (the bulk of perft leaves) exit here.
+            // Fast init: smear the blocked map downward. Sky-drop
+            // reachability is a sound subset; most open boards exit here.
             let ceiling = h - h_gen(P);
             unroll_rc!(r, cs, {
                 let mut surface = usable[r].not();
@@ -980,9 +2447,8 @@ fn gen_impl<const P: usize, const N: usize, const EMIT: bool>(
             });
 
             if group3(P) {
-                // Sequential on purpose, matching upstream: later rotations may
-                // pick up seeds added to earlier ones. Any sound seed superset
-                // yields the same closure.
+                // Sequential: later rotations may pick up seeds from
+                // earlier ones. Any sound seed superset works.
                 unroll_rc!(r, 4, {
                     search[r] =
                         search[r].or(&search[(r + 1) & 3].or(&search[(r + 3) & 3]).and(&usable[r]));
@@ -1017,9 +2483,9 @@ fn gen_impl<const P: usize, const N: usize, const EMIT: bool>(
         ($r:literal, $d:literal, $probe:ident) => {{
             let r1 = const { KickTab::<P, $d, $r>::R1 };
             let r1c = const { KickTab::<P, $d, $r>::R1C };
-            // The wave's entire effect is gated by `res = result & unsearched[r1]`,
-            // and the result is contained in the source set dilated by the kick
-            // envelope, so an empty probe intersection proves a no-op wave.
+            // The wave effect is gated by res = result & unsearched[r1],
+            // and the result is contained in the source set dilated by
+            // the kick envelope, so empty probe intersection = no-op.
             if $probe.and(&unsearched[r1]).any() {
                 let mut temp = search[$r];
                 let mut result = SBoard::<N>::EMPTY;
@@ -1028,6 +2494,63 @@ fn gen_impl<const P: usize, const N: usize, const EMIT: bool>(
                 kick_step::<P, $d, $r, 2, N>(&mut temp, &mut result, &usable[r1c]);
                 kick_step::<P, $d, $r, 3, N>(&mut temp, &mut result, &usable[r1c]);
                 kick_step::<P, $d, $r, 4, N>(&mut temp, &mut result, &usable[r1c]);
+                let res = result.and(&unsearched[r1]);
+                if res.any() {
+                    search[r1] = search[r1].or(&res);
+                    unsearched[r1] = unsearched[r1].andnot(&res);
+                    done &= !(1u32 << r1);
+                    missing[r1c] = missing[r1c].andnot(&res);
+                    if missing[r1c].any() {
+                        remaining |= 1 << r1c;
+                    } else {
+                        remaining &= !(1u32 << r1c);
+                    }
+                }
+            }
+        }};
+    }
+
+    macro_rules! rot_kick_r {
+        ($r:literal, $d:literal, $probe:ident) => {{
+            let r1 = const { KickTabR::<P, $d, $r>::R1 };
+            let r1c = const { KickTabR::<P, $d, $r>::R1C };
+            if $probe.and(&unsearched[r1]).any() {
+                let mut temp = search[$r];
+                let mut result = SBoard::<N>::EMPTY;
+                kick_step_r::<P, $d, $r, 0, N>(&mut temp, &mut result, &usable[r1c]);
+                kick_step_r::<P, $d, $r, 1, N>(&mut temp, &mut result, &usable[r1c]);
+                kick_step_r::<P, $d, $r, 2, N>(&mut temp, &mut result, &usable[r1c]);
+                kick_step_r::<P, $d, $r, 3, N>(&mut temp, &mut result, &usable[r1c]);
+                kick_step_r::<P, $d, $r, 4, N>(&mut temp, &mut result, &usable[r1c]);
+                let res = result.and(&unsearched[r1]);
+                if res.any() {
+                    search[r1] = search[r1].or(&res);
+                    unsearched[r1] = unsearched[r1].andnot(&res);
+                    done &= !(1u32 << r1);
+                    missing[r1c] = missing[r1c].andnot(&res);
+                    if missing[r1c].any() {
+                        remaining |= 1 << r1c;
+                    } else {
+                        remaining &= !(1u32 << r1c);
+                    }
+                }
+            }
+        }};
+    }
+
+    macro_rules! rot_kick180 {
+        ($r:literal, $probe:ident) => {{
+            let r1 = const { KickTab180::<P, $r>::R1 };
+            let r1c = const { KickTab180::<P, $r>::R1C };
+            if $probe.and(&unsearched[r1]).any() {
+                let mut temp = search[$r];
+                let mut result = SBoard::<N>::EMPTY;
+                kick_step180::<P, $r, 0, N>(&mut temp, &mut result, &usable[r1c]);
+                kick_step180::<P, $r, 1, N>(&mut temp, &mut result, &usable[r1c]);
+                kick_step180::<P, $r, 2, N>(&mut temp, &mut result, &usable[r1c]);
+                kick_step180::<P, $r, 3, N>(&mut temp, &mut result, &usable[r1c]);
+                kick_step180::<P, $r, 4, N>(&mut temp, &mut result, &usable[r1c]);
+                kick_step180::<P, $r, 5, N>(&mut temp, &mut result, &usable[r1c]);
                 let res = result.and(&unsearched[r1]);
                 if res.any() {
                     search[r1] = search[r1].or(&res);
@@ -1074,9 +2597,16 @@ fn gen_impl<const P: usize, const N: usize, const EMIT: bool>(
                     done = all_done;
                 } else {
                     if P != PI_O {
-                        let probe = env_probe(&search[$r], EnvTab::<P, $r>::E);
-                        rot_kick!($r, 0, probe);
-                        rot_kick!($r, 1, probe);
+                        if RULES {
+                            let probe = env_probe(&search[$r], EnvTabR::<P, $r>::E);
+                            rot_kick_r!($r, 0, probe);
+                            rot_kick_r!($r, 1, probe);
+                            rot_kick180!($r, probe);
+                        } else {
+                            let probe = env_probe(&search[$r], EnvTab::<P, $r>::E);
+                            rot_kick!($r, 0, probe);
+                            rot_kick!($r, 1, probe);
+                        }
                         if remaining == 0 {
                             done = all_done;
                         }
@@ -1099,10 +2629,9 @@ fn gen_impl<const P: usize, const N: usize, const EMIT: bool>(
     finish!();
 }
 
-// ---------------------------------------------------------------------------
 // Perft driver with band routing.
 
-const fn band_words(h: i32) -> usize {
+pub const fn band_words(h: i32) -> usize {
     if h < 6 {
         1
     } else if h < 12 {
@@ -1132,9 +2661,8 @@ fn step_cast<const P: usize, const N: usize, const M: usize>(
 ) -> u64 {
     let mut b2: SBoard<M> = b1.cast();
     let clears = b2.do_move_masked(P, rc, x, y);
-    // Same exact-height derivation as `last_level`: clear-free placements top
-    // out at y + top_extent, clearing ones rescan the small banded board. This
-    // lets the whole recursion skip the 8-word max_y rescan per node.
+    // Same height derivation as last_level: clear-free placements top out
+    // at y + top_extent, clearing ones rescan the small banded board.
     let h2 = if clears == 0 {
         let t = y + top_extent(P, rc);
         if t > h {
@@ -1150,10 +2678,9 @@ fn step_cast<const P: usize, const N: usize, const M: usize>(
     perft_rec(&nb, q, depth, h2)
 }
 
-// Fused final level: children are leaves, so skip the full-board normalize,
-// the max_y rescan, and the per-child piece/band dispatch chain. The child
-// height is exact: a clear-free placement tops out at y + top_extent, and the
-// rare clearing placement falls back to a rescan of the small banded board.
+// Fused final level: children are leaves, so skip full-board
+// normalize and max_y rescan. Child height is exact: clear-free
+// placements top out at y + top_extent; clearing ones rescan.
 fn last_level<const P2: usize, const N: usize, const M: usize>(
     b1: &SBoard<N>,
     ml: &SMoves<N>,
@@ -1178,8 +2705,8 @@ fn last_level<const P2: usize, const N: usize, const M: usize>(
             } else {
                 b2.max_y()
             };
-            // Underestimating h2 would let count_locks pick fast init while the
-            // spawn cell is blocked, silently overcounting. Pin exactness in debug.
+            // Underestimating h2 would let count_locks pick fast init
+            // while spawn cell is blocked, silently overcounting.
             debug_assert_eq!(h2, b2.max_y());
             nodes += match band_words(h2 + h_gen(P2)) {
                 1 => count_locks::<P2, 1>(&b2.cast(), h2, 0),
@@ -1308,24 +2835,17 @@ pub fn parse_queue(s: &str) -> Option<Vec<usize>> {
         .collect()
 }
 
-/// Multithreaded perft over disjoint subtree work items.
-///
-/// Splits the first plies into child boards sequentially, then fans the
-/// disjoint subtrees out across a rayon pool. Each subtree runs the
-/// unchanged sequential driver, so the total is identical to `perft` -
-/// addition over disjoint subtrees is order-independent.
+/// Multithreaded perft: first plies are split sequentially, then subtrees
+/// are fanned out across a rayon pool. Results are order-independent.
 #[cfg(feature = "rayon")]
 pub fn perft_mt(queue: &[usize]) -> u64 {
     use rayon::prelude::*;
     assert!(!queue.is_empty() && queue.iter().all(|&p| p < 7));
     let depth = queue.len();
     if depth <= 2 {
-        // Splitting overhead exceeds the work at trivial depths.
         return perft(queue);
     }
-    // Three split plies gives a few thousand work items at depth 7
-    // (IOL = 5266), fine-grained enough for work stealing to balance
-    // uneven subtree sizes while collection stays negligible.
+    // Three split plies gives a few thousand work items at depth 7.
     let split = (depth - 1).min(3);
     let mut work: Vec<(SBoard<8>, i32)> = vec![(SBoard::<8>::EMPTY, 0)];
     for &p in &queue[..split] {
@@ -1341,8 +2861,7 @@ pub fn perft_mt(queue: &[usize]) -> u64 {
         .sum()
 }
 
-/// Enumerate the child boards of `b` for piece `p` with exact heights.
-/// Cold path: runs once per work-list ply, so plain full-band ops suffice.
+/// Enumerate child boards of b for piece p with exact heights.
 #[cfg(feature = "rayon")]
 fn collect_children(b: &SBoard<8>, h: i32, p: usize, out: &mut Vec<(SBoard<8>, i32)>) {
     fn go<const P: usize>(b: &SBoard<8>, h: i32, out: &mut Vec<(SBoard<8>, i32)>) {
@@ -1372,8 +2891,7 @@ fn collect_children(b: &SBoard<8>, h: i32, p: usize, out: &mut Vec<(SBoard<8>, i
 mod tests {
     use super::*;
 
-    // Frozen verbatim copy of the pre-missing-tracking `generate`, kept as the
-    // behavioral oracle for the refactor parity tests. Do not optimize or fix.
+    // Frozen copy of the pre-missing-tracking generate (parity oracle).
     pub fn generate_reference<const P: usize, const N: usize>(
         b: &SBoard<N>,
         y: i32,
@@ -1395,7 +2913,7 @@ mod tests {
 
         if h > SPAWN_Y && y > SPAWN_Y - h_spawn(P) {
             // Slow init: the stack reaches the spawn area, so reachability has to
-            // start from the actual spawn cell (scanning upward by `force`).
+            // start from the actual spawn cell (scanning upward by force).
             let threshold = (SPAWN_Y + force + 1).min(h);
             let mut s = SPAWN_Y;
             while s < threshold && !usable[0].get(SPAWN_X, s) {
@@ -1408,11 +2926,8 @@ mod tests {
             remaining = (1u32 << cs) - 1;
             done = all_done & !1;
         } else {
-            // Fast init: smear the blocked map downward so `search` starts as the
-            // sky-droppable set. Sky-drop reachability is a sound subset of full
-            // reachability, so if it already covers every landable candidate the
-            // tuck/seed/BFS phases cannot change the answer; most open boards
-            // (the bulk of perft leaves) exit here before any tuck work.
+            // Fast init: smear the blocked map downward. Sky-drop
+            // reachability is a sound subset; most open boards exit here.
             let ceiling = h - h_gen(P);
             let mut r = 0;
             while r < cs {
@@ -1454,9 +2969,8 @@ mod tests {
             }
 
             if group3(P) {
-                // Sequential on purpose, matching upstream: later rotations may
-                // pick up seeds added to earlier ones. Any sound seed superset
-                // yields the same closure.
+                // Sequential: later rotations may pick up seeds from
+                // earlier ones. Any sound seed superset works.
                 let mut r = 0;
                 while r < 4 {
                     let r1 = (r + 1) & 3;
@@ -1497,9 +3011,8 @@ mod tests {
             ($r:literal, $d:literal, $probe:ident) => {{
                 let r1 = KickTab::<P, $d, $r>::R1;
                 let r1c = KickTab::<P, $d, $r>::R1C;
-                // The wave's entire effect is gated by `res = result & unsearched[r1]`,
-                // and the result is contained in the source set dilated by the kick
-                // envelope, so an empty probe intersection proves a no-op wave.
+                // Wave effect gated by res = result & unsearched[r1];
+                // empty probe intersection = no-op.
                 if $probe.and(&unsearched[r1]).any() {
                     let mut temp = search[$r];
                     let mut result = SBoard::<N>::EMPTY;
@@ -1852,8 +3365,8 @@ mod tests {
 
     fn gen_parity_piece<const P: usize>(state: &mut u64) {
         for case in 0..400 {
-            // Mix shallow and tall fills so both the fast and slow inits and
-            // every early exit are exercised across the band sizes.
+            // Mix shallow and tall fills to exercise both inits and
+            // every early exit across band sizes.
             let rows = 1 + (case % 11);
             gen_parity_case::<P, 1>(state, rows.min(4));
             gen_parity_case::<P, 2>(state, rows);
@@ -1877,8 +3390,8 @@ mod tests {
     #[cfg(feature = "rayon")]
     #[test]
     fn parallel_perft_matches_sequential() {
-        // Depth <= 2 exercises the sequential fallback; deeper queues
-        // exercise the split-and-sum path against the sequential driver.
+        // Depth <= 2 exercises sequential fallback; deeper queues
+        // exercise split-and-sum against the sequential driver.
         let fixed: [&[usize]; 6] = [
             &[PI_T],
             &[PI_I, PI_O],
@@ -1926,8 +3439,7 @@ mod tests {
         }
     }
 
-    // Frozen verbatim copy of the pre-fusion perft driver, kept as the
-    // behavioral oracle for driver refactor parity tests. Do not optimize.
+    // Frozen copy of the pre-fusion perft driver (parity oracle).
     fn reference_leaf<const P: usize, const N: usize>(b: &SBoard<8>, h: i32) -> u64 {
         let b1: SBoard<N> = b.cast();
         count_locks::<P, N>(&b1, h, 0) as u64

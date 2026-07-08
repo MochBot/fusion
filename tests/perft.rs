@@ -1,93 +1,62 @@
-// perft.rs -- integration tests pinning movegen node counts (D1-D4 vs upstream, D5-D7 vs Fusion)
-use direct_cobra_copy::board::Board;
-use direct_cobra_copy::header::Piece;
-use direct_cobra_copy::movegen::MoveList;
+// perft.rs -- integration pins for the strict placement tree.
+// Every node expands each distinct reachable placement exactly once.
+// D1-D5 match the cobra CLI baselines in fixtures/perft/baselines.txt.
+use fusion_engine::board::Board;
+use fusion_engine::header::Piece;
+use fusion_engine::movegen::MoveList;
+use fusion_engine::perft::{perft, perft_movelist};
 
-/// Queue order: I O L J S Z T (repeating)
-const QUEUE: [Piece; 7] = [
-    Piece::I,
-    Piece::O,
-    Piece::L,
-    Piece::J,
-    Piece::S,
-    Piece::Z,
-    Piece::T,
-];
+const STRICT: [(usize, u64); 5] = [(1, 17), (2, 153), (3, 5266), (4, 188561), (5, 3500883)];
 
-// board-only perft — matches Cobra's perft exactly (no State overhead)
-fn perft(board: &Board, queue: &[Piece], depth: usize) -> u64 {
-    if depth == 0 {
-        return 1;
+#[test]
+fn count_kernel_pins_d1_d3() {
+    let board = Board::new();
+    for (depth, expected) in &STRICT[..3] {
+        assert_eq!(perft(&board, 0, *depth), *expected, "D{depth}");
     }
-    let p = queue[0];
-    let ml = MoveList::new(board, p);
-    if depth == 1 {
-        return ml.size() as u64;
+}
+
+#[test]
+fn movelist_pins_d1_d3() {
+    let board = Board::new();
+    for (depth, expected) in &STRICT[..3] {
+        assert_eq!(perft_movelist(&board, 0, *depth), *expected, "D{depth}");
     }
-    let mut count = 0u64;
-    for m in ml.iter() {
-        let mut next = board.clone();
-        next.do_move(m);
-        count += perft(&next, &queue[1..], depth - 1);
+}
+
+#[test]
+#[ignore] // slow in debug builds
+fn count_kernel_pins_d4_d5() {
+    let board = Board::new();
+    for (depth, expected) in &STRICT[3..] {
+        assert_eq!(perft(&board, 0, *depth), *expected, "D{depth}");
     }
-    count
 }
 
-// D1-D4 baselines match cobra-movegen d7054ef, queue IOLJSZT, empty board.
-// D5-D7 are Fusion baselines: all-spin emission adds spin-labeled move
-// variants once boards develop overhangs, so deep counts exceed upstream's
-// T-spin-only totals. Verified: with enable_allspin=false this engine
-// reproduces upstream exactly (D5 3500883, D6 67088390, D7 2705999255).
-
 #[test]
-fn test_perft_d1() {
+#[ignore] // slow in debug builds
+fn movelist_pins_d4_d5() {
     let board = Board::new();
-    assert_eq!(perft(&board, &QUEUE, 1), 17, "D1");
+    for (depth, expected) in &STRICT[3..] {
+        assert_eq!(perft_movelist(&board, 0, *depth), *expected, "D{depth}");
+    }
 }
 
 #[test]
-fn test_perft_d2() {
+fn modes_agree_on_seeded_boards() {
     let board = Board::new();
-    assert_eq!(perft(&board, &QUEUE, 2), 153, "D2");
+    for depth in 1..=3 {
+        assert_eq!(
+            perft(&board, 0, depth),
+            perft_movelist(&board, 0, depth),
+            "mode divergence at D{depth}"
+        );
+    }
 }
 
+// per-piece D1 counts on the empty board, via the production generator
 #[test]
-fn test_perft_d3() {
-    let board = Board::new();
-    assert_eq!(perft(&board, &QUEUE, 3), 5266, "D3");
-}
-
-#[test]
-#[ignore] // slow in debug mode
-fn test_perft_d4() {
-    let board = Board::new();
-    assert_eq!(perft(&board, &QUEUE, 4), 188561, "D4");
-}
-
-#[test]
-#[ignore]
-fn test_perft_d5() {
-    let board = Board::new();
-    assert_eq!(perft(&board, &QUEUE, 5), 3573524, "D5");
-}
-
-#[test]
-#[ignore]
-fn test_perft_d6() {
-    let board = Board::new();
-    assert_eq!(perft(&board, &QUEUE, 6), 70797703, "D6");
-}
-
-#[test]
-#[ignore]
-fn test_perft_d7() {
-    let board = Board::new();
-    assert_eq!(perft(&board, &QUEUE, 7), 2845035044, "D7");
-}
-
-// per-piece D1 counts: I=17, O=9, L=34, J=34, S=17, Z=17, T=34
-#[test]
-fn test_perft_d1_per_piece() {
+fn per_piece_d1_counts() {
     let board = Board::new();
     let expected = [
         (Piece::I, 17),

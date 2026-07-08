@@ -1,4 +1,4 @@
-#![allow(dead_code)] // TetraStats feature extraction — used by WASM analysis pipeline
+#![allow(dead_code)] // TetraStats feature extraction - used by WASM analysis pipeline
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct TetraStatsFeatureInput {
     pub apm: f64,

@@ -1,4 +1,4 @@
-//! Move-encoding FFI — single source of truth for Move.raw u16 across languages.
+//! Move-encoding FFI - single source of truth for Move.raw u16 across languages.
 //!
 //! Problem this module solves:
 //!
@@ -38,7 +38,7 @@
 //!   the non-negative range of i32, so a negative result unambiguously
 //!   signals an error. (An earlier u16-returning design hit a collision:
 //!   `Move::new(I, West, 15, 63, spin=true)` encodes to 0xFFFF, which is
-//!   the same bit pattern as `u16::MAX` — the original sentinel.)
+//!   the same bit pattern as `u16::MAX` - the original sentinel.)
 
 use crate::header::{Move, Piece, Rotation};
 

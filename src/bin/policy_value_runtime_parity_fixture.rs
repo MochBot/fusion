@@ -2,15 +2,15 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
-use direct_cobra_copy::board::{Board, BOARD_HEIGHT, FULL_ROW};
-use direct_cobra_copy::header::{Move, Piece, COL_NB};
-use direct_cobra_copy::move_buffer::MoveBuffer;
-use direct_cobra_copy::movegen::generate;
-use direct_cobra_copy::policy_value_runtime::{
+use fusion_engine::board::{Board, BOARD_HEIGHT, FULL_ROW};
+use fusion_engine::header::{Move, Piece, COL_NB};
+use fusion_engine::move_buffer::MoveBuffer;
+use fusion_engine::movegen::generate;
+use fusion_engine::policy_value_runtime::{
     encode_candidate_features_flat, encode_state_features_flat, PolicyValueRuntime,
     PolicyValueRuntimeContext, CANDIDATE_CAPACITY, MOVE_FEATURE_DIM, TOTAL_FEATURES,
 };
-use direct_cobra_copy::state::GameState;
+use fusion_engine::state::GameState;
 
 const LOGIT_TOLERANCE: f32 = 1.0e-4;
 const RANK_MARGIN_THRESHOLD: f32 = 1.0e-3;

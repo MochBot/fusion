@@ -4,12 +4,12 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use direct_cobra_copy::board::{Board, BOARD_HEIGHT};
-use direct_cobra_copy::eval::EvalWeights;
-use direct_cobra_copy::header::{Piece, COL_NB};
-use direct_cobra_copy::search::find_best_move_with_scores;
-use direct_cobra_copy::search_config::SearchConfig;
-use direct_cobra_copy::state::GameState;
+use fusion_engine::board::{Board, BOARD_HEIGHT};
+use fusion_engine::eval::EvalWeights;
+use fusion_engine::header::{Piece, COL_NB};
+use fusion_engine::search::find_best_move_with_scores;
+use fusion_engine::search_config::SearchConfig;
+use fusion_engine::state::GameState;
 use serde::{Deserialize, Serialize};
 
 const PHASE1_SCHEMA_VERSION: &str = "phase1-v1";

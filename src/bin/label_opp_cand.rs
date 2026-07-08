@@ -12,7 +12,7 @@ use std::io::{self, Read, Write};
 
 use rayon::prelude::*;
 
-use direct_cobra_copy::label_kernel::{
+use fusion_engine::label_kernel::{
     beam_best, expand_candidates, inject_garbage, parse_context, reconstruct, record_bytes,
     ContextRec,
 };
@@ -286,7 +286,7 @@ fn main() -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use direct_cobra_copy::label_kernel::{expand_candidates, ContextRec};
+    use fusion_engine::label_kernel::{expand_candidates, ContextRec};
 
     fn empty_k7_ctx() -> ContextRec {
         let mut ctx = ContextRec::with_horizon(7);

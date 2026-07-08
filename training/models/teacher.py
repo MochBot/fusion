@@ -41,7 +41,7 @@ except ImportError:
 class TeacherNet(nn.Module):
     """Dual-board CNN teacher with privileged opponent information.
 
-    Input:  (B, 854) — player board(400) | opponent board(400) | pieces(49) | scalars(5)
+    Input:  (B, 854) - player board(400) | opponent board(400) | pieces(49) | scalars(5)
     Output: dict with 'regression' (B, 6) and 'phase_logits' (B, 3)
     """
 

@@ -1,4 +1,4 @@
-# Task 4-5 Player-Context Smoke — 2026-03-10
+# Task 4-5 Player-Context Smoke - 2026-03-10
 
 ## Scope
 

@@ -1,4 +1,4 @@
-//! Core types — 1:1 port of header.hpp
+//! Core types - 1:1 port of header.hpp
 
 pub type Bitboard = u64;
 
@@ -182,7 +182,7 @@ impl Move {
         Self { data }
     }
 
-    /// C++ Move(TSPIN, r, x, y, fullspin) — for T-spin move emission
+    /// C++ Move(TSPIN, r, x, y, fullspin) - for T-spin move emission
     pub const fn new_tspin(r: Rotation, x: i32, y: i32, fullspin: bool) -> Self {
         let data = (y as u16 & 0x3F)
             | ((x as u16 & 0xF) << 6)
@@ -308,7 +308,7 @@ pub fn is_ok_move(m: &Move) -> bool {
 }
 
 // -- piece_table --
-// C++ constexpr — build piece cells for given piece+rotation
+// C++ constexpr - build piece cells for given piece+rotation
 
 pub const fn make_piece(p: Piece) -> PieceCoordinates {
     use Coordinates as C;

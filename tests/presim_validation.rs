@@ -1,15 +1,15 @@
-use direct_cobra_copy::analysis::{
+use fusion_engine::analysis::{
     classify_win_prob_drop, compute_sigmoid_c, detect_insights, win_prob, InsightDetectorInput,
     InsightTag, PlayerSkill, Severity, SIGMOID_K,
 };
-use direct_cobra_copy::board::{Board, FULL_ROW};
-use direct_cobra_copy::eval::{evaluate, EvalWeights};
-use direct_cobra_copy::header::{Piece, SpinType, COL_NB};
-use direct_cobra_copy::movegen::{generate, MoveBuffer};
-use direct_cobra_copy::search::{
+use fusion_engine::board::{Board, FULL_ROW};
+use fusion_engine::eval::{evaluate, EvalWeights};
+use fusion_engine::header::{Piece, SpinType, COL_NB};
+use fusion_engine::movegen::{generate, MoveBuffer};
+use fusion_engine::search::{
     find_best_move, find_best_move_with_scores, SearchConfig, SearchResult,
 };
-use direct_cobra_copy::state::GameState;
+use fusion_engine::state::GameState;
 
 fn board_from_bottom_rows(bottom_rows: &[u16]) -> Board {
     assert!(
@@ -122,7 +122,7 @@ fn nearly_full_single_gap_prefers_gap_for_i_piece() {
     let (board_after, _) = assert_legal_and_sane(&state, &result, &weights);
 
     // Behavioral: filling a gap should reduce height (lines clear) or at least not spike.
-    // Don't assert exact x/rotation — those depend on weight tuning.
+    // Don't assert exact x/rotation - those depend on weight tuning.
     let score_before = evaluate(&state.board, &weights);
     let score_after = evaluate(&board_after, &weights);
     assert!(
@@ -359,7 +359,6 @@ fn test_attack_integration_tspin_scores_higher() {
     let config = SearchConfig {
         beam_width: 500,
         depth: 1,
-        futility_delta: 1000.0,
         ..SearchConfig::default()
     };
     let weights = EvalWeights::default();
@@ -411,9 +410,7 @@ fn test_attack_integration_tspin_scores_higher() {
     );
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// Task 9: Corpus calibration — severity distribution across skill tiers
-// ══════════════════════════════════════════════════════════════════════════════
+// Task 9: Corpus calibration - severity distribution across skill tiers
 
 fn d_rank_skill() -> PlayerSkill {
     PlayerSkill {
@@ -507,12 +504,12 @@ fn collect_pairs(scores: &[f32], out: &mut Vec<(f32, f32)>) {
 fn generate_calibration_pairs() -> Vec<(f32, f32)> {
     let mut pairs = Vec::new();
 
-    // Scenario 1: Clean board — small differentials expected
+    // Scenario 1: Clean board - small differentials expected
     let clean_board = Board::new();
     let clean_scores = search_root_scores(&clean_board, Piece::T);
     collect_pairs(&clean_scores, &mut pairs);
 
-    // Scenario 2: Messy board — moderate height, gaps
+    // Scenario 2: Messy board - moderate height, gaps
     let messy_board = board_from_bottom_rows(&[
         0b11_1011_1111,
         0b11_1111_0111,
@@ -522,21 +519,21 @@ fn generate_calibration_pairs() -> Vec<(f32, f32)> {
     let messy_scores = search_root_scores(&messy_board, Piece::S);
     collect_pairs(&messy_scores, &mut pairs);
 
-    // Scenario 3: Shallow cheese — 3 rows with staggered gaps
+    // Scenario 3: Shallow cheese - 3 rows with staggered gaps
     //   Scores around -8 to -12: flat region for X+ (c=-20.9),
     //   steep region for D (c=-13.3) → tier separation.
     let cheese_board = board_from_bottom_rows(&[row_with_gap(4), row_with_gap(7), row_with_gap(2)]);
     let cheese_scores = search_root_scores(&cheese_board, Piece::I);
     collect_pairs(&cheese_scores, &mut pairs);
 
-    // Scenario 4: Tuck-dependent — 2 rows with interior gaps
+    // Scenario 4: Tuck-dependent - 2 rows with interior gaps
     //   Scores around -6 to -10: well inside X+ flat region,
     //   near D sigmoid center → strong tier separation.
     let tuck_board = board_from_bottom_rows(&[row_with_gap(5), row_with_gap(3)]);
     let tuck_scores = search_root_scores(&tuck_board, Piece::J);
     collect_pairs(&tuck_scores, &mut pairs);
 
-    // Scenario 5: Well board — clean with well at col 9
+    // Scenario 5: Well board - clean with well at col 9
     let well_board = board_from_bottom_rows(&[0b01_1111_1111, 0b01_1111_1111, 0b01_1111_1111]);
     let well_scores = search_root_scores(&well_board, Piece::L);
     collect_pairs(&well_scores, &mut pairs);
@@ -671,7 +668,7 @@ fn test_calibration_severity_distributions() {
         d_none, d_none_pct, d_inac, d_mis, d_blu, d_mistake_blunder_pct
     );
 
-    // Task 9 acceptance criteria (updated for dual-metric severity — Fix 4):
+    // Task 9 acceptance criteria (updated for dual-metric severity - Fix 4):
     // Tail-region pairs now classified by raw delta, surfacing previously hidden mistakes
     assert!(
         xp_none_pct >= 35.0,
@@ -761,9 +758,7 @@ fn severity_ord(s: &Severity) -> u8 {
     }
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
 // Task 5: Insight primitive fixture scaffolding (MVP)
-// ══════════════════════════════════════════════════════════════════════════════
 
 /// Helper to construct a Board from row bitmasks (row 0 is bottom).
 fn make_test_board(rows: &[u16]) -> Board {

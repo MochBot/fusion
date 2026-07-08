@@ -1,4 +1,4 @@
-# Modal Player-Context Artifact Pipeline Smoke — 2026-03-10
+# Modal Player-Context Artifact Pipeline Smoke - 2026-03-10
 
 ## Scope
 

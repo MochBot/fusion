@@ -121,7 +121,7 @@ Severity and explanation are downstream products, not sources of truth.
 
 ## Phase Plan
 
-## Phase 0 — Canonical State Contract
+## Phase 0 - Canonical State Contract
 
 **Objective:** make training examples and runtime state encoding provably consistent.
 
@@ -135,7 +135,7 @@ Severity and explanation are downstream products, not sources of truth.
 
 **Exit condition:** training and runtime can both encode the same replay frame into the same canonical state representation with documented field ownership.
 
-## Phase 1 — Search + Player-Context Supervision
+## Phase 1 - Search + Player-Context Supervision
 
 **Objective:** replace proxy teacher targets with policy/value supervision that separates tactical search strength from elite-player intent.
 
@@ -149,7 +149,7 @@ Severity and explanation are downstream products, not sources of truth.
 
 **Exit condition:** the model is no longer trained primarily to imitate handcrafted teacher proxies, and Phase 1 artifacts cleanly distinguish search strength from player-intent supervision.
 
-## Phase 2 — Neural Runtime Ownership
+## Phase 2 - Neural Runtime Ownership
 
 **Objective:** make learned outputs guide search itself.
 
@@ -162,7 +162,7 @@ Severity and explanation are downstream products, not sources of truth.
 
 **Exit condition:** best-move selection is primarily driven by neural-guided search rather than handcrafted board/attack/context mixing.
 
-## Phase 3 — Coaching Rebuild
+## Phase 3 - Coaching Rebuild
 
 **Objective:** rebuild coaching as a downstream view over stronger engine truth.
 

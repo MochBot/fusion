@@ -1,4 +1,4 @@
-"""StudentNet — compact MLP distilled from the teacher for WASM inference."""
+"""StudentNet - compact MLP distilled from the teacher for WASM inference."""
 
 from collections import OrderedDict
 
@@ -29,8 +29,8 @@ class StudentNet(nn.Module):
     Layers are built dynamically from STUDENT_DIMS with SCReLU after each
     hidden linear layer. The output layer has no activation.
 
-    Input:  (B, 854)  — feature vector (player board + opponent board + pieces + scalars)
-    Output: (B, 9)    — 6 regression heads + 3 phase logits
+    Input:  (B, 854)  - feature vector (player board + opponent board + pieces + scalars)
+    Output: (B, 9)    - 6 regression heads + 3 phase logits
         [:, 0:6] = value, attack_potential, defensive_solidity, efficiency, flexibility, tempo
         [:, 6:9] = opener, midgame, survival (phase logits)
 
@@ -77,8 +77,8 @@ class StudentNet(nn.Module):
 
         Returns:
             Tuple of (regression, phase_logits):
-                regression:   (B, 6) — value through tempo
-                phase_logits: (B, 3) — opener, midgame, survival
+                regression:   (B, 6) - value through tempo
+                phase_logits: (B, 3) - opener, midgame, survival
         """
         regression = output[:, :NUM_REGRESSION_HEADS]
         phase_logits = output[:, NUM_REGRESSION_HEADS:]

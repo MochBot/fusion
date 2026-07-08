@@ -1,4 +1,4 @@
-"""TTRM replay preprocessor — converts .ttrm replays into flat binary training samples.
+"""TTRM replay preprocessor - converts .ttrm replays into flat binary training samples.
 
 Simulates TETR.IO game mechanics from initial board snapshot + key events to
 reconstruct board state at each piece placement. Extracts 854-feature vectors
@@ -125,7 +125,7 @@ class _PlayerPlacementEvent:
     hold_piece: str | None
     queue: list[str]
 
-# SRS piece shapes — each rotation state is list of (row, col) offsets from spawn origin
+# SRS piece shapes - each rotation state is list of (row, col) offsets from spawn origin
 # Origin is top-left of bounding box. Coordinates are (row_offset, col_offset).
 SRS_SHAPES: dict[str, list[list[tuple[int, int]]]] = {
     "i": [
@@ -688,7 +688,7 @@ def process_file(filepath: str | Path) -> list[CanonicalExample]:
 
 
 def _process_file_worker(filepath: str) -> tuple[bytes, bytes, bytes, bytes, int, str | None]:
-    """Worker function for multiprocessing — must be top-level and picklable.
+    """Worker function for multiprocessing - must be top-level and picklable.
 
     Returns (raw_bytes, sample_count, error_or_None).
     """

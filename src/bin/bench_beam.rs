@@ -7,7 +7,7 @@
 use std::hash::{BuildHasherDefault, Hasher};
 use std::time::Instant;
 
-use direct_cobra_copy::attack::calculate_attack_s2_tl_with_multiplier;
+use fusion_engine::attack::calculate_attack_s2_tl_with_multiplier;
 
 // FxHash: fast non-cryptographic hasher (rustc-hash style). Exact dedup, no
 // SipHash DoS overhead. Key stays [u16;40] so dedup remains bit-exact.
@@ -37,10 +37,10 @@ impl Hasher for FxHasher {
     }
 }
 type FxSet = std::collections::HashSet<[u16; 40], BuildHasherDefault<FxHasher>>;
-use direct_cobra_copy::board::Board;
-use direct_cobra_copy::header::Piece;
-use direct_cobra_copy::move_buffer::MoveBuffer;
-use direct_cobra_copy::movegen::generate;
+use fusion_engine::board::Board;
+use fusion_engine::header::Piece;
+use fusion_engine::move_buffer::MoveBuffer;
+use fusion_engine::movegen::generate;
 
 const BOARD_ROWS: [u16; 40] = {
     let mut r = [0u16; 40];
@@ -536,6 +536,77 @@ fn main() {
     }
     let dt_opt2 = t2.elapsed().as_secs_f64();
 
+    // Live kernels (crate::coach_beam) use generate_playable, so their results
+    // and timings are not comparable to the generate-based replicas above;
+    // bit-parity for them is pinned by coach_beam's differential tests.
+    use fusion_engine::coach_beam;
+    let bw32 = beam as u32;
+    for _ in 0..(iters / 10).max(1) {
+        sink += coach_beam::beam_best_gm(
+            &BOARD_ROWS,
+            gm0_bits,
+            &PIECES,
+            0,
+            0,
+            0,
+            None,
+            bw32,
+            1.0,
+            true,
+        );
+    }
+    let t3 = Instant::now();
+    for _ in 0..iters {
+        sink += coach_beam::beam_best_gm(
+            &BOARD_ROWS,
+            gm0_bits,
+            &PIECES,
+            0,
+            0,
+            0,
+            None,
+            bw32,
+            1.0,
+            true,
+        );
+    }
+    let dt_live = t3.elapsed().as_secs_f64();
+
+    for _ in 0..(iters / 10).max(1) {
+        sink += coach_beam::beam_best_gm_line(
+            &BOARD_ROWS,
+            gm0_bits,
+            &PIECES,
+            0,
+            0,
+            0,
+            bw32,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+        )
+        .map_or(0.0, |r| r.attack);
+    }
+    let t4 = Instant::now();
+    for _ in 0..iters {
+        sink += coach_beam::beam_best_gm_line(
+            &BOARD_ROWS,
+            gm0_bits,
+            &PIECES,
+            0,
+            0,
+            0,
+            bw32,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+        )
+        .map_or(0.0, |r| r.attack);
+    }
+    let dt_line = t4.elapsed().as_secs_f64();
+
     eprintln!("sink={sink}");
     println!(
         "BASELINE beam={beam} {:.3} ms/call  ({:.1} calls/s)",
@@ -551,6 +622,16 @@ fn main() {
         "OPT2     beam={beam} {:.3} ms/call  ({:.1} calls/s)",
         dt_opt2 * 1000.0 / iters as f64,
         iters as f64 / dt_opt2
+    );
+    println!(
+        "LIVE_GM  beam={beam} {:.3} ms/call  ({:.1} calls/s)  [surge, playable movegen]",
+        dt_live * 1000.0 / iters as f64,
+        iters as f64 / dt_live
+    );
+    println!(
+        "LIVE_LN  beam={beam} {:.3} ms/call  ({:.1} calls/s)  [line kernel]",
+        dt_line * 1000.0 / iters as f64,
+        iters as f64 / dt_line
     );
     println!(
         "=> opt {:.2}x  opt2 {:.2}x  (opt2 vs opt {:.2}x)",

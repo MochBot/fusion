@@ -1,17 +1,12 @@
-// bench_perft.rs -- full speed + accuracy benchmark
-use direct_cobra_copy::board::Board;
-use direct_cobra_copy::perft::{perft, perft_parallel};
+// bench_perft.rs -- perft speed benchmark, two methodologies
+use fusion_engine::board::Board;
+use fusion_engine::perft::{perft, perft_movelist, perft_parallel};
 use std::time::Instant;
 
-const COBRA_REF: [u64; 7] = [
-    17,         // D1
-    153,        // D2
-    5266,       // D3
-    188561,     // D4
-    3500883,    // D5
-    67088390,   // D6
-    2705999255, // D7
-];
+// Strict placement-tree counts, D1-D7. D1-D5 match the cobra CLI baselines
+// in fixtures/perft/baselines.txt; D5-D7 cross-checked against an
+// independent reference BFS and repeated serial/parallel runs.
+const STRICT_REF: [u64; 7] = [17, 153, 5266, 188561, 3500883, 67088390, 2652750957];
 
 fn fmt_nps(nodes: u64, secs: f64) -> String {
     let nps = nodes as f64 / secs;
@@ -36,41 +31,25 @@ fn fmt_time(secs: f64) -> String {
     }
 }
 
-fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    let parallel = args.iter().any(|a| a == "--parallel" || a == "-p");
-    let mode = if parallel {
-        "Parallel (Rayon)"
-    } else {
-        "Serial"
-    };
-
-    println!("=== Fusion-2 Perft Benchmark ({}) ===", mode);
-    println!();
-
+fn run_table(label: &str, note: &str, max_depth: usize, f: impl Fn(&Board, usize) -> u64) {
+    println!("[{label}] {note}");
     println!(
         "{:>5}  {:>15}  {:>12}  {:>10}  {:>8}",
         "Depth", "Nodes", "Time", "NPS", "Delta"
     );
     println!("{}", "-".repeat(60));
-
-    for depth in 1..=7 {
+    for depth in 1..=max_depth {
         let board = Board::new();
         let t = Instant::now();
-        let nodes = if parallel {
-            perft_parallel(&board, depth)
-        } else {
-            perft(&board, 0, depth)
-        };
+        let nodes = f(&board, depth);
         let elapsed = t.elapsed().as_secs_f64();
-        let expected = COBRA_REF[depth - 1];
+        let expected = STRICT_REF[depth - 1];
         let delta: i64 = nodes as i64 - expected as i64;
         let delta_str = if delta == 0 {
-            "✓".to_string()
+            "ok".to_string()
         } else {
             format!("{:+}", delta)
         };
-
         println!(
             "{:>5}  {:>15}  {:>12}  {:>10}  {:>8}",
             depth,
@@ -80,7 +59,40 @@ fn main() {
             delta_str
         );
     }
-
     println!();
-    println!("Cobra reference D7: {}", COBRA_REF[6]);
+}
+
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let parallel = args.iter().any(|a| a == "--parallel" || a == "-p");
+    let skip_movelist = args.iter().any(|a| a == "--count-only");
+
+    println!("=== Fusion Perft Benchmark ===");
+    println!("Both modes walk the same strict placement tree and must agree on counts.");
+    println!();
+
+    if parallel {
+        run_table(
+            "count-kernel, parallel",
+            "bulk counting at the last two levels, rayon split",
+            7,
+            perft_parallel,
+        );
+    } else {
+        run_table(
+            "count-kernel",
+            "bulk counting at the last two levels (fastest exact perft; NPS not comparable to movelist harnesses)",
+            7,
+            |b, d| perft(b, 0, d),
+        );
+    }
+
+    if !skip_movelist {
+        run_table(
+            "movelist",
+            "move buffers built at every level incl. leaves (cobra perft CLI methodology; cross-engine comparable NPS)",
+            7,
+            |b, d| perft_movelist(b, 0, d),
+        );
+    }
 }

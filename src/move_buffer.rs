@@ -6,7 +6,7 @@ use std::mem::MaybeUninit;
 pub const MAX_MOVES: usize = 256;
 
 pub struct MoveBuffer {
-    // Uninitialized backing store — only `data[..len]` is ever read.
+    // Uninitialized backing store - only `data[..len]` is ever read.
     // Avoids the 512-byte memset that `[Move::none(); MAX_MOVES]` emitted on
     // every node (a dominant cost in movegen-heavy workloads like perft/search).
     data: [MaybeUninit<Move>; MAX_MOVES],
@@ -17,7 +17,7 @@ impl MoveBuffer {
     #[inline]
     pub fn new() -> Self {
         MoveBuffer {
-            // SAFETY: an array of `MaybeUninit<T>` is always valid uninitialized —
+            // SAFETY: an array of `MaybeUninit<T>` is always valid uninitialized -
             // the elements themselves do not require initialization.
             data: unsafe { MaybeUninit::uninit().assume_init() },
             len: 0,

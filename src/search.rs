@@ -5,6 +5,7 @@ use crate::bag;
 
 use crate::eval::EvalWeights;
 use crate::policy_value_runtime::{PolicyValueRuntime, PolicyValueRuntimeContext};
+use crate::search_config::FUTILITY_DELTA;
 
 use crate::state::GameState;
 use crate::transposition::{get_zobrist_keys, TranspositionTable, DEFAULT_TT_SIZE};
@@ -64,9 +65,8 @@ pub fn find_best_move_with_scores_runtime(
 }
 
 /// Beam search with optional forced root move.
-/// When `forced_root_move` is Some, that move is protected from futility pruning
-/// and beam truncation — it always survives to the final beam so its score
-/// appears in `root_scores`.
+/// When `forced_root_move` is Some, that move is protected from futility
+/// pruning and beam truncation, so it always survives to the final beam.
 pub fn find_best_move_with_scores_forced(
     state: &GameState,
     config: &SearchConfig,
@@ -209,11 +209,7 @@ fn run_beam_search_iteration(params: &mut SearchIterationParams<'_>) -> Option<S
     }
 
     profile_sort_prune_truncate(|| {
-        apply_futility_pruning(
-            &mut beam,
-            params.config.futility_delta,
-            params.forced_root_move,
-        );
+        apply_futility_pruning(&mut beam, FUTILITY_DELTA, params.forced_root_move);
         beam.sort_unstable_by(compare_nodes_desc);
         truncate_with_forced(&mut beam, params.beam_width, params.forced_root_move);
     });
@@ -234,11 +230,7 @@ fn run_beam_search_iteration(params: &mut SearchIterationParams<'_>) -> Option<S
         }
 
         profile_sort_prune_truncate(|| {
-            apply_futility_pruning(
-                &mut next_beam,
-                params.config.futility_delta,
-                params.forced_root_move,
-            );
+            apply_futility_pruning(&mut next_beam, FUTILITY_DELTA, params.forced_root_move);
             next_beam.sort_unstable_by(compare_nodes_desc);
             truncate_with_forced(&mut next_beam, params.beam_width, params.forced_root_move);
         });
@@ -455,36 +447,8 @@ fn compare_nodes_desc(a: &SearchNode, b: &SearchNode) -> std::cmp::Ordering {
     let a_key = policy_key(a);
     let b_key = policy_key(b);
 
-    // Default/shipped order: (policy_key, score) only — matches the deployed
-    // scalar-BFS enumeration, whose coaching quality benchmarks net-better than
-    // any deterministic tie-break we found (see Option D bench: net -19444).
-    let base = b_key.cmp(&a_key).then_with(|| b.score.total_cmp(&a.score));
-
-    // Opt-in Option D order-independence: behind `deterministic_beam_tiebreak`
-    // (NOT default, NOT in the wasm build) so default builds reproduce deployed
-    // behaviour. The cascade is a TOTAL order, making beam truncation invariant
-    // to move-enumeration order (scalar BFS vs packed movegen); kept as a proven
-    // capability though it is not shipped (it grades net-worse on coaching).
-    #[cfg(feature = "deterministic_beam_tiebreak")]
-    let base = base
-        .then_with(|| b.board_score.total_cmp(&a.board_score))
-        .then_with(|| b.attack_score.total_cmp(&a.attack_score))
-        .then_with(|| b.chain_score.total_cmp(&a.chain_score))
-        .then_with(|| b.context_score.total_cmp(&a.context_score))
-        .then_with(|| b.path_attack.total_cmp(&a.path_attack))
-        .then_with(|| b.path_chain.total_cmp(&a.path_chain))
-        .then_with(|| b.path_context.total_cmp(&a.path_context))
-        .then_with(|| b.value_score.total_cmp(&a.value_score))
-        .then_with(|| b.policy_score.total_cmp(&a.policy_score))
-        .then_with(|| a.root_move.raw().cmp(&b.root_move.raw()))
-        .then_with(|| {
-            a.path
-                .iter()
-                .map(|m| m.raw())
-                .cmp(b.path.iter().map(|m| m.raw()))
-        });
-
-    base
+    // Shipped sort order: (policy_key, score).
+    b_key.cmp(&a_key).then_with(|| b.score.total_cmp(&a.score))
 }
 
 fn compare_results_desc(a: &SearchResult, b: &SearchResult) -> std::cmp::Ordering {
@@ -701,10 +665,62 @@ mod tests {
         assert_eq!(profiled.root_scores[0].0, baseline.root_scores[0].0);
     }
 
+    /// The TT is a pure eval cache: stored scores are `evaluate(board)` values
+    /// keyed by exact 64-bit zobrist match. Search results must be identical
+    /// with the cache on or off (absent hash collisions).
+    #[test]
+    fn tt_does_not_change_search_result() {
+        let mut mid_rows = [0u16; 40];
+        mid_rows[0] = 0x37F;
+        mid_rows[1] = 0x3BF;
+        mid_rows[2] = 0x1FF;
+        mid_rows[3] = 0x3FD;
+        mid_rows[4] = 0x2FF;
+        mid_rows[5] = 0x07F;
+
+        let mut tall_rows = [0u16; 40];
+        for (y, row) in tall_rows.iter_mut().enumerate().take(14) {
+            *row = match y {
+                3 => 0x1BF,
+                7 => 0x17F,
+                _ => 0x1FF,
+            };
+        }
+
+        let queue = vec![Piece::I, Piece::O, Piece::L, Piece::J, Piece::S, Piece::Z];
+        let weights = EvalWeights::default();
+        let config = |use_tt: bool| SearchConfig {
+            beam_width: 60,
+            depth: 4,
+            use_tt,
+            extend_queue_7bag: false,
+            ..SearchConfig::default()
+        };
+
+        for rows in [[0u16; 40], mid_rows, tall_rows] {
+            let state = GameState::new(probe_board_from_rows(rows), Piece::T, queue.clone());
+
+            let with_tt = find_best_move_with_scores(&state, &config(true), &weights)
+                .unwrap_or_else(|| panic!("tt search should return a move"));
+            let no_tt = find_best_move_with_scores(&state, &config(false), &weights)
+                .unwrap_or_else(|| panic!("no-tt search should return a move"));
+
+            assert_eq!(with_tt.best.best_move, no_tt.best.best_move);
+            assert_eq!(with_tt.best.hold_used, no_tt.best.hold_used);
+            assert_eq!(with_tt.best.pv, no_tt.best.pv);
+            assert_eq!(with_tt.best.score.to_bits(), no_tt.best.score.to_bits());
+            assert_eq!(with_tt.root_scores.len(), no_tt.root_scores.len());
+            for (a, b) in with_tt.root_scores.iter().zip(no_tt.root_scores.iter()) {
+                assert_eq!(a.0, b.0);
+                assert_eq!(a.1.to_bits(), b.1.to_bits());
+            }
+        }
+    }
+
     #[test]
     fn test_hold_swap_considered() {
         // set up a state where holding might help
-        // T piece current, I piece in hold — I piece tetris should be considered
+        // T piece current, I piece in hold; I piece tetris should be considered
         let mut state = GameState::new(
             Board::new(),
             Piece::O, // O is least flexible
@@ -831,9 +847,8 @@ mod tests {
 
     #[test]
     fn tt_on_matches_tt_off_exactly_on_seeded_states() {
-        // The TT caches the exact f32 returned by evaluate(board, weights), so a
-        // hit must reproduce the recompute bit-for-bit; this pins that search
-        // results are invariant under the cache modulo 64-bit hash collisions.
+        // TT caches the exact f32 from evaluate(board, weights), so a hit must
+        // reproduce the recompute bit-for-bit.
         let mut seed;
         let xs = |s: &mut u64| {
             *s ^= *s << 13;
@@ -908,7 +923,7 @@ mod tests {
 
     #[test]
     fn test_no_moves_returns_none() {
-        // fill the board nearly to the top — no valid placements
+        // fill the board nearly to the top, no valid placements
         let mut board = Board::new();
         for y in 0..40 {
             board.rows[y] = FULL_ROW;
@@ -1176,80 +1191,136 @@ mod tests {
         );
     }
 
-    // Option D invariant: the beam comparator must be a TOTAL, deterministic
-    // order so truncation/selection is independent of move-enumeration order.
-    // Only valid under the opt-in feature; the default comparator deliberately
-    // stops at (policy_key, score) to match deployed scalar-BFS behaviour.
-    #[cfg(feature = "deterministic_beam_tiebreak")]
+    /// Build a board from raw row masks with the cols cache rebuilt to match,
+    /// mirroring `Board::rebuild_cols` (private to board.rs).
+    fn probe_board_from_rows(rows: [u16; 40]) -> Board {
+        let mut b = Board::new();
+        b.rows = rows;
+        b.cols = [0; 10];
+        for (y, &row) in b.rows.iter().enumerate() {
+            let mut bits = row as u64;
+            while bits != 0 {
+                let x = bits.trailing_zeros() as usize;
+                b.cols[x] |= 1u64 << y;
+                bits &= bits - 1;
+            }
+        }
+        b
+    }
+
+    /// Search latency probe for `find_best_move_with_scores`
+    /// (the analysis/labeler per-position entry point) across representative
+    /// board shapes and production configs. Not a correctness test.
+    ///
+    /// Run: RTK_DISABLED=1 cargo test --release search_latency_probe -- --ignored --nocapture
     #[test]
-    fn test_beam_ordering_is_deterministic_and_input_order_independent() {
-        let mk = |score: f32, board: f32, raw: u16| {
-            let mut n = make_node(
-                score,
-                crate::state::FatalityState::Safe,
-                crate::state::ObligationState::None,
-            );
-            n.board_score = board;
-            n.root_move = Move::from_raw(raw);
-            n.path = smallvec![Move::from_raw(raw)];
-            n
-        };
+    #[ignore]
+    fn search_latency_probe() {
+        use std::time::Instant;
 
-        // Case A: equal policy_key + equal score, DISTINCT board_score.
-        // Cascade must order by board_score desc, deterministically, regardless
-        // of the input enumeration order.
-        let order1 = [
-            mk(5.0, 1.0, 100),
-            mk(5.0, 2.0, 200),
-            mk(5.0, 3.0, 300),
-            mk(5.0, 4.0, 400),
-        ];
-        let order2 = [
-            mk(5.0, 4.0, 400),
-            mk(5.0, 3.0, 300),
-            mk(5.0, 2.0, 200),
-            mk(5.0, 1.0, 100),
-        ];
-        let mut a = order1.to_vec();
-        a.sort_unstable_by(compare_nodes_desc);
-        let mut b = order2.to_vec();
-        b.sort_unstable_by(compare_nodes_desc);
-        let seq_a: Vec<f32> = a.iter().map(|n| n.board_score).collect();
-        let seq_b: Vec<f32> = b.iter().map(|n| n.board_score).collect();
-        assert_eq!(
-            seq_a,
-            vec![4.0, 3.0, 2.0, 1.0],
-            "equal-score nodes must tie-break by board_score desc"
-        );
-        assert_eq!(
-            seq_a, seq_b,
-            "beam ordering must be independent of input enumeration order"
-        );
+        // Mid-game holey fixture (same shape as bench_beam's BOARD_ROWS).
+        let mut mid_rows = [0u16; 40];
+        mid_rows[0] = 0x37F;
+        mid_rows[1] = 0x3BF;
+        mid_rows[2] = 0x1FF;
+        mid_rows[3] = 0x3FD;
+        mid_rows[4] = 0x2FF;
+        mid_rows[5] = 0x07F;
 
-        // Case B: every comparable field equal except identity (root_move.raw).
-        // The raw backstop must still yield a deterministic, order-independent
-        // total order.
-        let order3 = [
-            mk(5.0, 1.0, 100),
-            mk(5.0, 1.0, 200),
-            mk(5.0, 1.0, 300),
-            mk(5.0, 1.0, 400),
+        // Pressure stack: 14 rows, col-9 well, two buried holes.
+        let mut tall_rows = [0u16; 40];
+        for (y, row) in tall_rows.iter_mut().enumerate().take(14) {
+            *row = match y {
+                3 => 0x1BF,
+                7 => 0x17F,
+                _ => 0x1FF,
+            };
+        }
+
+        let queue = vec![Piece::I, Piece::O, Piece::L, Piece::J, Piece::S, Piece::Z];
+
+        struct Scenario {
+            name: &'static str,
+            rows: [u16; 40],
+            current: Piece,
+            b2b: u8,
+            combo: u32,
+            pending: u8,
+        }
+        let scenarios = [
+            Scenario {
+                name: "opening_empty",
+                rows: [0u16; 40],
+                current: Piece::T,
+                b2b: 0,
+                combo: 0,
+                pending: 0,
+            },
+            Scenario {
+                name: "midgame_holey",
+                rows: mid_rows,
+                current: Piece::T,
+                b2b: 1,
+                combo: 0,
+                pending: 0,
+            },
+            Scenario {
+                name: "pressure_tall",
+                rows: tall_rows,
+                current: Piece::L,
+                b2b: 1,
+                combo: 2,
+                pending: 4,
+            },
         ];
-        let order4 = [
-            mk(5.0, 1.0, 400),
-            mk(5.0, 1.0, 300),
-            mk(5.0, 1.0, 200),
-            mk(5.0, 1.0, 100),
+
+        let configs: [(&str, SearchConfig); 2] = [
+            ("default_800x14", SearchConfig::default()),
+            (
+                "width300",
+                SearchConfig {
+                    beam_width: 300,
+                    ..SearchConfig::default()
+                },
+            ),
         ];
-        let mut c = order3.to_vec();
-        c.sort_unstable_by(compare_nodes_desc);
-        let mut d = order4.to_vec();
-        d.sort_unstable_by(compare_nodes_desc);
-        let raw_c: Vec<u16> = c.iter().map(|n| n.root_move.raw()).collect();
-        let raw_d: Vec<u16> = d.iter().map(|n| n.root_move.raw()).collect();
-        assert_eq!(
-            raw_c, raw_d,
-            "fully-tied nodes must order deterministically via raw backstop"
-        );
+
+        let weights = EvalWeights::default();
+        const WARMUP: usize = 2;
+        const ITERS: usize = 12;
+
+        for (cfg_name, config) in &configs {
+            for sc in &scenarios {
+                let mut state =
+                    GameState::new(probe_board_from_rows(sc.rows), sc.current, queue.clone());
+                state.b2b = sc.b2b;
+                state.combo = sc.combo;
+                state.pending_garbage = sc.pending;
+
+                for _ in 0..WARMUP {
+                    let r = find_best_move_with_scores(&state, config, &weights);
+                    assert!(r.is_some(), "warmup search should find a move");
+                }
+
+                let mut samples_ns: Vec<u128> = Vec::with_capacity(ITERS);
+                for _ in 0..ITERS {
+                    let t0 = Instant::now();
+                    let r = find_best_move_with_scores(&state, config, &weights);
+                    samples_ns.push(t0.elapsed().as_nanos());
+                    assert!(r.is_some(), "probe search should find a move");
+                }
+                samples_ns.sort_unstable();
+                let min = samples_ns[0];
+                let p50 = samples_ns[ITERS / 2];
+                let p95 = samples_ns[(ITERS * 95).div_ceil(100).min(ITERS) - 1];
+                println!(
+                    "PROBE search_latency {cfg_name} {name} iters={ITERS} min={:.3}ms p50={:.3}ms p95={:.3}ms",
+                    min as f64 / 1e6,
+                    p50 as f64 / 1e6,
+                    p95 as f64 / 1e6,
+                    name = sc.name,
+                );
+            }
+        }
     }
 }

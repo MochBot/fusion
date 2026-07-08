@@ -76,7 +76,7 @@ impl Board {
         result
     }
 
-    /// Return cached column bitboards — O(1).
+    /// Return cached column bitboards - O(1).
     /// Maintained in sync with rows by place/clear_lines/spawn_garbage/clear.
     #[inline(always)]
     pub fn compute_cols(&self) -> [Bitboard; COL_NB] {

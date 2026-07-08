@@ -4,7 +4,7 @@
 use crate::header::SpinType;
 use std::sync::OnceLock;
 
-// base attack table — no spin
+// base attack table - no spin
 pub const SINGLE: u8 = 0;
 pub const DOUBLE: u8 = 1;
 pub const TRIPLE: u8 = 2;
@@ -336,7 +336,7 @@ pub struct AttackContext<'a> {
     pub config: &'a AttackConfig,
     pub is_perfect_clear: bool,
     /// If Some(prev_b2b) and prev_b2b >= 4, a non-difficult clear just broke
-    /// a long B2B chain — release stored surge as bonus attack.
+    /// a long B2B chain - release stored surge as bonus attack.
     pub b2b_broken_from: Option<u8>,
     /// If true and the clear is b2b-eligible, add +1.
     pub clears_garbage: bool,
@@ -367,7 +367,7 @@ pub fn calculate_attack_full(ctx: &AttackContext<'_>) -> f32 {
 
     let is_b2b_eligible = spin != SpinType::NoSpin || lines >= 4;
 
-    // B2B bonus: trust the caller's b2b value — eligibility is enforced
+    // B2B bonus: trust the caller's b2b value - eligibility is enforced
     // upstream (engine resets b2b to -1 for non-eligible clears). A positive
     // b2b here is always legitimate (e.g. PC preserves the chain).
     if b2b > 0 {
@@ -767,7 +767,7 @@ mod tests {
 
     #[test]
     fn test_surge_release_not_triggered_below_4() {
-        // b2b_broken_from=3, below threshold — no surge
+        // b2b_broken_from=3, below threshold - no surge
         let dmg = calculate_attack_full(&AttackContext {
             lines: 1,
             spin: SpinType::NoSpin,
@@ -854,7 +854,7 @@ mod tests {
 
     #[test]
     fn test_garbage_clear_boost_not_on_non_difficult() {
-        // double clear (not b2b-eligible, no spin) — no boost
+        // double clear (not b2b-eligible, no spin) - no boost
         let without = calculate_attack_full(&AttackContext {
             lines: 2,
             spin: SpinType::NoSpin,

@@ -217,20 +217,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "direct-cobra-copy"
-version = "0.1.0"
-dependencies = [
- "console_error_panic_hook",
- "js-sys",
- "rayon",
- "serde",
- "serde_json",
- "smallvec",
- "tract-onnx",
- "wasm-bindgen",
-]
-
-[[package]]
 name = "doc-comment"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -295,6 +281,20 @@ checksum = "843fba2746e448b37e26a819579957415c8cef339bf08564fe8b7ddbd959573c"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
+]
+
+[[package]]
+name = "fusion-engine"
+version = "0.1.0"
+dependencies = [
+ "console_error_panic_hook",
+ "js-sys",
+ "rayon",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "tract-onnx",
+ "wasm-bindgen",
 ]
 
 [[package]]

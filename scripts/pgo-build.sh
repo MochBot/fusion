@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PGO build for direct-cobra-copy perft engine
+# PGO build for fusion-engine perft engine
 #
 # Three-step:
 #   1. Instrumented build, run D5 perft to collect profile data

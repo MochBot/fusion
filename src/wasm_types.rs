@@ -9,9 +9,7 @@ use crate::state::{
     ClearEvent, CoachingState, FatalityState, GameState, ObligationState, PhaseState, SurgeState,
 };
 
-// ---------------------------------------------------------------------------
 // Serialization helpers (serde_json + js_sys to avoid serde-wasm-bindgen 0.6 bug)
-// ---------------------------------------------------------------------------
 
 pub(crate) fn to_js<T: serde::Serialize>(val: &T) -> JsValue {
     serde_json::to_string(val)
@@ -26,11 +24,9 @@ pub(crate) fn from_js<T: serde::de::DeserializeOwned>(js_val: JsValue) -> Option
         .and_then(|s| serde_json::from_str(&s.as_string().unwrap_or_default()).ok())
 }
 
-// ---------------------------------------------------------------------------
 // Piece conversion helpers
-// ---------------------------------------------------------------------------
 // WASM API uses the external / Triangle piece-ID order: I=0,O=1,T=2,S=3,Z=4,J=5,L=6
-// (historically called "Fusion v1 ordering" — a numbering convention, NOT an engine version).
+// (historically called "Fusion v1 ordering" - a numbering convention, NOT an engine version).
 // Internal (Cobra / Fusion V2) ordering:                 I=0,O=1,T=2,L=3,J=4,S=5,Z=6
 
 pub(crate) fn piece_from_external(v: u8) -> Option<Piece> {
@@ -119,9 +115,7 @@ pub(crate) fn spin_from_u8(v: u8) -> SpinType {
     }
 }
 
-// ---------------------------------------------------------------------------
 // State-to-contract mappers
-// ---------------------------------------------------------------------------
 
 pub(crate) fn fatality_to_contract(v: FatalityState) -> &'static str {
     match v {
@@ -164,9 +158,7 @@ pub(crate) fn coaching_to_contract(v: CoachingState) -> MachineDiagnosticsJson {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Serde JSON types for WASM serialization
-// ---------------------------------------------------------------------------
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub(crate) struct MoveResultJson {
@@ -234,7 +226,7 @@ pub(crate) struct ReplayFrameContextJson {
     pub player_pps: Option<f32>,
     pub player_app: Option<f32>,
     pub player_dsp: Option<f32>,
-    // Coaching state fields — actual per-move values from replay engine
+    // Coaching state fields - actual per-move values from replay engine
     pub lines_cleared: Option<u8>,
     pub lines_total: Option<u32>,
     pub b2b: Option<i32>,
@@ -247,9 +239,7 @@ pub(crate) struct ReplayFrameContextJson {
     pub pieces_into_bag: Option<u8>,
 }
 
-// ---------------------------------------------------------------------------
 // Attack tracking types for WASM serialization
-// ---------------------------------------------------------------------------
 
 pub(crate) fn spin_type_to_str(s: SpinType) -> &'static str {
     match s {

@@ -1,2 +1,11 @@
-[build]
+# per-arch scoping keeps host cpu flags out of wasm32 cross-builds
+[target.'cfg(target_arch = "aarch64")']
 rustflags = ["-C", "target-cpu=native"]
+
+# v3 rather than native: AVX-512 codegen crashes rustc (LLVM RegisterCoalescer)
+# on this crate; nearest upstream report rust-lang/rust#150691
+[target.'cfg(target_arch = "x86_64")']
+rustflags = ["-C", "target-cpu=x86-64-v3"]
+
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "target-feature=+simd128"]

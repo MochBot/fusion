@@ -70,7 +70,7 @@ class TeacherLitModule(L.LightningModule):
     def configure_model(self) -> None:
         """Compile inner model with CUDA Graphs for kernel-launch-bound workloads.
 
-        Fires before device placement and DDP wrapping — compiles the raw
+        Fires before device placement and DDP wrapping - compiles the raw
         nn.Module so TorchInductor sees the full graph without communication hooks.
         mode='default' applies operator fusion and kernel optimization without CUDA Graphs,
         which avoids shape-mismatch crashes when Optuna varies batch_size across trials.
@@ -175,7 +175,7 @@ class TeacherLitModule(L.LightningModule):
 
         # Log all losses
         self.log(f"{stage}/total_loss", loss_dict["total_loss"], prog_bar=(stage == "val"))
-        # Underscore alias for ModelCheckpoint filename interpolation —
+        # Underscore alias for ModelCheckpoint filename interpolation -
         # Lightning uses template vars literally, so {val_total_loss} needs
         # a matching key without the slash.
         self.log(f"{stage}_total_loss", loss_dict["total_loss"])
