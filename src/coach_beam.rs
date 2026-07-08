@@ -20,6 +20,7 @@ use crate::board::{Board, FULL_ROW};
 use crate::header::{Move, Piece};
 use crate::move_buffer::MoveBuffer;
 use crate::movegen::generate_playable;
+use std::cmp::Ordering;
 
 // Per-node garbage state as a u64 row-bitmask (bit y = row y has >=1 garbage
 // cell). A garbage row only loses cells via a full-row clear, so the per-row
@@ -213,6 +214,45 @@ struct GmNode {
     pending: i32,
 }
 
+#[inline]
+fn sort_top_prefix_unstable_by<T, F>(values: &mut [T], keep: usize, mut cmp: F)
+where
+    F: FnMut(&T, &T) -> Ordering,
+{
+    if keep == 0 || values.len() <= 1 {
+        return;
+    }
+    if keep >= values.len() {
+        values.sort_unstable_by(cmp);
+        return;
+    }
+    values.select_nth_unstable_by(keep - 1, &mut cmp);
+    values[..keep].sort_unstable_by(cmp);
+}
+
+#[inline]
+fn gm_idx_cmp(children: &[GmNode], a: usize, b: usize) -> Ordering {
+    children[b].acc.cmp(&children[a].acc).then(a.cmp(&b))
+}
+
+#[inline]
+fn gm_prune_prefix_len(total: usize, beam_width: usize) -> usize {
+    total.min(beam_width.saturating_add(beam_width.max(1)))
+}
+
+#[cfg(test)]
+static GM_PRUNE_FALLBACKS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+#[cfg(test)]
+#[inline]
+fn record_gm_prune_fallback() {
+    GM_PRUNE_FALLBACKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+#[cfg(not(test))]
+#[inline]
+fn record_gm_prune_fallback() {}
+
 /// Max accumulated S2 attack over `pieces` from `rows0`, beam width `beam_width`.
 /// `keep`: optional per-ply boards forced to survive pruning (player's line).
 /// `surge_shaping`: value each placement as realized attack plus banked
@@ -303,7 +343,10 @@ pub fn beam_best_gm(
         }
         idx.clear();
         idx.extend(0..children.len());
-        idx.sort_unstable_by(|&a, &b| children[b].acc.cmp(&children[a].acc).then(a.cmp(&b)));
+        let sorted_prefix_len = gm_prune_prefix_len(idx.len(), bw);
+        sort_top_prefix_unstable_by(&mut idx, sorted_prefix_len, |&a, &b| {
+            gm_idx_cmp(&children, a, b)
+        });
         let keepb: Option<[u16; 40]> = keep.map(|kb| kb[t]);
         seen.clear();
         seen.reserve(children.len());
@@ -314,7 +357,7 @@ pub fn beam_best_gm(
         pruned.clear();
         pruned.reserve(bw);
         let mut kept = false;
-        for &ci in &idx {
+        for &ci in &idx[..sorted_prefix_len] {
             let c = &children[ci];
             let is_dup = if surge_shaping {
                 !seen_full.insert((c.rows, c.b2b, c.combo))
@@ -332,9 +375,51 @@ pub fn beam_best_gm(
                 break;
             }
         }
+        let needs_more = if bw == 0 {
+            pruned.is_empty()
+        } else {
+            pruned.len() < bw
+        };
+        let mut remainder_sorted = false;
+        if needs_more && sorted_prefix_len < idx.len() {
+            record_gm_prune_fallback();
+            idx[sorted_prefix_len..].sort_unstable_by(|&a, &b| gm_idx_cmp(&children, a, b));
+            remainder_sorted = true;
+            for &ci in &idx[sorted_prefix_len..] {
+                let c = &children[ci];
+                let is_dup = if surge_shaping {
+                    !seen_full.insert((c.rows, c.b2b, c.combo))
+                } else {
+                    !seen.insert(c.rows)
+                };
+                if is_dup {
+                    continue;
+                }
+                if Some(c.rows) == keepb {
+                    kept = true;
+                }
+                pruned.push(*c);
+                if pruned.len() >= bw {
+                    break;
+                }
+            }
+        }
         if let Some(kb) = keepb {
             if !kept {
-                for &ci in &idx {
+                for &ci in &idx[..sorted_prefix_len] {
+                    let c = &children[ci];
+                    if c.rows == kb {
+                        pruned.push(*c);
+                        kept = true;
+                        break;
+                    }
+                }
+            }
+            if !kept && sorted_prefix_len < idx.len() {
+                if !remainder_sorted {
+                    idx[sorted_prefix_len..].sort_unstable_by(|&a, &b| gm_idx_cmp(&children, a, b));
+                }
+                for &ci in &idx[sorted_prefix_len..] {
                     let c = &children[ci];
                     if c.rows == kb {
                         pruned.push(*c);
@@ -411,6 +496,18 @@ struct LineNode {
     is_surge_release: bool,
     surge_delta: f64,
     mv: CoachLineMove,
+}
+
+#[inline]
+fn line_idx_cmp(order: &[LineNode], ia: u32, ib: u32) -> Ordering {
+    let a = &order[ia as usize];
+    let b = &order[ib as usize];
+    b.sel
+        .partial_cmp(&a.sel)
+        .unwrap_or(Ordering::Equal)
+        .then(b.acc.partial_cmp(&a.acc).unwrap_or(Ordering::Equal))
+        .then(a.holes.cmp(&b.holes))
+        .then(ia.cmp(&ib))
 }
 
 /// Step+wellness-emitting beam. Selection score = acc - penalty (penalty vs
@@ -568,20 +665,7 @@ pub fn beam_best_gm_line(
         // Index sort + top-bw gather (avoids sorting the full struct array).
         idx.clear();
         idx.extend(0..order.len() as u32);
-        idx.sort_unstable_by(|&ia, &ib| {
-            let a = &order[ia as usize];
-            let b = &order[ib as usize];
-            b.sel
-                .partial_cmp(&a.sel)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then(
-                    b.acc
-                        .partial_cmp(&a.acc)
-                        .unwrap_or(std::cmp::Ordering::Equal),
-                )
-                .then(a.holes.cmp(&b.holes))
-                .then(ia.cmp(&ib))
-        });
+        sort_top_prefix_unstable_by(&mut idx, bw, |&ia, &ib| line_idx_cmp(&order, ia, ib));
         idx.truncate(bw);
         hist.push(idx.iter().map(|&i| order[i as usize]).collect());
     }
@@ -1406,7 +1490,29 @@ mod tests {
     const MULTS: [f64; 4] = [0.5, 1.0, 1.027, 2.0];
 
     #[test]
+    fn sort_top_prefix_unstable_by_matches_full_sort_prefix() {
+        for len in 0..80usize {
+            for keep in [0usize, 1, 2, 3, 5, 8, 13, 40, 80] {
+                let mut state = 0x5107_2026_0708u64 ^ ((len as u64) << 32) ^ keep as u64;
+                let mut full: Vec<(u32, usize)> = (0..len)
+                    .map(|i| ((((xs(&mut state) >> 9) as u32) ^ ((i as u32) & 7)), i))
+                    .collect();
+                let mut partial = full.clone();
+                full.sort_unstable_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+
+                sort_top_prefix_unstable_by(&mut partial, keep, |a, b| {
+                    b.0.cmp(&a.0).then(a.1.cmp(&b.1))
+                });
+
+                let prefix = keep.min(len);
+                assert_eq!(&partial[..prefix], &full[..prefix], "len={len} keep={keep}");
+            }
+        }
+    }
+
+    #[test]
     fn beam_best_gm_matches_oracle() {
+        GM_PRUNE_FALLBACKS.store(0, std::sync::atomic::Ordering::Relaxed);
         let mut state = 0xC0AC_4BEA_2026_0703u64;
         let mut keep_cases = 0u32;
         for case in 0..260 {
@@ -1454,6 +1560,10 @@ mod tests {
             );
         }
         assert!(keep_cases >= 60, "keep coverage too thin: {keep_cases}");
+        println!(
+            "gm_prune_fallbacks={}",
+            GM_PRUNE_FALLBACKS.load(std::sync::atomic::Ordering::Relaxed)
+        );
     }
 
     #[test]
