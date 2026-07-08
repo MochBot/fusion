@@ -105,13 +105,16 @@ impl Board {
     }
 
     pub fn line_clears(&self) -> Bitboard {
-        let mut result: Bitboard = 0;
-        for y in 0..BOARD_HEIGHT {
-            if self.rows[y] == FULL_ROW {
-                result |= 1u64 << y;
-            }
-        }
-        result
+        self.cols[0]
+            & self.cols[1]
+            & self.cols[2]
+            & self.cols[3]
+            & self.cols[4]
+            & self.cols[5]
+            & self.cols[6]
+            & self.cols[7]
+            & self.cols[8]
+            & self.cols[9]
     }
 
     pub fn clear(&mut self) {
@@ -378,11 +381,34 @@ mod tests {
     fn test_line_clear() {
         let mut board = Board::new();
         board.rows[0] = FULL_ROW;
+        board.rebuild_cols();
         let clears = board.line_clears();
         assert_eq!(clears & bb(0), bb(0));
 
         board.clear_lines(clears);
         assert!(board.empty());
+    }
+
+    #[test]
+    fn line_clears_reports_only_full_rows() {
+        let cases: [(&[usize], Bitboard); 4] = [
+            (&[], 0),
+            (&[0], bb(0)),
+            (&[0, 5], bb(0) | bb(5)),
+            (&[0, 5, 12, 39], bb(0) | bb(5) | bb(12) | bb(39)),
+        ];
+        for (full_rows, want) in cases {
+            let mut board = Board::new();
+            board.rows[0] = FULL_ROW & !(1u16 << 4);
+            board.rows[1] = 0b1010101010;
+            board.rows[5] = FULL_ROW & !(1u16 << 8);
+            for &y in full_rows {
+                board.rows[y] = FULL_ROW;
+            }
+            board.rebuild_cols();
+
+            assert_eq!(board.line_clears(), want);
+        }
     }
 
     #[test]
