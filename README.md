@@ -14,4 +14,4 @@ cd training && uv sync && uv run pytest tests
 
 Copy `.env.example` to `.env` only for replay collection, Modal training, or the label generator; tests and clippy run without it.
 
-Large artifacts (replay corpora, training bins, label sidecars) are not tracked. Models under `models/` keep the ONNX and its `.metadata.json` side by side. See `training/TRAINING.md` for the training pipeline.
+Large artifacts (replay corpora, training bins, label sidecars, ONNX models) are not tracked; keep a model's `.metadata.json` next to it. See `training/TRAINING.md` for the training pipeline.

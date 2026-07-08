@@ -6,3 +6,6 @@ D2 153
 D3 5266
 D4 188561
 D5 3500883
+# D6 added 2026-07-08, same cobra commit rebuilt on macOS arm64; fusion matches D1-D6 exactly.
+D6 67088390
+# D7 diverges: cobra 2705999255 vs fusion 2652750957 (allspin rule config).
