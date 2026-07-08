@@ -57,8 +57,7 @@ fn main() {
         5
     };
     let divide = args.iter().any(|a| a == "--divide" || a == "-d");
-    // --count switches to the bulk-counting kernel (same counts, faster,
-    // NPS not comparable to movelist-style CLIs)
+    // --count switches to the bulk-counting kernel (same counts)
     let count_kernel = args.iter().any(|a| a == "--count" || a == "-c");
 
     // default queue: IOLJSZT repeating

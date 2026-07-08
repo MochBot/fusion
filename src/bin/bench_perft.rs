@@ -1,11 +1,9 @@
-// bench_perft.rs -- perft speed benchmark, two methodologies
+// bench_perft.rs -- perft speed benchmark, two modes
 use fusion_engine::board::Board;
 use fusion_engine::perft::{perft, perft_movelist, perft_parallel};
 use std::time::Instant;
 
-// Strict placement-tree counts, D1-D7. D1-D5 match the cobra CLI baselines
-// in fixtures/perft/baselines.txt; D5-D7 cross-checked against an
-// independent reference BFS and repeated serial/parallel runs.
+// Strict placement-tree counts, D1-D7. D1-D5 = fixtures/perft/baselines.txt.
 const STRICT_REF: [u64; 7] = [17, 153, 5266, 188561, 3500883, 67088390, 2652750957];
 
 fn fmt_nps(nodes: u64, secs: f64) -> String {
@@ -68,7 +66,6 @@ fn main() {
     let skip_movelist = args.iter().any(|a| a == "--count-only");
 
     println!("=== Fusion Perft Benchmark ===");
-    println!("Both modes walk the same strict placement tree and must agree on counts.");
     println!();
 
     if parallel {
@@ -81,7 +78,7 @@ fn main() {
     } else {
         run_table(
             "count-kernel",
-            "bulk counting at the last two levels (fastest exact perft; NPS not comparable to movelist harnesses)",
+            "bulk counting at the last two levels",
             7,
             |b, d| perft(b, 0, d),
         );
@@ -90,7 +87,7 @@ fn main() {
     if !skip_movelist {
         run_table(
             "movelist",
-            "move buffers built at every level incl. leaves (cobra perft CLI methodology; cross-engine comparable NPS)",
+            "move buffers built at every level, including leaves",
             7,
             |b, d| perft_movelist(b, 0, d),
         );

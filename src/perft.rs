@@ -79,8 +79,7 @@ fn last_level(board: &Board, ml: &MoveBuffer, p2: Piece) -> u64 {
     let mut pending_words = 0usize;
     let mut has_pending = false;
     for m in ml.iter() {
-        // generate_placements emits strictly reachable lock placements
-        // only (pinned by 42k-case parity and reference-BFS cross-check),
+        // generate_placements emits only reachable lock placements,
         // so legal_lock_placement re-validation is skipped.
         let pc = m.cells();
         let x = m.x();
@@ -281,10 +280,8 @@ fn count_cleared_child(
     count_smear_rows(&rows, h as i32, p2, false)
 }
 
-/// perft with move buffers built at every level, including leaves.
-/// Same tree and counts as `perft`; this is the methodology the cobra
-/// perft CLI uses (leaf move lists are materialized, not bulk counted),
-/// so NPS from this mode is the cross-engine comparable number.
+/// perft with move buffers built at every level, including leaves,
+/// matching the cobra perft CLI. Same tree and counts as `perft`.
 pub fn perft_movelist(board: &Board, queue_offset: usize, depth: usize) -> u64 {
     if depth == 0 {
         return 1;

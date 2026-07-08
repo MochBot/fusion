@@ -3,9 +3,6 @@
 //   dispatch-count = count_moves_dispatch (production count routing)
 //   engine-count   = count_moves (scalar engine, always)
 //   generate       = production generate() (materializing dispatch)
-// Unlike perft NPS, these numbers carry no bulk-counting amortization or
-// depth-dependent piece/board blend, so they are stable across harnesses and
-// comparable across machines via ns * GHz = cycles/call.
 use fusion_engine::board::Board;
 use fusion_engine::header::Piece;
 use fusion_engine::move_buffer::MoveBuffer;
