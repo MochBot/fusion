@@ -1,0 +1,25 @@
+{
+  "label": "config-frozen baseline",
+  "search": {
+    "beam_width": 800,
+    "depth": 14,
+    "time_budget_ms": 500,
+    "use_tt": false,
+    "extend_queue_7bag": true,
+    "quiescence_max_extensions": 3,
+    "quiescence_beam_fraction": 0.1500,
+    "policy_guided_expansion_cap": 32,
+    "attack_config": "tetra_league"
+  },
+  "model": {
+    "path": "models/rebal-r01/checkpoint.ckpt.policy_value.onnx.metadata.json"
+  },
+  "piece_cap": 1000,
+  "ruleset": "production-allspin-const",
+  "rng": "splitmix64-fisheryates-v1",
+  "garbage_model": "s2tl-cancel-first-matspawn-cap8-v1",
+  "seeds": {
+    "base": 20260709,
+    "count": 200
+  }
+}

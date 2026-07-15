@@ -25,6 +25,7 @@ pub mod smear_core;
 pub mod state;
 pub mod tetrastats_features;
 pub mod transposition;
+pub mod versus;
 
 #[cfg(feature = "wasm")]
 pub mod wasm_types;

@@ -7,8 +7,12 @@ use crate::policy_value_runtime::{PolicyValueRuntime, PolicyValueRuntimeContext}
 use crate::state::{ClearEvent, CoachingState, GameState};
 use crate::transposition::{TranspositionTable, ZobristKeys};
 use smallvec::SmallVec;
+#[cfg(test)]
+use std::cell::Cell;
 use std::cell::RefCell;
 use std::sync::Arc;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
 
 thread_local! {
     static SEARCH_MOVE_SCRATCH: RefCell<MoveBuffer> = RefCell::new(MoveBuffer::new());
@@ -28,6 +32,54 @@ pub const BOARD_WEIGHT: f32 = 1.0;
 pub const MAX_DEPTH_FACTOR: f32 = 2.45;
 pub const POLICY_BONUS_WEIGHT: f32 = 0.10;
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum NnScoringMode {
+    #[default]
+    PerChildValue,
+    PolicyProxy,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum NnBatchMode {
+    #[default]
+    Scalar,
+    Level,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum EngineMode {
+    #[default]
+    Model,
+    Heuristic,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) enum DeadlineSource {
+    Wall(Instant),
+    #[cfg(test)]
+    CheckCountdown(Cell<u32>),
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl DeadlineSource {
+    #[inline]
+    pub(crate) fn expired(&self) -> bool {
+        match self {
+            Self::Wall(deadline) => Instant::now() >= *deadline,
+            #[cfg(test)]
+            Self::CheckCountdown(remaining) => {
+                let current = remaining.get();
+                if current == 0 {
+                    true
+                } else {
+                    remaining.set(current - 1);
+                    false
+                }
+            }
+        }
+    }
+}
+
 pub struct SearchConfig {
     pub beam_width: usize,
     pub depth: usize,
@@ -41,6 +93,10 @@ pub struct SearchConfig {
     /// Fraction of beam_width for quiescence extension beam (0.15 = top 15%).
     pub quiescence_beam_fraction: f32,
     pub policy_guided_expansion_cap: usize,
+    pub nn_scoring: NnScoringMode,
+    pub nn_batch: NnBatchMode,
+    pub policy_proxy_weight: f32,
+    pub engine: EngineMode,
 }
 
 impl Default for SearchConfig {
@@ -59,6 +115,10 @@ impl Default for SearchConfig {
             quiescence_max_extensions: 3,
             quiescence_beam_fraction: 0.15,
             policy_guided_expansion_cap: 32,
+            nn_scoring: NnScoringMode::PerChildValue,
+            nn_batch: NnBatchMode::Scalar,
+            policy_proxy_weight: POLICY_BONUS_WEIGHT,
+            engine: EngineMode::Model,
         }
     }
 }
@@ -101,6 +161,7 @@ pub struct SearchResultFull {
     pub policy_score: f32,
     pub value_score: f32,
     pub fallback_used: bool,
+    pub nn_parent_value: Option<f32>,
 }
 
 /// Shared context for node expansion (weights, attack config, depth, TT).
@@ -113,6 +174,8 @@ pub(crate) struct SearchExpansionContext<'a> {
     pub tt: &'a mut Option<TranspositionTable>,
     pub policy_value: Option<&'a PolicyValueRuntime>,
     pub runtime_context: Option<&'a PolicyValueRuntimeContext>,
+    #[cfg(not(target_arch = "wasm32"))]
+    pub deadline: Option<&'a DeadlineSource>,
 }
 
 impl SearchExpansionContext<'_> {
@@ -138,6 +201,8 @@ pub(crate) struct SearchIterationParams<'a> {
     pub forced_root_move: Option<Move>,
     pub policy_value: Option<&'a PolicyValueRuntime>,
     pub runtime_context: Option<&'a PolicyValueRuntimeContext>,
+    #[cfg(not(target_arch = "wasm32"))]
+    pub deadline: Option<&'a DeadlineSource>,
 }
 
 #[derive(Clone)]
@@ -174,6 +239,7 @@ pub struct SearchNode {
     pub policy_score: f32,
     pub value_score: f32,
     pub fallback_used: bool,
+    pub nn_parent_value: Option<f32>,
     pub path_clear_events: Arc<Vec<ClearEvent>>,
 }
 

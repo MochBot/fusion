@@ -30,6 +30,10 @@ path = "src/bin/policy_value_runtime_parity_fixture.rs"
 name = "bench_smear"
 path = "src/bin/bench_smear.rs"
 
+[[bin]]
+name = "bot_arena"
+path = "src/bin/bot_arena.rs"
+
 [features]
 default = ["rayon"]
 rayon = ["dep:rayon"]

@@ -5,7 +5,11 @@ use crate::bag;
 
 use crate::eval::EvalWeights;
 use crate::policy_value_runtime::{PolicyValueRuntime, PolicyValueRuntimeContext};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::search_config::DeadlineSource;
 use crate::search_config::FUTILITY_DELTA;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::search_config::{NnBatchMode, NnScoringMode};
 
 use crate::state::GameState;
 use crate::transposition::{get_zobrist_keys, TranspositionTable, DEFAULT_TT_SIZE};
@@ -14,8 +18,12 @@ use std::time::{Duration, Instant};
 
 pub use crate::search_config::{SearchConfig, SearchNode, SearchResult, SearchResultFull};
 pub(crate) use crate::search_config::{SearchExpansionContext, SearchIterationParams};
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) use crate::search_expand::record_deadline_check;
 pub(crate) use crate::search_expand::{
-    expand_node, gen_and_eval_root, profile_root_score_aggregation, profile_sort_prune_truncate,
+    expand_level_batched, expand_node, gen_and_eval_root, profile_root_score_aggregation,
+    profile_sort_prune_truncate, record_abandoned_level, record_completed_search,
+    record_q_extension_completed, LevelExpansion,
 };
 
 /// beam search from game state
@@ -84,6 +92,62 @@ pub fn find_best_move_with_scores_forced_runtime(
     runtime_context: Option<&PolicyValueRuntimeContext>,
     forced_root_move: Option<crate::header::Move>,
 ) -> Option<SearchResultFull> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        find_best_move_with_scores_forced_runtime_deadline(
+            state,
+            config,
+            weights,
+            policy_value,
+            runtime_context,
+            forced_root_move,
+            None,
+        )
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        find_best_move_with_scores_forced_runtime_impl(
+            state,
+            config,
+            weights,
+            policy_value,
+            runtime_context,
+            forced_root_move,
+        )
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn find_best_move_with_scores_forced_runtime_deadline(
+    state: &GameState,
+    config: &SearchConfig,
+    weights: &EvalWeights,
+    policy_value: Option<&PolicyValueRuntime>,
+    runtime_context: Option<&PolicyValueRuntimeContext>,
+    forced_root_move: Option<crate::header::Move>,
+    deadline_override: Option<&DeadlineSource>,
+) -> Option<SearchResultFull> {
+    find_best_move_with_scores_forced_runtime_impl(
+        state,
+        config,
+        weights,
+        policy_value,
+        runtime_context,
+        forced_root_move,
+        deadline_override,
+    )
+}
+
+fn find_best_move_with_scores_forced_runtime_impl(
+    state: &GameState,
+    config: &SearchConfig,
+    weights: &EvalWeights,
+    policy_value: Option<&PolicyValueRuntime>,
+    runtime_context: Option<&PolicyValueRuntimeContext>,
+    forced_root_move: Option<crate::header::Move>,
+    #[cfg(not(target_arch = "wasm32"))] deadline_override: Option<&DeadlineSource>,
+) -> Option<SearchResultFull> {
     let search_queue = if config.extend_queue_7bag {
         bag::extend_queue(&state.queue, state.current, state.hold)
     } else {
@@ -112,8 +176,12 @@ pub fn find_best_move_with_scores_forced_runtime(
             forced_root_move,
             policy_value,
             runtime_context,
+            #[cfg(not(target_arch = "wasm32"))]
+            deadline: None,
         };
-        return run_beam_search_iteration(&mut params);
+        let (full, completed_depth, completed_width) = run_beam_search_iteration(&mut params)?;
+        record_completed_search(completed_depth, completed_width);
+        return Some(full);
     }
 
     let max_width = config.beam_width;
@@ -128,6 +196,19 @@ pub fn find_best_move_with_scores_forced_runtime(
     let start = Instant::now();
     #[cfg(not(target_arch = "wasm32"))]
     let time_budget = config.time_budget_ms.map(Duration::from_millis);
+    #[cfg(not(target_arch = "wasm32"))]
+    let wall_deadline =
+        if config.nn_scoring == NnScoringMode::PolicyProxy && deadline_override.is_none() {
+            time_budget.map(|budget| DeadlineSource::Wall(start + budget))
+        } else {
+            None
+        };
+    #[cfg(not(target_arch = "wasm32"))]
+    let deadline = if config.nn_scoring == NnScoringMode::PolicyProxy {
+        deadline_override.or(wall_deadline.as_ref())
+    } else {
+        None
+    };
 
     #[cfg(target_arch = "wasm32")]
     let mut iteration_count = 0usize;
@@ -153,14 +234,19 @@ pub fn find_best_move_with_scores_forced_runtime(
             forced_root_move,
             policy_value,
             runtime_context,
+            #[cfg(not(target_arch = "wasm32"))]
+            deadline,
         };
-        if let Some(full) = run_beam_search_iteration(&mut params) {
+        if let Some((full, completed_depth, completed_width)) =
+            run_beam_search_iteration(&mut params)
+        {
             let should_replace = best_full
                 .as_ref()
                 .is_none_or(|prev| compare_results_desc(&full.best, &prev.best).is_lt());
 
             if should_replace {
                 best_full = Some(full);
+                record_completed_search(completed_depth, completed_width);
             }
         }
 
@@ -170,9 +256,16 @@ pub fn find_best_move_with_scores_forced_runtime(
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            if let Some(budget) = time_budget {
-                if start.elapsed() >= budget {
+            if let Some(deadline) = deadline {
+                if deadline_expired(deadline) {
                     break;
+                }
+            }
+            if deadline.is_none() {
+                if let Some(budget) = time_budget {
+                    if start.elapsed() >= budget {
+                        break;
+                    }
                 }
             }
         }
@@ -191,7 +284,9 @@ pub fn find_best_move_with_scores_forced_runtime(
     best_full
 }
 
-fn run_beam_search_iteration(params: &mut SearchIterationParams<'_>) -> Option<SearchResultFull> {
+fn run_beam_search_iteration(
+    params: &mut SearchIterationParams<'_>,
+) -> Option<(SearchResultFull, usize, usize)> {
     let mut ctx = SearchExpansionContext {
         config: params.config,
         current_beam_width: params.beam_width,
@@ -201,6 +296,8 @@ fn run_beam_search_iteration(params: &mut SearchIterationParams<'_>) -> Option<S
         tt: params.tt,
         policy_value: params.policy_value,
         runtime_context: params.runtime_context,
+        #[cfg(not(target_arch = "wasm32"))]
+        deadline: params.deadline,
     };
 
     let mut beam = expand_root(params.state, &mut ctx);
@@ -214,16 +311,45 @@ fn run_beam_search_iteration(params: &mut SearchIterationParams<'_>) -> Option<S
         truncate_with_forced(&mut beam, params.beam_width, params.forced_root_move);
     });
 
+    let mut completed_depth = 1;
+    let mut deadline_hit = false;
+
     for depth_idx in 0..params.max_depth.saturating_sub(1) {
+        if search_deadline_expired(&ctx) {
+            record_abandoned_level();
+            deadline_hit = true;
+            break;
+        }
         let child_depth = depth_idx + 2;
         ctx.remaining_depth = params.max_depth.saturating_sub(child_depth);
 
-        let mut next_beam: Vec<SearchNode> =
-            Vec::with_capacity(params.beam_width.saturating_mul(2));
-
-        for node in &beam {
-            expand_node(node, &mut ctx, &mut next_beam);
-        }
+        let mut next_beam =
+            if level_batch_enabled(params.config, params.policy_value, params.runtime_context) {
+                match expand_level_batched(&beam, &mut ctx) {
+                    LevelExpansion::Completed(nodes) => nodes,
+                    LevelExpansion::Abandoned => {
+                        record_abandoned_level();
+                        deadline_hit = true;
+                        break;
+                    }
+                }
+            } else {
+                let mut nodes = Vec::with_capacity(params.beam_width.saturating_mul(2));
+                let mut abandoned = false;
+                for node in &beam {
+                    if search_deadline_expired(&ctx) {
+                        record_abandoned_level();
+                        abandoned = true;
+                        deadline_hit = true;
+                        break;
+                    }
+                    expand_node(node, &mut ctx, &mut nodes);
+                }
+                if abandoned {
+                    break;
+                }
+                nodes
+            };
 
         if next_beam.is_empty() {
             break;
@@ -234,7 +360,13 @@ fn run_beam_search_iteration(params: &mut SearchIterationParams<'_>) -> Option<S
             next_beam.sort_unstable_by(compare_nodes_desc);
             truncate_with_forced(&mut next_beam, params.beam_width, params.forced_root_move);
         });
+        if search_deadline_expired(&ctx) {
+            record_abandoned_level();
+            deadline_hit = true;
+            break;
+        }
         beam = next_beam;
+        completed_depth += 1;
     }
 
     // Quiescence extensions: extend loud nodes past the normal depth boundary
@@ -242,7 +374,7 @@ fn run_beam_search_iteration(params: &mut SearchIterationParams<'_>) -> Option<S
     let q_max = params.config.quiescence_max_extensions;
     let q_beam_width =
         ((params.beam_width as f32) * params.config.quiescence_beam_fraction).ceil() as usize;
-    if q_max > 0 && q_beam_width > 0 {
+    if !deadline_hit && q_max > 0 && q_beam_width > 0 && !search_deadline_expired(&ctx) {
         let main_depth = params.max_depth.saturating_sub(1);
         let loud_nodes: Vec<SearchNode> = beam.iter().filter(|n| n.is_loud()).cloned().collect();
 
@@ -254,16 +386,43 @@ fn run_beam_search_iteration(params: &mut SearchIterationParams<'_>) -> Option<S
             });
 
             for ext in 0..q_max {
+                if search_deadline_expired(&ctx) {
+                    record_abandoned_level();
+                    break;
+                }
                 let child_depth = main_depth + ext + 2;
                 ctx.remaining_depth = params
                     .max_depth
                     .saturating_sub(child_depth.min(params.max_depth));
 
-                let mut next_q: Vec<SearchNode> = Vec::with_capacity(q_beam_width * 2);
-
-                for node in &q_beam {
-                    expand_node(node, &mut ctx, &mut next_q);
-                }
+                let mut next_q = if level_batch_enabled(
+                    params.config,
+                    params.policy_value,
+                    params.runtime_context,
+                ) {
+                    match expand_level_batched(&q_beam, &mut ctx) {
+                        LevelExpansion::Completed(nodes) => nodes,
+                        LevelExpansion::Abandoned => {
+                            record_abandoned_level();
+                            break;
+                        }
+                    }
+                } else {
+                    let mut nodes = Vec::with_capacity(q_beam_width * 2);
+                    let mut abandoned = false;
+                    for node in &q_beam {
+                        if search_deadline_expired(&ctx) {
+                            record_abandoned_level();
+                            abandoned = true;
+                            break;
+                        }
+                        expand_node(node, &mut ctx, &mut nodes);
+                    }
+                    if abandoned {
+                        break;
+                    }
+                    nodes
+                };
 
                 if next_q.is_empty() {
                     break;
@@ -274,13 +433,27 @@ fn run_beam_search_iteration(params: &mut SearchIterationParams<'_>) -> Option<S
                     next_q.truncate(q_beam_width);
                 });
 
+                let mut next_main_snapshot = beam.clone();
                 for node in &next_q {
                     if !node.is_loud() {
-                        beam.push(node.clone());
+                        next_main_snapshot.push(node.clone());
                     }
                 }
+                let mut next_q_beam: Vec<SearchNode> =
+                    next_q.into_iter().filter(|n| n.is_loud()).collect();
+                profile_sort_prune_truncate(|| {
+                    next_main_snapshot.sort_unstable_by(compare_nodes_desc);
+                    next_q_beam.sort_unstable_by(compare_nodes_desc);
+                    next_q_beam.truncate(q_beam_width);
+                });
+                if search_deadline_expired(&ctx) {
+                    record_abandoned_level();
+                    break;
+                }
 
-                q_beam = next_q.into_iter().filter(|n| n.is_loud()).collect();
+                beam = next_main_snapshot;
+                q_beam = next_q_beam;
+                record_q_extension_completed();
                 if q_beam.is_empty() {
                     break;
                 }
@@ -319,21 +492,69 @@ fn run_beam_search_iteration(params: &mut SearchIterationParams<'_>) -> Option<S
         (root_scores, position_complexity)
     });
 
-    Some(SearchResultFull {
-        best: result,
-        root_scores,
-        position_complexity,
-        board_score: best.board_score,
-        attack_score: best.attack_score,
-        chain_score: best.chain_score,
-        context_score: best.context_score,
-        path_attack: best.path_attack,
-        path_chain: best.path_chain,
-        path_context: best.path_context,
-        policy_score: best.policy_score,
-        value_score: best.value_score,
-        fallback_used: best.fallback_used,
-    })
+    Some((
+        SearchResultFull {
+            best: result,
+            root_scores,
+            position_complexity,
+            board_score: best.board_score,
+            attack_score: best.attack_score,
+            chain_score: best.chain_score,
+            context_score: best.context_score,
+            path_attack: best.path_attack,
+            path_chain: best.path_chain,
+            path_context: best.path_context,
+            policy_score: best.policy_score,
+            value_score: best.value_score,
+            fallback_used: best.fallback_used,
+            nn_parent_value: best.nn_parent_value,
+        },
+        completed_depth,
+        params.beam_width,
+    ))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[inline]
+fn deadline_expired(deadline: &DeadlineSource) -> bool {
+    let expired = deadline.expired();
+    record_deadline_check(expired);
+    expired
+}
+
+#[inline]
+fn search_deadline_expired(ctx: &SearchExpansionContext<'_>) -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        ctx.deadline.is_some_and(deadline_expired)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = ctx;
+        false
+    }
+}
+
+#[inline]
+pub(crate) fn level_batch_enabled(
+    config: &SearchConfig,
+    policy_value: Option<&PolicyValueRuntime>,
+    runtime_context: Option<&PolicyValueRuntimeContext>,
+) -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        config.nn_scoring == NnScoringMode::PolicyProxy
+            && config.nn_batch == NnBatchMode::Level
+            && policy_value.is_some()
+            && runtime_context.is_some()
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = (config, policy_value, runtime_context);
+        false
+    }
 }
 
 /// Compute position complexity: variance of top-10 root move scores.
@@ -494,6 +715,780 @@ mod tests {
     use crate::state::CoachingState;
     use smallvec::{smallvec, SmallVec};
     use std::sync::Arc;
+
+    fn proxy_level_config(beam_width: usize, depth: usize) -> SearchConfig {
+        SearchConfig {
+            beam_width,
+            depth,
+            extend_queue_7bag: false,
+            quiescence_max_extensions: 0,
+            nn_scoring: crate::search_config::NnScoringMode::PolicyProxy,
+            nn_batch: crate::search_config::NnBatchMode::Level,
+            ..SearchConfig::default()
+        }
+    }
+
+    fn result_signature(result: &SearchResultFull) -> Vec<(u16, u32)> {
+        result
+            .root_scores
+            .iter()
+            .map(|(mv, score)| (mv.raw(), score.to_bits()))
+            .collect()
+    }
+
+    fn deadline_test_state() -> GameState {
+        GameState::new(
+            Board::new(),
+            Piece::T,
+            vec![Piece::I, Piece::O, Piece::S, Piece::Z],
+        )
+    }
+
+    fn deadline_test_config(depth: usize) -> SearchConfig {
+        SearchConfig {
+            beam_width: 1,
+            depth,
+            time_budget_ms: Some(1),
+            extend_queue_7bag: false,
+            quiescence_max_extensions: 0,
+            nn_scoring: crate::search_config::NnScoringMode::PolicyProxy,
+            ..SearchConfig::default()
+        }
+    }
+
+    fn run_with_countdown(
+        state: &GameState,
+        config: &SearchConfig,
+        false_queries: u32,
+    ) -> (SearchResultFull, crate::search_expand::SearchExpansionStats) {
+        crate::search_expand::reset_search_expansion_stats();
+        crate::search_expand::set_search_profiling_enabled(true);
+        let deadline = DeadlineSource::CheckCountdown(std::cell::Cell::new(false_queries));
+        let result = find_best_move_with_scores_forced_runtime_deadline(
+            state,
+            config,
+            &EvalWeights::default(),
+            None,
+            None,
+            None,
+            Some(&deadline),
+        )
+        .unwrap_or_else(|| panic!("deadline search should preserve a legal root result"));
+        let stats = crate::search_expand::search_expansion_stats();
+        crate::search_expand::set_search_profiling_enabled(false);
+        (result, stats)
+    }
+
+    #[test]
+    fn budget_none_performs_zero_deadline_checks() {
+        crate::search_expand::reset_search_expansion_stats();
+        crate::search_expand::set_search_profiling_enabled(true);
+        let state = deadline_test_state();
+        let config = SearchConfig {
+            time_budget_ms: None,
+            nn_scoring: crate::search_config::NnScoringMode::PolicyProxy,
+            beam_width: 1,
+            depth: 2,
+            extend_queue_7bag: false,
+            quiescence_max_extensions: 0,
+            ..SearchConfig::default()
+        };
+
+        let result = find_best_move(&state, &config, &EvalWeights::default());
+        let stats = crate::search_expand::search_expansion_stats();
+        crate::search_expand::set_search_profiling_enabled(false);
+
+        assert!(result.is_some());
+        assert_eq!(stats.deadline_checks, 0);
+        assert_eq!(stats.deadline_hits, 0);
+    }
+
+    #[test]
+    fn clocked_returns_legal_move_with_completed_root() {
+        let state = deadline_test_state();
+        let config = deadline_test_config(4);
+
+        let (result, stats) = run_with_countdown(&state, &config, 0);
+
+        assert!(!state.board.obstructed_move(&result.best.best_move));
+        assert!(stats.deadline_hits > 0);
+        assert!(stats.completed_depth >= 1);
+    }
+
+    #[test]
+    fn partial_level_discarded() {
+        let state = deadline_test_state();
+        let config = deadline_test_config(4);
+        let expected_config = SearchConfig {
+            time_budget_ms: None,
+            depth: 2,
+            ..deadline_test_config(2)
+        };
+        let expected =
+            find_best_move_with_scores(&state, &expected_config, &EvalWeights::default())
+                .unwrap_or_else(|| panic!("depth-two reference should return a move"));
+
+        let (actual, stats) = run_with_countdown(&state, &config, 4);
+
+        assert_eq!(stats.completed_depth, 2);
+        assert_eq!(actual.best.best_move, expected.best.best_move);
+        assert_eq!(actual.best.score.to_bits(), expected.best.score.to_bits());
+        assert_eq!(actual.best.pv, expected.best.pv);
+    }
+
+    #[test]
+    fn winning_snapshot_reported_across_widening() {
+        let state = deadline_test_state();
+        let reference_config = SearchConfig {
+            beam_width: 200,
+            ..deadline_test_config(2)
+        };
+        let (reference, reference_stats) = run_with_countdown(&state, &reference_config, u32::MAX);
+        let widening_config = SearchConfig {
+            beam_width: 400,
+            ..deadline_test_config(2)
+        };
+
+        let (actual, stats) = run_with_countdown(
+            &state,
+            &widening_config,
+            reference_stats.deadline_checks as u32 + 1,
+        );
+
+        assert_eq!(actual.best.best_move, reference.best.best_move);
+        assert_eq!(actual.best.score.to_bits(), reference.best.score.to_bits());
+        assert_eq!(stats.completed_depth, reference_stats.completed_depth);
+        assert_eq!(stats.completed_width, 200);
+        assert!(stats.deadline_hits > 0);
+    }
+
+    #[test]
+    fn deterministic_mode_byte_identical() {
+        let state = deadline_test_state();
+        let config = SearchConfig {
+            beam_width: 4,
+            depth: 3,
+            extend_queue_7bag: false,
+            quiescence_max_extensions: 0,
+            ..SearchConfig::default()
+        };
+
+        let first = find_best_move_with_scores(&state, &config, &EvalWeights::default())
+            .unwrap_or_else(|| panic!("first deterministic search should return a move"));
+        let second = find_best_move_with_scores(&state, &config, &EvalWeights::default())
+            .unwrap_or_else(|| panic!("second deterministic search should return a move"));
+
+        assert_eq!(first.best.best_move.raw(), second.best.best_move.raw());
+        assert_eq!(first.best.score.to_bits(), second.best.score.to_bits());
+        assert_eq!(first.best.pv, second.best.pv);
+        assert_eq!(
+            first
+                .root_scores
+                .iter()
+                .map(|(mv, score)| (mv.raw(), score.to_bits()))
+                .collect::<Vec<_>>(),
+            second
+                .root_scores
+                .iter()
+                .map(|(mv, score)| (mv.raw(), score.to_bits()))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn quiescence_expiry_keeps_prior_snapshot() {
+        let mut state = deadline_test_state();
+        state.b2b = 1;
+        let config = SearchConfig {
+            depth: 1,
+            quiescence_max_extensions: 2,
+            quiescence_beam_fraction: 1.0,
+            ..deadline_test_config(1)
+        };
+        let reference_config = SearchConfig {
+            time_budget_ms: None,
+            quiescence_max_extensions: 0,
+            ..deadline_test_config(1)
+        };
+        let reference =
+            find_best_move_with_scores(&state, &reference_config, &EvalWeights::default())
+                .unwrap_or_else(|| panic!("pre-extension reference should return a move"));
+
+        let (actual, stats) = run_with_countdown(&state, &config, 2);
+
+        assert_eq!(actual.best.best_move, reference.best.best_move);
+        assert_eq!(actual.best.score.to_bits(), reference.best.score.to_bits());
+        assert_eq!(actual.best.pv, reference.best.pv);
+        assert_eq!(stats.q_extensions_completed, 0);
+        assert!(stats.deadline_hits > 0);
+    }
+
+    #[test]
+    fn clocked_proxy_smoke_records_deadline_activity() {
+        crate::search_expand::reset_search_expansion_stats();
+        crate::search_expand::set_search_profiling_enabled(true);
+        let state = deadline_test_state();
+        let config = SearchConfig {
+            beam_width: 800,
+            depth: 14,
+            time_budget_ms: Some(1),
+            nn_scoring: crate::search_config::NnScoringMode::PolicyProxy,
+            ..SearchConfig::default()
+        };
+
+        let result = find_best_move(&state, &config, &EvalWeights::default())
+            .unwrap_or_else(|| panic!("clocked proxy smoke should preserve a legal move"));
+        let stats = crate::search_expand::search_expansion_stats();
+        crate::search_expand::set_search_profiling_enabled(false);
+
+        assert!(!state.board.obstructed_move(&result.best_move));
+        assert!(stats.deadline_checks > 0);
+        assert!(stats.deadline_hits > 0);
+        assert!(stats.completed_depth >= 1);
+    }
+
+    fn load_checked_in_runtime() -> Option<PolicyValueRuntime> {
+        let metadata_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("models/rebal-r01/checkpoint.ckpt.policy_value.onnx.metadata.json");
+        if !metadata_path.exists() {
+            return None;
+        }
+        Some(
+            PolicyValueRuntime::load(metadata_path)
+                .unwrap_or_else(|error| panic!("checked-in runtime should load: {error}")),
+        )
+    }
+
+    #[test]
+    fn per_child_value_mode_results_byte_identical_to_pre_change() {
+        let Some(runtime) = load_checked_in_runtime() else {
+            return;
+        };
+        let runtime_context = PolicyValueRuntimeContext {
+            opponent_board: Board::new(),
+        };
+        let state = GameState::new(Board::new(), Piece::T, vec![Piece::I, Piece::O, Piece::S]);
+        let config = SearchConfig {
+            beam_width: 4,
+            depth: 2,
+            extend_queue_7bag: false,
+            quiescence_max_extensions: 0,
+            nn_scoring: crate::search_config::NnScoringMode::PerChildValue,
+            ..SearchConfig::default()
+        };
+
+        let result = find_best_move_with_scores_runtime(
+            &state,
+            &config,
+            &EvalWeights::default(),
+            &runtime,
+            &runtime_context,
+        )
+        .unwrap_or_else(|| panic!("golden search should return a move"));
+
+        let actual = (
+            result.best.best_move.raw(),
+            result.best.score.to_bits(),
+            result.best.pv.iter().map(|mv| mv.raw()).collect::<Vec<_>>(),
+            result
+                .root_scores
+                .iter()
+                .map(|(mv, score)| (mv.raw(), score.to_bits()))
+                .collect::<Vec<_>>(),
+            (
+                result.board_score.to_bits(),
+                result.attack_score.to_bits(),
+                result.chain_score.to_bits(),
+                result.context_score.to_bits(),
+                result.path_attack.to_bits(),
+                result.path_chain.to_bits(),
+                result.path_context.to_bits(),
+                result.policy_score.to_bits(),
+                result.value_score.to_bits(),
+            ),
+            result.fallback_used,
+        );
+        let expected = (
+            384,
+            1_063_044_931,
+            vec![384, 2112],
+            vec![(384, 1_063_044_931), (448, 1_063_039_862)],
+            (
+                1_063_214_852,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                3_184_487_499,
+                1_063_214_852,
+            ),
+            false,
+        );
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn proxy_search_produces_valid_pv_and_coaching() {
+        let Some(runtime) = load_checked_in_runtime() else {
+            return;
+        };
+        let runtime_context = PolicyValueRuntimeContext {
+            opponent_board: Board::new(),
+        };
+        let state = GameState::new(Board::new(), Piece::T, vec![Piece::I, Piece::O, Piece::S]);
+        let config = SearchConfig {
+            beam_width: 4,
+            depth: 2,
+            extend_queue_7bag: false,
+            quiescence_max_extensions: 0,
+            nn_scoring: crate::search_config::NnScoringMode::PolicyProxy,
+            ..SearchConfig::default()
+        };
+
+        let result = find_best_move_with_scores_runtime(
+            &state,
+            &config,
+            &EvalWeights::default(),
+            &runtime,
+            &runtime_context,
+        )
+        .unwrap_or_else(|| panic!("proxy search should return a move"));
+
+        assert!(!result.best.pv.is_empty());
+        assert_ne!(result.best.coaching_state, CoachingState::default());
+        assert!(result.position_complexity.is_finite());
+        assert!(result.nn_parent_value.is_some());
+    }
+
+    #[test]
+    fn proxy_batched_equals_proxy_scalar_results() {
+        let Some(runtime) = load_checked_in_runtime() else {
+            return;
+        };
+        let runtime_context = PolicyValueRuntimeContext {
+            opponent_board: Board::new(),
+        };
+        let states = [
+            GameState::new(Board::new(), Piece::T, vec![Piece::I, Piece::O, Piece::S]),
+            GameState::new(Board::new(), Piece::L, vec![Piece::Z, Piece::T, Piece::O]),
+        ];
+        let candidates = [
+            vec![
+                Move::new(Piece::T, crate::header::Rotation::North, 0, 0, false),
+                Move::new(Piece::T, crate::header::Rotation::East, 1, 0, false),
+            ],
+            vec![Move::new(
+                Piece::L,
+                crate::header::Rotation::South,
+                2,
+                0,
+                false,
+            )],
+        ];
+        let state_refs = [&states[0], &states[1]];
+        let candidate_refs = [candidates[0].as_slice(), candidates[1].as_slice()];
+        let batch = runtime
+            .infer_batch_chunk(&state_refs, &runtime_context, &candidate_refs)
+            .unwrap_or_else(|error| panic!("batch parity inference should succeed: {error}"));
+        for (row, (state, row_candidates)) in state_refs.iter().zip(candidate_refs).enumerate() {
+            let scalar = runtime
+                .infer(state, &runtime_context, row_candidates)
+                .unwrap_or_else(|error| panic!("scalar parity inference should succeed: {error}"));
+            assert_eq!(batch[row].0.len(), scalar.policy_logits.len());
+            for (batch_score, scalar_score) in batch[row].0.iter().zip(&scalar.policy_logits) {
+                assert!((batch_score - scalar_score).abs() <= 1.0e-6);
+            }
+            assert!((batch[row].1 - scalar.value).abs() <= 1.0e-6);
+        }
+        let permuted = runtime
+            .infer_batch_chunk(
+                &[state_refs[1], state_refs[0]],
+                &runtime_context,
+                &[candidate_refs[1], candidate_refs[0]],
+            )
+            .unwrap_or_else(|error| panic!("permuted batch inference should succeed: {error}"));
+        assert_eq!(batch[0], permuted[1]);
+        assert_eq!(batch[1], permuted[0]);
+
+        for state in states.iter().rev() {
+            let level_config = proxy_level_config(32, 1);
+            let scalar_config = SearchConfig {
+                nn_batch: crate::search_config::NnBatchMode::Scalar,
+                ..proxy_level_config(32, 1)
+            };
+            crate::search_expand::reset_search_expansion_stats();
+            crate::search_expand::set_search_profiling_enabled(true);
+            let level = find_best_move_with_scores_runtime(
+                state,
+                &level_config,
+                &EvalWeights::default(),
+                &runtime,
+                &runtime_context,
+            )
+            .unwrap_or_else(|| panic!("level proxy search should return a move"));
+            let level_stats = crate::search_expand::search_expansion_stats();
+            crate::search_expand::set_search_profiling_enabled(false);
+            let scalar = find_best_move_with_scores_runtime(
+                state,
+                &scalar_config,
+                &EvalWeights::default(),
+                &runtime,
+                &runtime_context,
+            )
+            .unwrap_or_else(|| panic!("scalar proxy search should return a move"));
+
+            assert!(level_stats.batch_calls > 0);
+            assert_eq!(level.best.best_move, scalar.best.best_move);
+            assert_eq!(level.best.pv, scalar.best.pv);
+            assert_eq!(level.root_scores.len(), scalar.root_scores.len());
+            for ((level_move, level_score), (scalar_move, scalar_score)) in
+                level.root_scores.iter().zip(&scalar.root_scores)
+            {
+                assert_eq!(level_move, scalar_move);
+                assert!((level_score - scalar_score).abs() <= 1.0e-6);
+            }
+            assert!(scalar.root_scores.len() > 1);
+            assert!((scalar.root_scores[0].1 - scalar.root_scores[1].1).abs() > 1.0e-6);
+        }
+    }
+
+    #[test]
+    fn batch_calls_counter_equals_chunk_calls_not_nodes() {
+        let Some(runtime) = load_checked_in_runtime() else {
+            return;
+        };
+        let runtime_context = PolicyValueRuntimeContext {
+            opponent_board: Board::new(),
+        };
+        let state = deadline_test_state();
+        let config = proxy_level_config(64, 3);
+        crate::search_expand::reset_search_expansion_stats();
+        crate::search_expand::set_search_profiling_enabled(true);
+
+        let result = find_best_move_with_scores_runtime(
+            &state,
+            &config,
+            &EvalWeights::default(),
+            &runtime,
+            &runtime_context,
+        );
+        let stats = crate::search_expand::search_expansion_stats();
+        crate::search_expand::set_search_profiling_enabled(false);
+
+        assert!(result.is_some());
+        assert_eq!(stats.batch_calls, 3);
+        assert_eq!(stats.batch_calls, stats.runtime_calls);
+        assert!(stats.runtime_attempt_rows > stats.batch_calls);
+    }
+
+    #[test]
+    fn level_mode_without_runtime_falls_back_to_scalar_path() {
+        let state = deadline_test_state();
+        let level_config = proxy_level_config(64, 3);
+        let scalar_config = SearchConfig {
+            nn_batch: crate::search_config::NnBatchMode::Scalar,
+            ..proxy_level_config(64, 3)
+        };
+        crate::search_expand::reset_search_expansion_stats();
+        crate::search_expand::reset_level_path_markers();
+        crate::search_expand::set_search_profiling_enabled(true);
+
+        let level = find_best_move_with_scores(&state, &level_config, &EvalWeights::default())
+            .unwrap_or_else(|| panic!("runtime-free Level search should return a move"));
+        let level_stats = crate::search_expand::search_expansion_stats();
+        crate::search_expand::reset_search_expansion_stats();
+        let scalar = find_best_move_with_scores(&state, &scalar_config, &EvalWeights::default())
+            .unwrap_or_else(|| panic!("runtime-free Scalar search should return a move"));
+        let scalar_stats = crate::search_expand::search_expansion_stats();
+        crate::search_expand::set_search_profiling_enabled(false);
+
+        assert!(!level_batch_enabled(&level_config, None, None));
+        assert_eq!(crate::search_expand::level_path_markers(), (false, false));
+        assert_eq!(level.best.best_move, scalar.best.best_move);
+        assert_eq!(level.best.hold_used, scalar.best.hold_used);
+        assert_eq!(level.best.score.to_bits(), scalar.best.score.to_bits());
+        assert_eq!(level.best.pv, scalar.best.pv);
+        assert_eq!(level.best.coaching_state, scalar.best.coaching_state);
+        assert_eq!(level.best.pv_clear_events, scalar.best.pv_clear_events);
+        assert_eq!(result_signature(&level), result_signature(&scalar));
+        assert_eq!(
+            level.position_complexity.to_bits(),
+            scalar.position_complexity.to_bits()
+        );
+        assert_eq!(level.board_score.to_bits(), scalar.board_score.to_bits());
+        assert_eq!(level.attack_score.to_bits(), scalar.attack_score.to_bits());
+        assert_eq!(level.chain_score.to_bits(), scalar.chain_score.to_bits());
+        assert_eq!(
+            level.context_score.to_bits(),
+            scalar.context_score.to_bits()
+        );
+        assert_eq!(level.path_attack.to_bits(), scalar.path_attack.to_bits());
+        assert_eq!(level.path_chain.to_bits(), scalar.path_chain.to_bits());
+        assert_eq!(level.path_context.to_bits(), scalar.path_context.to_bits());
+        assert_eq!(level.policy_score.to_bits(), scalar.policy_score.to_bits());
+        assert_eq!(level.value_score.to_bits(), scalar.value_score.to_bits());
+        assert_eq!(level.fallback_used, scalar.fallback_used);
+        assert_eq!(level.nn_parent_value, scalar.nn_parent_value);
+        assert_eq!(level_stats.batch_calls, 0);
+        assert_eq!(level_stats.runtime_calls, 0);
+        assert_eq!(
+            level_stats.runtime_unavailable_nodes,
+            scalar_stats.runtime_unavailable_nodes
+        );
+        assert!(level_stats.runtime_unavailable_nodes > 0);
+
+        let Some(runtime) = load_checked_in_runtime() else {
+            return;
+        };
+        let runtime_context = PolicyValueRuntimeContext {
+            opponent_board: Board::new(),
+        };
+        crate::search_expand::reset_level_path_markers();
+        let result = find_best_move_with_scores_runtime(
+            &state,
+            &level_config,
+            &EvalWeights::default(),
+            &runtime,
+            &runtime_context,
+        );
+
+        assert!(result.is_some());
+        let (root_entered, expand_entered) = crate::search_expand::level_path_markers();
+        assert!(root_entered);
+        assert!(expand_entered);
+    }
+
+    #[test]
+    fn expansion_slices_level_into_chunks() {
+        let Some(runtime) = load_checked_in_runtime() else {
+            return;
+        };
+        let runtime_context = PolicyValueRuntimeContext {
+            opponent_board: Board::new(),
+        };
+        let state = deadline_test_state();
+        let config = proxy_level_config(300, 3);
+        crate::search_expand::reset_search_expansion_stats();
+        crate::search_expand::set_search_profiling_enabled(true);
+
+        let result = find_best_move_with_scores_runtime(
+            &state,
+            &config,
+            &EvalWeights::default(),
+            &runtime,
+            &runtime_context,
+        );
+        let stats = crate::search_expand::search_expansion_stats();
+        crate::search_expand::set_search_profiling_enabled(false);
+
+        assert!(result.is_some());
+        let deepest_level_rows = stats.expanded_nodes - 1 - 32;
+        assert!(
+            deepest_level_rows > 256,
+            "fixture must span multiple chunks: expanded={}, attempts={}, calls={}, checks={}",
+            stats.expanded_nodes,
+            stats.runtime_attempt_rows,
+            stats.batch_calls,
+            stats.deadline_checks
+        );
+        assert_eq!(stats.batch_calls, 2 + deepest_level_rows.div_ceil(256));
+        assert_eq!(stats.max_batch_rows, 256);
+        assert_eq!(stats.runtime_attempt_rows, stats.expanded_nodes);
+    }
+
+    #[test]
+    fn nn_mode_in_process_determinism() {
+        let Some(runtime) = load_checked_in_runtime() else {
+            return;
+        };
+        let config = proxy_level_config(16, 2);
+        let side_a = crate::versus::PlayerCfg {
+            search: config,
+            label: "A".to_owned(),
+        };
+        let side_b = crate::versus::PlayerCfg {
+            search: proxy_level_config(16, 2),
+            label: "B".to_owned(),
+        };
+        let mut record_first = Vec::new();
+        let first = crate::versus::play_game(
+            77_000_002,
+            0,
+            [&side_a, &side_b],
+            Some(&runtime),
+            &EvalWeights::default(),
+            2,
+            &mut |record| record_first.push(record),
+        );
+        let mut record_second = Vec::new();
+        let second = crate::versus::play_game(
+            77_000_002,
+            0,
+            [&side_a, &side_b],
+            Some(&runtime),
+            &EvalWeights::default(),
+            2,
+            &mut |record| record_second.push(record),
+        );
+        let games_first = [crate::versus::report::RecordedGame {
+            game: 0,
+            seed: 77_000_002,
+            slot0_label: "A",
+            slot1_label: "B",
+            a_slot: 0,
+            result: &first,
+        }];
+        let games_second = [crate::versus::report::RecordedGame {
+            game: 0,
+            seed: 77_000_002,
+            slot0_label: "A",
+            slot1_label: "B",
+            a_slot: 0,
+            result: &second,
+        }];
+        let first_json = crate::versus::report::replays_jsonl(
+            &games_first,
+            crate::versus::report::ReportMode::Deterministic,
+        );
+        let second_json = crate::versus::report::replays_jsonl(
+            &games_second,
+            crate::versus::report::ReportMode::Deterministic,
+        );
+
+        assert_eq!(record_first, first.per_move);
+        assert_eq!(record_second, second.per_move);
+        assert_eq!(first_json, second_json);
+        let mut corrupted = second_json.into_bytes();
+        let byte = corrupted
+            .iter_mut()
+            .find(|byte| byte.is_ascii_digit())
+            .unwrap_or_else(|| panic!("replay JSON should contain a numeric byte"));
+        *byte = if *byte == b'9' { b'8' } else { *byte + 1 };
+        assert_ne!(first_json.as_bytes(), corrupted);
+    }
+
+    #[test]
+    fn whole_chunk_failure_falls_back_heuristically() {
+        let Some(runtime) = load_checked_in_runtime() else {
+            return;
+        };
+        let runtime_context = PolicyValueRuntimeContext {
+            opponent_board: Board::new(),
+        };
+        let state = deadline_test_state();
+        let config = proxy_level_config(600, 3);
+        crate::search_expand::reset_search_expansion_stats();
+        crate::search_expand::set_search_profiling_enabled(true);
+        crate::search_expand::set_poison_batch_chunk(Some(1));
+
+        let actual = find_best_move_with_scores_runtime(
+            &state,
+            &config,
+            &EvalWeights::default(),
+            &runtime,
+            &runtime_context,
+        )
+        .unwrap_or_else(|| panic!("fallback search should return a move"));
+        crate::search_expand::set_poison_batch_chunk(None);
+        let stats = crate::search_expand::search_expansion_stats();
+        crate::search_expand::set_search_profiling_enabled(false);
+        crate::search_expand::set_poison_batch_chunk(Some(0));
+        let expected = find_best_move_with_scores_runtime(
+            &state,
+            &config,
+            &EvalWeights::default(),
+            &runtime,
+            &runtime_context,
+        )
+        .unwrap_or_else(|| panic!("first-chunk fallback reference should return a move"));
+        crate::search_expand::set_poison_batch_chunk(None);
+
+        assert_eq!(stats.fallback_levels, 1);
+        assert_eq!(stats.abandoned_levels, 0);
+        assert!(stats.abandoned_nodes > 0);
+        assert!(stats.inferred_rows < stats.runtime_attempt_rows);
+        assert_eq!(
+            stats.runtime_attempt_rows + stats.abandoned_nodes,
+            stats.expanded_nodes
+        );
+        assert_eq!(stats.batch_calls, 4, "chunk 3 must remain undispatched");
+        assert_eq!(actual.best.best_move, expected.best.best_move);
+        assert_eq!(actual.best.score.to_bits(), expected.best.score.to_bits());
+        assert_eq!(actual.best.pv, expected.best.pv);
+        assert_eq!(result_signature(&actual), result_signature(&expected));
+        assert_eq!(actual.policy_score.to_bits(), 0.0f32.to_bits());
+        assert!(actual.nn_parent_value.is_none());
+        assert!(actual.fallback_used);
+    }
+
+    #[test]
+    fn deadline_between_batch_chunks_discards_level_without_fallback() {
+        let Some(runtime) = load_checked_in_runtime() else {
+            return;
+        };
+        let runtime_context = PolicyValueRuntimeContext {
+            opponent_board: Board::new(),
+        };
+        let state = deadline_test_state();
+        let config = SearchConfig {
+            time_budget_ms: Some(1),
+            ..proxy_level_config(300, 3)
+        };
+        let reference_deadline = DeadlineSource::CheckCountdown(std::cell::Cell::new(275));
+        let reference = find_best_move_with_scores_forced_runtime_deadline(
+            &state,
+            &config,
+            &EvalWeights::default(),
+            Some(&runtime),
+            Some(&runtime_context),
+            None,
+            Some(&reference_deadline),
+        )
+        .unwrap_or_else(|| panic!("completed-level reference should return a move"));
+        crate::search_expand::reset_search_expansion_stats();
+        crate::search_expand::set_search_profiling_enabled(true);
+        let deadline = DeadlineSource::CheckCountdown(std::cell::Cell::new(276));
+
+        let actual = find_best_move_with_scores_forced_runtime_deadline(
+            &state,
+            &config,
+            &EvalWeights::default(),
+            Some(&runtime),
+            Some(&runtime_context),
+            None,
+            Some(&deadline),
+        )
+        .unwrap_or_else(|| panic!("abandoned-level search should preserve a move"));
+        let stats = crate::search_expand::search_expansion_stats();
+        crate::search_expand::set_search_profiling_enabled(false);
+
+        let deepest_level_rows = stats.expanded_nodes - 1 - 32;
+        assert!(
+            deepest_level_rows > 256,
+            "fixture must span multiple chunks: expanded={}, attempts={}, calls={}, checks={}",
+            stats.expanded_nodes,
+            stats.runtime_attempt_rows,
+            stats.batch_calls,
+            stats.deadline_checks
+        );
+        assert_eq!(stats.abandoned_levels, 1);
+        assert_eq!(stats.fallback_levels, 0);
+        assert!(stats.abandoned_nodes > 0);
+        assert!(
+            stats.inferred_rows > 0,
+            "chunk 1 must complete before expiry"
+        );
+        assert_eq!(
+            stats.runtime_attempt_rows + stats.abandoned_nodes,
+            stats.expanded_nodes
+        );
+        assert_eq!(actual.best.best_move, reference.best.best_move);
+        assert_eq!(actual.best.score.to_bits(), reference.best.score.to_bits());
+        assert_eq!(actual.best.pv, reference.best.pv);
+    }
+
     fn make_node(
         score: f32,
         fatality: crate::state::FatalityState,
@@ -531,6 +1526,7 @@ mod tests {
             policy_score: 0.0,
             value_score: 0.0,
             fallback_used: false,
+            nn_parent_value: None,
             path_clear_events: Arc::new(Vec::new()),
         }
     }
@@ -611,7 +1607,7 @@ mod tests {
     }
 
     #[test]
-    fn search_timing_is_disabled_by_default() {
+    fn new_counters_zero_when_profiling_disabled() {
         crate::search_expand::reset_search_expansion_stats();
         crate::search_expand::set_search_profiling_enabled(false);
         let state = GameState::new(Board::new(), Piece::T, vec![Piece::I, Piece::O]);
@@ -633,6 +1629,21 @@ mod tests {
         assert_eq!(stats.eval_fallback_nanos, 0);
         assert_eq!(stats.tt_probe_nanos, 0);
         assert_eq!(stats.sort_prune_truncate_nanos, 0);
+        assert_eq!(stats.runtime_attempt_rows, 0);
+        assert_eq!(stats.runtime_unavailable_nodes, 0);
+        assert_eq!(stats.abandoned_nodes, 0);
+        assert_eq!(stats.runtime_calls, 0);
+        assert_eq!(stats.batch_calls, 0);
+        assert_eq!(stats.inferred_rows, 0);
+        assert_eq!(stats.max_batch_rows, 0);
+        assert_eq!(stats.deadline_checks, 0);
+        assert_eq!(stats.deadline_hits, 0);
+        assert_eq!(stats.completed_depth, 0);
+        assert_eq!(stats.completed_width, 0);
+        assert_eq!(stats.fallback_levels, 0);
+        assert_eq!(stats.abandoned_levels, 0);
+        assert_eq!(stats.noninferable_nodes, 0);
+        assert_eq!(stats.q_extensions_completed, 0);
     }
 
     #[test]
@@ -969,6 +1980,7 @@ mod tests {
                 policy_score: 0.0,
                 value_score: 0.0,
                 fallback_used: false,
+                nn_parent_value: None,
                 path_clear_events: Arc::new(Vec::new()),
             },
             SearchNode {
@@ -997,6 +2009,7 @@ mod tests {
                 policy_score: 0.0,
                 value_score: 0.0,
                 fallback_used: false,
+                nn_parent_value: None,
                 path_clear_events: Arc::new(Vec::new()),
             },
             SearchNode {
@@ -1025,6 +2038,7 @@ mod tests {
                 policy_score: 0.0,
                 value_score: 0.0,
                 fallback_used: false,
+                nn_parent_value: None,
                 path_clear_events: Arc::new(Vec::new()),
             },
         ];
