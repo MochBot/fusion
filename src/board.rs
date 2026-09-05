@@ -200,6 +200,32 @@ impl Board {
         popcount(clears) as i32
     }
 
+    /// Lock a piece: place, clear, and report the cleared-row mask as it
+    /// was before compaction (garbage-row accounting keys off that mask).
+    /// Illegal locks leave the board untouched.
+    pub fn lock(&mut self, m: &Move) -> LockMechanics {
+        if !self.legal_lock_placement(m) {
+            return LockMechanics {
+                cleared_mask: 0,
+                lines_cleared: 0,
+                is_pc: self.empty(),
+                resulting_height: self.height(),
+            };
+        }
+
+        self.place(m);
+        let cleared_mask = self.line_clears();
+        if cleared_mask != 0 {
+            self.clear_lines(cleared_mask);
+        }
+        LockMechanics {
+            cleared_mask,
+            lines_cleared: popcount(cleared_mask) as u8,
+            is_pc: self.empty(),
+            resulting_height: self.height(),
+        }
+    }
+
     /// Max occupied row index + 1 (= height)
     pub fn is_empty(&self) -> bool {
         self.rows.iter().all(|&r| r == 0)
@@ -258,85 +284,12 @@ impl Default for Board {
     }
 }
 
-// -- MoveInfo --
-
-pub struct MoveInfo {
-    pub piece: Piece,
-    pub spin: SpinType,
-    pub clear: i32,
-    pub b2b: i16,
-    pub combo: i16,
-    pub pc: bool,
-}
-
-// -- State --
-
-#[derive(Clone)]
-pub struct State {
-    pub board: Board,
-    pub hold: Option<Piece>,
-    pub b2b: i16,
-    pub combo: i16,
-}
-
-impl State {
-    pub fn init(&mut self) {
-        self.board.clear();
-        self.hold = None;
-        self.b2b = 0;
-        self.combo = 0;
-    }
-
-    pub fn new() -> Self {
-        State {
-            board: Board::new(),
-            hold: None,
-            b2b: 0,
-            combo: 0,
-        }
-    }
-
-    pub fn do_move(&mut self, m: &Move) -> MoveInfo {
-        debug_assert!(is_ok_move(m));
-
-        let clear_count = self.board.do_move(m);
-        if clear_count == 0 {
-            self.combo = 0;
-            return MoveInfo {
-                piece: m.piece(),
-                spin: SpinType::NoSpin,
-                clear: 0,
-                b2b: 0,
-                combo: 0,
-                pc: false,
-            };
-        }
-
-        let spin = m.spin();
-        let has_spin = spin != SpinType::NoSpin;
-
-        self.b2b = if has_spin || clear_count == 4 {
-            self.b2b + 1
-        } else {
-            0
-        };
-        self.combo += 1;
-
-        MoveInfo {
-            piece: m.piece(),
-            spin,
-            clear: clear_count,
-            b2b: self.b2b,
-            combo: self.combo,
-            pc: self.board.empty(),
-        }
-    }
-}
-
-impl Default for State {
-    fn default() -> Self {
-        Self::new()
-    }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LockMechanics {
+    pub cleared_mask: Bitboard,
+    pub lines_cleared: u8,
+    pub is_pc: bool,
+    pub resulting_height: u32,
 }
 
 impl fmt::Display for Board {

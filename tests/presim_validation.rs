@@ -6,9 +6,7 @@ use fusion_engine::board::{Board, FULL_ROW};
 use fusion_engine::eval::{evaluate, EvalWeights};
 use fusion_engine::header::{Piece, SpinType, COL_NB};
 use fusion_engine::movegen::{generate, MoveBuffer};
-use fusion_engine::search::{
-    find_best_move, find_best_move_with_scores, SearchConfig, SearchResult,
-};
+use fusion_engine::search::{search, SearchConfig, SearchRequest, SearchResult};
 use fusion_engine::state::GameState;
 
 fn board_from_bottom_rows(bottom_rows: &[u16]) -> Board {
@@ -50,8 +48,17 @@ fn fast_search_config() -> SearchConfig {
 }
 
 fn run_search(state: &GameState, config: &SearchConfig, weights: &EvalWeights) -> SearchResult {
-    find_best_move(state, config, weights)
-        .unwrap_or_else(|| panic!("expected search to return a best move"))
+    search(
+        state,
+        &SearchRequest {
+            config,
+            weights,
+            runtime: None,
+            forced_root_move: None,
+        },
+    )
+    .map(|full| full.best)
+    .unwrap_or_else(|| panic!("expected search to return a best move"))
 }
 
 fn assert_legal_and_sane(
@@ -368,8 +375,16 @@ fn test_attack_integration_tspin_scores_higher() {
         vec![Piece::T, Piece::S, Piece::Z, Piece::L],
     );
 
-    let full =
-        find_best_move_with_scores(&state, &config, &weights).expect("search must return a result");
+    let full = search(
+        &state,
+        &SearchRequest {
+            config: &config,
+            weights: &weights,
+            runtime: None,
+            forced_root_move: None,
+        },
+    )
+    .expect("search must return a result");
 
     let mut legal_moves = MoveBuffer::new();
     generate(&state.board, &mut legal_moves, state.current, false);
@@ -457,7 +472,15 @@ fn search_root_scores(board: &Board, piece: Piece) -> Vec<f32> {
         pieces_into_bag: 0,
         coaching: Default::default(),
     };
-    let full = find_best_move_with_scores(&state, &config, &weights);
+    let full = search(
+        &state,
+        &SearchRequest {
+            config: &config,
+            weights: &weights,
+            runtime: None,
+            forced_root_move: None,
+        },
+    );
     let mut scores: Vec<f32> = full.unwrap().root_scores.iter().map(|(_, s)| *s).collect();
     scores.sort_by(|a: &f32, b: &f32| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
     scores

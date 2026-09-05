@@ -13,6 +13,8 @@
 //! x=4 y=19) so its node counts are directly comparable with the upstream
 //! `bench` binary. Production movegen and ACTIVE_RULES are not involved.
 
+use crate::header::SpinType;
+
 pub const WIDTH: i32 = 10;
 pub const TLINES: i32 = 6;
 const TALL: u64 = (1u64 << 60) - 1;
@@ -844,39 +846,30 @@ const KICKS_I: [[K5; 4]; 2] = [
     ],
 ];
 
-// SRS+ production-rules kick variants (from engine gen.rs). I-piece kick
-// preference reordered; 180 flips use dedicated 6-entry rows.
-// Plain tables above define the racer (cobra) configuration.
-const KICKS_I_PLUS: [[K5; 4]; 2] = [
-    [
-        [(1, 0), (2, 0), (-1, 0), (-1, -1), (2, 2)],
-        [(0, -1), (-1, -1), (2, -1), (-1, 1), (2, -2)],
-        [(-1, 0), (1, 0), (-2, 0), (1, 1), (-2, -2)],
-        [(0, 1), (1, 1), (-2, 1), (1, -1), (-2, 2)],
-    ],
-    [
-        [(0, -1), (-1, -1), (2, -1), (2, -2), (-1, 1)],
-        [(-1, 0), (-2, 0), (1, 0), (-2, -2), (1, 1)],
-        [(0, 1), (-2, 1), (1, 1), (-2, 2), (1, -1)],
-        [(1, 0), (2, 0), (-1, 0), (2, 2), (-1, -1)],
-    ],
-];
-
 type K6 = [(i8, i8); 6];
 
-const KICKS_180_LJSZT: [K6; 4] = [
-    [(0, 0), (0, 1), (1, 1), (-1, 1), (1, 0), (-1, 0)],
-    [(0, 0), (1, 0), (1, 2), (1, 1), (0, 2), (0, 1)],
-    [(0, 0), (0, -1), (-1, -1), (1, -1), (-1, 0), (1, 0)],
-    [(0, 0), (-1, 0), (-1, 2), (-1, 1), (0, 2), (0, 1)],
-];
+const fn engine_kick_row(set: usize, d: usize, r: usize) -> K5 {
+    let row = crate::gen::KICKS[set][d][r];
+    [
+        (row[0].x, row[0].y),
+        (row[1].x, row[1].y),
+        (row[2].x, row[2].y),
+        (row[3].x, row[3].y),
+        (row[4].x, row[4].y),
+    ]
+}
 
-const KICKS_180_I: [K6; 4] = [
-    [(1, -1), (1, 0), (2, 0), (0, 0), (2, -1), (0, -1)],
-    [(-1, -1), (0, -1), (0, 1), (0, 0), (-1, 1), (-1, 0)],
-    [(-1, 1), (-1, 0), (-2, 0), (0, 0), (-2, 1), (0, 1)],
-    [(1, 1), (0, 1), (0, 3), (0, 2), (1, 3), (1, 2)],
-];
+const fn engine_kick_180_row(set: usize, r: usize) -> K6 {
+    let row = crate::gen::KICKS_180[set][r];
+    [
+        (row[0].x, row[0].y),
+        (row[1].x, row[1].y),
+        (row[2].x, row[2].y),
+        (row[3].x, row[3].y),
+        (row[4].x, row[4].y),
+        (row[5].x, row[5].y),
+    ]
+}
 
 const fn kick_row_const(p: usize, d: usize, r: usize) -> K5 {
     if p == PI_I {
@@ -887,11 +880,11 @@ const fn kick_row_const(p: usize, d: usize, r: usize) -> K5 {
 }
 
 const fn kick_row_rules(p: usize, d: usize, r: usize) -> K5 {
-    if p == PI_I {
-        KICKS_I_PLUS[d][r]
-    } else {
-        KICKS_LJSZT[d][r]
-    }
+    engine_kick_row(if p == PI_I { 2 } else { 0 }, d, r)
+}
+
+const fn kick_180_row_rules(p: usize, r: usize) -> K6 {
+    engine_kick_180_row(if p == PI_I { 1 } else { 0 }, r)
 }
 
 /// Per-(piece, direction, source-rotation) kick data as associated consts
@@ -923,11 +916,7 @@ impl<const P: usize, const R: usize> KickTab180<P, R> {
     const R1C: usize = canon_r(P, Self::R1);
     const OFF_X: i32 = canon_off(P, R).0 - canon_off(P, Self::R1).0;
     const OFF_Y: i32 = canon_off(P, R).1 - canon_off(P, Self::R1).1;
-    const ROW: K6 = if P == PI_I {
-        KICKS_180_I[R]
-    } else {
-        KICKS_180_LJSZT[R]
-    };
+    const ROW: K6 = kick_180_row_rules(P, R);
 }
 
 /// Bounding box of every kick displacement leaving rotation r in either
@@ -982,11 +971,7 @@ const fn env_union_rules(p: usize, r: usize) -> (i32, i32, i32, i32) {
         let off_x = canon_off(p, r).0 - canon_off(p, r1).0;
         let off_y = canon_off(p, r).1 - canon_off(p, r1).1;
         let row5 = kick_row_rules(p, if d < 2 { d } else { 0 }, r);
-        let row6 = if p == PI_I {
-            KICKS_180_I[r]
-        } else {
-            KICKS_180_LJSZT[r]
-        };
+        let row6 = kick_180_row_rules(p, r);
         let n = if d < 2 { 5 } else { 6 };
         let mut i = 0;
         while i < n {
@@ -1422,6 +1407,85 @@ fn imm_rot<const N: usize>(u: &SBoard<N>) -> SBoard<N> {
         .and(&u.shifted(0, 1).not())
 }
 
+#[inline(always)]
+fn add_spin_label<const N: usize>(
+    label: SpinType,
+    mask: &SBoard<N>,
+    full: &mut SBoard<N>,
+    mini: &mut SBoard<N>,
+    nospin: &mut SBoard<N>,
+) {
+    match label {
+        SpinType::Full => *full = full.or(mask),
+        SpinType::Mini => *mini = mini.or(mask),
+        SpinType::NoSpin => *nospin = nospin.or(mask),
+    }
+}
+
+#[inline(always)]
+fn label_landed<const P: usize, const I: usize, const N: usize>(
+    landed: &SBoard<N>,
+    tc: &TCorners<N>,
+    imm_r1: &SBoard<N>,
+    r1: usize,
+    full: &mut SBoard<N>,
+    mini: &mut SBoard<N>,
+    nospin: &mut SBoard<N>,
+) {
+    let stuck = landed.and(imm_r1);
+    if P == PI_T {
+        let spins = landed.and(&tc.spins3);
+        let front = spins.and(&tc.front[r1]);
+        let back = spins.andnot(&tc.front[r1]);
+        let stuck_without_spin = stuck.andnot(&spins);
+        let ordinary = landed.xor(&spins.or(&stuck));
+        add_spin_label(
+            crate::gen::rotation_spin_type(true, false, true, true, false, I),
+            &front,
+            full,
+            mini,
+            nospin,
+        );
+        add_spin_label(
+            crate::gen::rotation_spin_type(true, false, true, false, false, I),
+            &back,
+            full,
+            mini,
+            nospin,
+        );
+        add_spin_label(
+            crate::gen::rotation_spin_type(true, false, false, false, true, I),
+            &stuck_without_spin,
+            full,
+            mini,
+            nospin,
+        );
+        add_spin_label(
+            crate::gen::rotation_spin_type(true, false, false, false, false, I),
+            &ordinary,
+            full,
+            mini,
+            nospin,
+        );
+    } else {
+        let ordinary = landed.xor(&stuck);
+        add_spin_label(
+            crate::gen::rotation_spin_type(false, true, false, false, true, I),
+            &stuck,
+            full,
+            mini,
+            nospin,
+        );
+        add_spin_label(
+            crate::gen::rotation_spin_type(false, true, false, false, false, I),
+            &ordinary,
+            full,
+            mini,
+            nospin,
+        );
+    }
+}
+
 /// Labeled kick step: first-valid-kick bookkeeping plus engine-exact
 /// spin tagging of valid arrivals (pre-dedup). Kick index >= 4 forces
 /// Full on 3-corner arrivals per the engine's SRS+ rule.
@@ -1451,21 +1515,7 @@ fn kick_step_r_lab<
     // Empty arrivals contribute nothing; one or-reduction test
     // replaces eight vector ops on the (common) empty kick.
     if landed.any() {
-        let stuck = landed.and(imm_r1);
-        if P == PI_T {
-            let spins = landed.and(&tc.spins3);
-            if I >= 4 {
-                *full = full.or(&spins);
-            } else {
-                *full = full.or(&spins.and(&tc.front[r1]));
-                *mini = mini.or(&spins.andnot(&tc.front[r1]));
-            }
-            *mini = mini.or(&stuck.andnot(&spins));
-            *nospin = nospin.or(&landed.xor(&spins.or(&stuck)));
-        } else {
-            *mini = mini.or(&stuck);
-            *nospin = nospin.or(&landed.xor(&stuck));
-        }
+        label_landed::<P, I, N>(&landed, tc, imm_r1, r1, full, mini, nospin);
         *result = result.or(&landed);
     }
     if I != 4 {
@@ -1490,21 +1540,7 @@ fn kick_step180_lab<const P: usize, const R: usize, const I: usize, const N: usi
     let r1 = KickTab180::<P, R>::R1;
     let landed = temp.shifted(kx, ky).and(usable_r1);
     if landed.any() {
-        let stuck = landed.and(imm_r1);
-        if P == PI_T {
-            let spins = landed.and(&tc.spins3);
-            if I >= 4 {
-                *full = full.or(&spins);
-            } else {
-                *full = full.or(&spins.and(&tc.front[r1]));
-                *mini = mini.or(&spins.andnot(&tc.front[r1]));
-            }
-            *mini = mini.or(&stuck.andnot(&spins));
-            *nospin = nospin.or(&landed.xor(&spins.or(&stuck)));
-        } else {
-            *mini = mini.or(&stuck);
-            *nospin = nospin.or(&landed.xor(&stuck));
-        }
+        label_landed::<P, I, N>(&landed, tc, imm_r1, r1, full, mini, nospin);
         *result = result.or(&landed);
     }
     if I != 5 {
@@ -2890,6 +2926,41 @@ fn collect_children(b: &SBoard<8>, h: i32, p: usize, out: &mut Vec<(SBoard<8>, i
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn upstream_geometry_and_rule_kicks_match_engine_tables() {
+        for p in 0..7 {
+            let engine_piece = crate::header::Piece::from_u8(p as u8);
+            assert_eq!(group2(p), crate::gen::group2(engine_piece), "p={p}");
+            assert_eq!(csize(p), crate::gen::canonical_size(engine_piece), "p={p}");
+            for r in 0..4 {
+                let engine_rotation = crate::header::Rotation::from_u8(r as u8);
+                assert_eq!(
+                    canon_r(p, r),
+                    crate::gen::canonical_r(engine_piece, engine_rotation) as usize,
+                    "p={p} r={r}"
+                );
+                let offset = crate::gen::canonical_offset(engine_piece, engine_rotation);
+                assert_eq!(
+                    canon_off(p, r),
+                    (offset.x as i32, offset.y as i32),
+                    "p={p} r={r}"
+                );
+            }
+        }
+        for d in 0..2 {
+            for r in 0..4 {
+                assert_eq!(KICKS_LJSZT[d][r], engine_kick_row(0, d, r));
+                assert_eq!(KICKS_I[d][r], engine_kick_row(1, d, r));
+                assert_eq!(kick_row_rules(PI_I, d, r), engine_kick_row(2, d, r));
+                assert_eq!(kick_row_rules(PI_T, d, r), engine_kick_row(0, d, r));
+            }
+        }
+        for r in 0..4 {
+            assert_eq!(kick_180_row_rules(PI_I, r), engine_kick_180_row(1, r));
+            assert_eq!(kick_180_row_rules(PI_T, r), engine_kick_180_row(0, r));
+        }
+    }
 
     // Frozen copy of the pre-missing-tracking generate (parity oracle).
     pub fn generate_reference<const P: usize, const N: usize>(

@@ -39,7 +39,7 @@ pub fn perft(board: &Board, queue_offset: usize, depth: usize) -> u64 {
     let piece = queue_piece(queue_offset);
 
     if depth == 1 {
-        return u64::from(crate::movegen::count_moves_dispatch(board, piece, false));
+        return u64::from(crate::movegen::count_placements(board, piece, false));
     }
 
     let ml = placements(board, piece);

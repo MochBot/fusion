@@ -5,7 +5,6 @@ use crate::header::{Move, Piece};
 use crate::move_buffer::MoveBuffer;
 use crate::policy_value_runtime::{PolicyValueRuntime, PolicyValueRuntimeContext};
 use crate::state::{ClearEvent, CoachingState, GameState};
-use crate::transposition::{TranspositionTable, ZobristKeys};
 use smallvec::SmallVec;
 #[cfg(test)]
 use std::cell::Cell;
@@ -46,13 +45,6 @@ pub enum NnBatchMode {
     Level,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum EngineMode {
-    #[default]
-    Model,
-    Heuristic,
-}
-
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) enum DeadlineSource {
     Wall(Instant),
@@ -84,7 +76,6 @@ pub struct SearchConfig {
     pub beam_width: usize,
     pub depth: usize,
     pub time_budget_ms: Option<u64>,
-    pub use_tt: bool,
     pub extend_queue_7bag: bool,
     pub attack_config: AttackConfig,
     /// Max additional depths to extend "loud" nodes (mid-combo, mid-B2B,
@@ -96,7 +87,6 @@ pub struct SearchConfig {
     pub nn_scoring: NnScoringMode,
     pub nn_batch: NnBatchMode,
     pub policy_proxy_weight: f32,
-    pub engine: EngineMode,
 }
 
 impl Default for SearchConfig {
@@ -105,11 +95,6 @@ impl Default for SearchConfig {
             beam_width: 800,
             depth: 14,
             time_budget_ms: None,
-            // TT off: 23-28% hit rate, net-negative wall time (-5..-6%
-            // at depths 5/7/14). Cache only pays above ~80% hit rate.
-            // Results identical either way (pinned by
-            // tt_does_not_change_search_result).
-            use_tt: false,
             extend_queue_7bag: true,
             attack_config: AttackConfig::tetra_league(),
             quiescence_max_extensions: 3,
@@ -118,7 +103,6 @@ impl Default for SearchConfig {
             nn_scoring: NnScoringMode::PerChildValue,
             nn_batch: NnBatchMode::Scalar,
             policy_proxy_weight: POLICY_BONUS_WEIGHT,
-            engine: EngineMode::Model,
         }
     }
 }
@@ -164,14 +148,12 @@ pub struct SearchResultFull {
     pub nn_parent_value: Option<f32>,
 }
 
-/// Shared context for node expansion (weights, attack config, depth, TT).
+/// Shared context for node expansion (weights, attack config, depth).
 pub(crate) struct SearchExpansionContext<'a> {
     pub config: &'a SearchConfig,
     pub current_beam_width: usize,
     pub weights: &'a EvalWeights,
     pub remaining_depth: usize,
-    pub zobrist_keys: &'a ZobristKeys,
-    pub tt: &'a mut Option<TranspositionTable>,
     pub policy_value: Option<&'a PolicyValueRuntime>,
     pub runtime_context: Option<&'a PolicyValueRuntimeContext>,
     #[cfg(not(target_arch = "wasm32"))]
@@ -196,8 +178,6 @@ pub(crate) struct SearchIterationParams<'a> {
     pub weights: &'a EvalWeights,
     pub max_depth: usize,
     pub beam_width: usize,
-    pub zobrist_keys: &'a ZobristKeys,
-    pub tt: &'a mut Option<TranspositionTable>,
     pub forced_root_move: Option<Move>,
     pub policy_value: Option<&'a PolicyValueRuntime>,
     pub runtime_context: Option<&'a PolicyValueRuntimeContext>,

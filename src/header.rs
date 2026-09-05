@@ -32,6 +32,31 @@ impl Piece {
     }
 }
 
+pub fn piece_from_external(v: u8) -> Option<Piece> {
+    match v {
+        0 => Some(Piece::I),
+        1 => Some(Piece::O),
+        2 => Some(Piece::T),
+        3 => Some(Piece::S),
+        4 => Some(Piece::Z),
+        5 => Some(Piece::J),
+        6 => Some(Piece::L),
+        _ => None,
+    }
+}
+
+pub fn piece_to_external(p: Piece) -> u8 {
+    match p {
+        Piece::I => 0,
+        Piece::O => 1,
+        Piece::T => 2,
+        Piece::S => 3,
+        Piece::Z => 4,
+        Piece::J => 5,
+        Piece::L => 6,
+    }
+}
+
 pub const PIECE_NB: usize = 7;
 /// Sentinel used in Move bitfield to mark T-spin moves
 pub const TSPIN: u16 = 7;

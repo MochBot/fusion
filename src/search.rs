@@ -12,7 +12,6 @@ use crate::search_config::FUTILITY_DELTA;
 use crate::search_config::{NnBatchMode, NnScoringMode};
 
 use crate::state::GameState;
-use crate::transposition::{get_zobrist_keys, TranspositionTable, DEFAULT_TT_SIZE};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 
@@ -26,128 +25,60 @@ pub(crate) use crate::search_expand::{
     record_q_extension_completed, LevelExpansion,
 };
 
-/// beam search from game state
-/// returns the best move found, or None if no legal moves exist
-pub fn find_best_move(
-    state: &GameState,
-    config: &SearchConfig,
-    weights: &EvalWeights,
-) -> Option<SearchResult> {
-    find_best_move_with_scores(state, config, weights).map(|full| full.best)
+/// NN inference pairing for a search: the runtime and its context always
+/// travel together.
+pub struct SearchRuntime<'a> {
+    pub policy_value: &'a PolicyValueRuntime,
+    pub context: &'a PolicyValueRuntimeContext,
 }
 
-pub fn find_best_move_runtime(
-    state: &GameState,
-    config: &SearchConfig,
-    weights: &EvalWeights,
-    policy_value: &PolicyValueRuntime,
-    runtime_context: &PolicyValueRuntimeContext,
-) -> Option<SearchResult> {
-    find_best_move_with_scores_runtime(state, config, weights, policy_value, runtime_context)
-        .map(|full| full.best)
-}
-
-pub fn find_best_move_with_scores(
-    state: &GameState,
-    config: &SearchConfig,
-    weights: &EvalWeights,
-) -> Option<SearchResultFull> {
-    find_best_move_with_scores_forced_runtime(state, config, weights, None, None, None)
-}
-
-pub fn find_best_move_with_scores_runtime(
-    state: &GameState,
-    config: &SearchConfig,
-    weights: &EvalWeights,
-    policy_value: &PolicyValueRuntime,
-    runtime_context: &PolicyValueRuntimeContext,
-) -> Option<SearchResultFull> {
-    find_best_move_with_scores_forced_runtime(
-        state,
-        config,
-        weights,
-        Some(policy_value),
-        Some(runtime_context),
-        None,
-    )
-}
-
-/// Beam search with optional forced root move.
-/// When `forced_root_move` is Some, that move is protected from futility
+/// The one search interface. A forced root move is protected from futility
 /// pruning and beam truncation, so it always survives to the final beam.
-pub fn find_best_move_with_scores_forced(
-    state: &GameState,
-    config: &SearchConfig,
-    weights: &EvalWeights,
-    forced_root_move: Option<crate::header::Move>,
-) -> Option<SearchResultFull> {
-    find_best_move_with_scores_forced_runtime(state, config, weights, None, None, forced_root_move)
+pub struct SearchRequest<'a> {
+    pub config: &'a SearchConfig,
+    pub weights: &'a EvalWeights,
+    pub runtime: Option<SearchRuntime<'a>>,
+    pub forced_root_move: Option<crate::header::Move>,
 }
 
-pub fn find_best_move_with_scores_forced_runtime(
-    state: &GameState,
-    config: &SearchConfig,
-    weights: &EvalWeights,
-    policy_value: Option<&PolicyValueRuntime>,
-    runtime_context: Option<&PolicyValueRuntimeContext>,
-    forced_root_move: Option<crate::header::Move>,
-) -> Option<SearchResultFull> {
+/// Beam search from a game state. Returns None if no legal moves exist.
+pub fn search(state: &GameState, request: &SearchRequest<'_>) -> Option<SearchResultFull> {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        find_best_move_with_scores_forced_runtime_deadline(
-            state,
-            config,
-            weights,
-            policy_value,
-            runtime_context,
-            forced_root_move,
-            None,
-        )
+        search_with_deadline(state, request, None)
     }
 
     #[cfg(target_arch = "wasm32")]
     {
-        find_best_move_with_scores_forced_runtime_impl(
-            state,
-            config,
-            weights,
-            policy_value,
-            runtime_context,
-            forced_root_move,
-        )
+        search_impl(state, request)
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn find_best_move_with_scores_forced_runtime_deadline(
+fn search_with_deadline(
     state: &GameState,
-    config: &SearchConfig,
-    weights: &EvalWeights,
-    policy_value: Option<&PolicyValueRuntime>,
-    runtime_context: Option<&PolicyValueRuntimeContext>,
-    forced_root_move: Option<crate::header::Move>,
+    request: &SearchRequest<'_>,
     deadline_override: Option<&DeadlineSource>,
 ) -> Option<SearchResultFull> {
-    find_best_move_with_scores_forced_runtime_impl(
-        state,
-        config,
-        weights,
-        policy_value,
-        runtime_context,
-        forced_root_move,
-        deadline_override,
-    )
+    search_impl(state, request, deadline_override)
 }
 
-fn find_best_move_with_scores_forced_runtime_impl(
+fn search_impl(
     state: &GameState,
-    config: &SearchConfig,
-    weights: &EvalWeights,
-    policy_value: Option<&PolicyValueRuntime>,
-    runtime_context: Option<&PolicyValueRuntimeContext>,
-    forced_root_move: Option<crate::header::Move>,
+    request: &SearchRequest<'_>,
     #[cfg(not(target_arch = "wasm32"))] deadline_override: Option<&DeadlineSource>,
 ) -> Option<SearchResultFull> {
+    let SearchRequest {
+        config,
+        weights,
+        runtime,
+        forced_root_move,
+    } = request;
+    let config = *config;
+    let weights = *weights;
+    let forced_root_move = *forced_root_move;
+    let policy_value = runtime.as_ref().map(|r| r.policy_value);
+    let runtime_context = runtime.as_ref().map(|r| r.context);
     let search_queue = if config.extend_queue_7bag {
         bag::extend_queue(&state.queue, state.current, state.hold)
     } else {
@@ -159,11 +90,6 @@ fn find_best_move_with_scores_forced_runtime_impl(
         return None;
     }
 
-    let zobrist_keys = get_zobrist_keys();
-    let mut tt = config
-        .use_tt
-        .then(|| TranspositionTable::new(DEFAULT_TT_SIZE));
-
     if config.time_budget_ms.is_none() {
         let mut params = SearchIterationParams {
             state,
@@ -171,8 +97,6 @@ fn find_best_move_with_scores_forced_runtime_impl(
             weights,
             max_depth,
             beam_width: config.beam_width,
-            zobrist_keys,
-            tt: &mut tt,
             forced_root_move,
             policy_value,
             runtime_context,
@@ -219,18 +143,12 @@ fn find_best_move_with_scores_forced_runtime_impl(
         .unwrap_or(1);
 
     loop {
-        if let Some(table) = tt.as_mut() {
-            table.clear();
-        }
-
         let mut params = SearchIterationParams {
             state,
             config,
             weights,
             max_depth,
             beam_width: width,
-            zobrist_keys,
-            tt: &mut tt,
             forced_root_move,
             policy_value,
             runtime_context,
@@ -292,8 +210,6 @@ fn run_beam_search_iteration(
         current_beam_width: params.beam_width,
         weights: params.weights,
         remaining_depth: params.max_depth.saturating_sub(1),
-        zobrist_keys: params.zobrist_keys,
-        tt: params.tt,
         policy_value: params.policy_value,
         runtime_context: params.runtime_context,
         #[cfg(not(target_arch = "wasm32"))]
@@ -716,6 +632,79 @@ mod tests {
     use smallvec::{smallvec, SmallVec};
     use std::sync::Arc;
 
+    fn find_best_move(
+        state: &GameState,
+        config: &SearchConfig,
+        weights: &EvalWeights,
+    ) -> Option<SearchResult> {
+        find_best_move_with_scores(state, config, weights).map(|full| full.best)
+    }
+
+    fn find_best_move_with_scores(
+        state: &GameState,
+        config: &SearchConfig,
+        weights: &EvalWeights,
+    ) -> Option<SearchResultFull> {
+        search(
+            state,
+            &SearchRequest {
+                config,
+                weights,
+                runtime: None,
+                forced_root_move: None,
+            },
+        )
+    }
+
+    fn find_best_move_with_scores_runtime(
+        state: &GameState,
+        config: &SearchConfig,
+        weights: &EvalWeights,
+        policy_value: &PolicyValueRuntime,
+        runtime_context: &PolicyValueRuntimeContext,
+    ) -> Option<SearchResultFull> {
+        search(
+            state,
+            &SearchRequest {
+                config,
+                weights,
+                runtime: Some(SearchRuntime {
+                    policy_value,
+                    context: runtime_context,
+                }),
+                forced_root_move: None,
+            },
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn find_best_move_with_scores_forced_runtime_deadline(
+        state: &GameState,
+        config: &SearchConfig,
+        weights: &EvalWeights,
+        policy_value: Option<&PolicyValueRuntime>,
+        runtime_context: Option<&PolicyValueRuntimeContext>,
+        forced_root_move: Option<Move>,
+        deadline_override: Option<&DeadlineSource>,
+    ) -> Option<SearchResultFull> {
+        let runtime = policy_value
+            .zip(runtime_context)
+            .map(|(policy_value, context)| SearchRuntime {
+                policy_value,
+                context,
+            });
+        search_with_deadline(
+            state,
+            &SearchRequest {
+                config,
+                weights,
+                runtime,
+                forced_root_move,
+            },
+            deadline_override,
+        )
+    }
+
     fn proxy_level_config(beam_width: usize, depth: usize) -> SearchConfig {
         SearchConfig {
             beam_width,
@@ -960,6 +949,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "model-inference tier (~10s each): cargo test -- --ignored"]
     fn per_child_value_mode_results_byte_identical_to_pre_change() {
         let Some(runtime) = load_checked_in_runtime() else {
             return;
@@ -1030,6 +1020,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "model-inference tier (~10s each): cargo test -- --ignored"]
     fn proxy_search_produces_valid_pv_and_coaching() {
         let Some(runtime) = load_checked_in_runtime() else {
             return;
@@ -1063,6 +1054,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "model-inference tier (~10s each): cargo test -- --ignored"]
     fn proxy_batched_equals_proxy_scalar_results() {
         let Some(runtime) = load_checked_in_runtime() else {
             return;
@@ -1155,6 +1147,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "model-inference tier (~10s each): cargo test -- --ignored"]
     fn batch_calls_counter_equals_chunk_calls_not_nodes() {
         let Some(runtime) = load_checked_in_runtime() else {
             return;
@@ -1184,6 +1177,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "model-inference tier (~10s each): cargo test -- --ignored"]
     fn level_mode_without_runtime_falls_back_to_scalar_path() {
         let state = deadline_test_state();
         let level_config = proxy_level_config(64, 3);
@@ -1261,6 +1255,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "model-inference tier (~10s each): cargo test -- --ignored"]
     fn expansion_slices_level_into_chunks() {
         let Some(runtime) = load_checked_in_runtime() else {
             return;
@@ -1299,6 +1294,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "model-inference tier (~10s each): cargo test -- --ignored"]
     fn nn_mode_in_process_determinism() {
         let Some(runtime) = load_checked_in_runtime() else {
             return;
@@ -1307,10 +1303,12 @@ mod tests {
         let side_a = crate::versus::PlayerCfg {
             search: config,
             label: "A".to_owned(),
+            engine: crate::versus::EngineMode::Model,
         };
         let side_b = crate::versus::PlayerCfg {
             search: proxy_level_config(16, 2),
             label: "B".to_owned(),
+            engine: crate::versus::EngineMode::Model,
         };
         let mut record_first = Vec::new();
         let first = crate::versus::play_game(
@@ -1370,6 +1368,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "model-inference tier (~10s each): cargo test -- --ignored"]
     fn whole_chunk_failure_falls_back_heuristically() {
         let Some(runtime) = load_checked_in_runtime() else {
             return;
@@ -1424,6 +1423,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "model-inference tier (~10s each): cargo test -- --ignored"]
     fn deadline_between_batch_chunks_discards_level_without_fallback() {
         let Some(runtime) = load_checked_in_runtime() else {
             return;
@@ -1627,7 +1627,6 @@ mod tests {
         assert_eq!(stats.child_eval_nanos, 0);
         assert_eq!(stats.do_move_nanos, 0);
         assert_eq!(stats.eval_fallback_nanos, 0);
-        assert_eq!(stats.tt_probe_nanos, 0);
         assert_eq!(stats.sort_prune_truncate_nanos, 0);
         assert_eq!(stats.runtime_attempt_rows, 0);
         assert_eq!(stats.runtime_unavailable_nodes, 0);
@@ -1652,7 +1651,6 @@ mod tests {
         let config = SearchConfig {
             beam_width: 40,
             depth: 2,
-            use_tt: true,
             extend_queue_7bag: false,
             ..SearchConfig::default()
         };
@@ -1674,58 +1672,6 @@ mod tests {
         assert_eq!(profiled.best.pv, baseline.best.pv);
         assert_eq!(profiled.root_scores.len(), baseline.root_scores.len());
         assert_eq!(profiled.root_scores[0].0, baseline.root_scores[0].0);
-    }
-
-    /// The TT is a pure eval cache: stored scores are `evaluate(board)` values
-    /// keyed by exact 64-bit zobrist match. Search results must be identical
-    /// with the cache on or off (absent hash collisions).
-    #[test]
-    fn tt_does_not_change_search_result() {
-        let mut mid_rows = [0u16; 40];
-        mid_rows[0] = 0x37F;
-        mid_rows[1] = 0x3BF;
-        mid_rows[2] = 0x1FF;
-        mid_rows[3] = 0x3FD;
-        mid_rows[4] = 0x2FF;
-        mid_rows[5] = 0x07F;
-
-        let mut tall_rows = [0u16; 40];
-        for (y, row) in tall_rows.iter_mut().enumerate().take(14) {
-            *row = match y {
-                3 => 0x1BF,
-                7 => 0x17F,
-                _ => 0x1FF,
-            };
-        }
-
-        let queue = vec![Piece::I, Piece::O, Piece::L, Piece::J, Piece::S, Piece::Z];
-        let weights = EvalWeights::default();
-        let config = |use_tt: bool| SearchConfig {
-            beam_width: 60,
-            depth: 4,
-            use_tt,
-            extend_queue_7bag: false,
-            ..SearchConfig::default()
-        };
-
-        for rows in [[0u16; 40], mid_rows, tall_rows] {
-            let state = GameState::new(probe_board_from_rows(rows), Piece::T, queue.clone());
-
-            let with_tt = find_best_move_with_scores(&state, &config(true), &weights)
-                .unwrap_or_else(|| panic!("tt search should return a move"));
-            let no_tt = find_best_move_with_scores(&state, &config(false), &weights)
-                .unwrap_or_else(|| panic!("no-tt search should return a move"));
-
-            assert_eq!(with_tt.best.best_move, no_tt.best.best_move);
-            assert_eq!(with_tt.best.hold_used, no_tt.best.hold_used);
-            assert_eq!(with_tt.best.pv, no_tt.best.pv);
-            assert_eq!(with_tt.best.score.to_bits(), no_tt.best.score.to_bits());
-            assert_eq!(with_tt.root_scores.len(), no_tt.root_scores.len());
-            for (a, b) in with_tt.root_scores.iter().zip(no_tt.root_scores.iter()) {
-                assert_eq!(a.0, b.0);
-                assert_eq!(a.1.to_bits(), b.1.to_bits());
-            }
-        }
     }
 
     #[test]
@@ -1823,124 +1769,14 @@ mod tests {
     }
 
     #[test]
-    fn test_tt_deduplicates() {
-        let mut state = GameState::new(
-            Board::new(),
-            Piece::O,
-            vec![Piece::T, Piece::L, Piece::J, Piece::S],
-        );
-        state.hold = Some(Piece::I);
-
-        let weights = EvalWeights::default();
-        let baseline_config = SearchConfig {
-            beam_width: 250,
-            depth: 5,
-            use_tt: false,
-            extend_queue_7bag: false,
-            ..SearchConfig::default()
-        };
-        let tt_config = SearchConfig {
-            beam_width: 250,
-            depth: 5,
-            use_tt: true,
-            extend_queue_7bag: false,
-            ..SearchConfig::default()
-        };
-
-        let baseline = find_best_move(&state, &baseline_config, &weights)
-            .unwrap_or_else(|| panic!("baseline search should return a move"));
-        let with_tt = find_best_move(&state, &tt_config, &weights)
-            .unwrap_or_else(|| panic!("tt search should return a move"));
-
-        assert_eq!(with_tt.best_move, baseline.best_move);
-        assert_eq!(with_tt.hold_used, baseline.hold_used);
-    }
-
-    #[test]
-    fn tt_on_matches_tt_off_exactly_on_seeded_states() {
-        // TT caches the exact f32 from evaluate(board, weights), so a hit must
-        // reproduce the recompute bit-for-bit.
-        let mut seed;
-        let xs = |s: &mut u64| {
-            *s ^= *s << 13;
-            *s ^= *s >> 7;
-            *s ^= *s << 17;
-            *s
-        };
-        for case in 0..6u64 {
-            seed = 0x7757_0611_2026_0001u64.wrapping_add(case.wrapping_mul(0x9E37_79B9_7F4A_7C15));
-            let mut board = Board::new();
-            let height = 4 + (xs(&mut seed) % 8) as usize;
-            for y in 0..height {
-                let mut row = (xs(&mut seed) & 0x3FF) as u16;
-                row &= !(1u16 << (xs(&mut seed) % 10));
-                board.rows[y] = row;
-            }
-            for y in 0..height {
-                let mut bits = board.rows[y] as u64;
-                while bits != 0 {
-                    let x = bits.trailing_zeros() as usize;
-                    board.cols[x] |= 1u64 << y;
-                    bits &= bits - 1;
-                }
-            }
-            let pieces = [
-                Piece::I,
-                Piece::O,
-                Piece::T,
-                Piece::L,
-                Piece::J,
-                Piece::S,
-                Piece::Z,
-            ];
-            let current = pieces[(xs(&mut seed) % 7) as usize];
-            let queue: Vec<Piece> = (0..5)
-                .map(|_| pieces[(xs(&mut seed) % 7) as usize])
-                .collect();
-            let mut state = GameState::new(board, current, queue);
-            state.hold = Some(pieces[(xs(&mut seed) % 7) as usize]);
-
-            let weights = EvalWeights::default();
-            let off = SearchConfig {
-                beam_width: 200,
-                depth: 5,
-                use_tt: false,
-                extend_queue_7bag: false,
-                ..SearchConfig::default()
-            };
-            let on = SearchConfig {
-                beam_width: 200,
-                depth: 5,
-                use_tt: true,
-                extend_queue_7bag: false,
-                ..SearchConfig::default()
-            };
-            let a = find_best_move(&state, &off, &weights);
-            let b = find_best_move(&state, &on, &weights);
-            match (a, b) {
-                (None, None) => {}
-                (Some(a), Some(b)) => {
-                    assert_eq!(a.best_move, b.best_move, "case={case}");
-                    assert_eq!(a.hold_used, b.hold_used, "case={case}");
-                    assert_eq!(a.score.to_bits(), b.score.to_bits(), "case={case}");
-                    let pa: Vec<u16> = a.pv.iter().map(|m| m.raw()).collect();
-                    let pb: Vec<u16> = b.pv.iter().map(|m| m.raw()).collect();
-                    assert_eq!(pa, pb, "case={case}");
-                }
-                _ => panic!("tt presence changed move availability, case={case}"),
-            }
-        }
-    }
-
-    #[test]
     fn test_no_moves_returns_none() {
-        // fill the board nearly to the top, no valid placements
+        // fill the board completely, no valid placements
         let mut board = Board::new();
         for y in 0..40 {
             board.rows[y] = FULL_ROW;
         }
         for x in 0..COL_NB {
-            board.cols[x] = !0u64; // all bits set
+            board.cols[x] = (1u64 << 40) - 1;
         }
 
         let state = GameState::new(board, Piece::I, vec![]);

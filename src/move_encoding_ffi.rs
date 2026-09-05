@@ -98,6 +98,7 @@ pub fn encode_move_raw(
 /// # Safety
 ///
 /// Safe to call from any thread. No raw pointers cross the boundary.
+#[cfg(not(target_arch = "wasm32"))]
 #[no_mangle]
 pub extern "C" fn fusion_encode_move_raw(
     piece_id: u8,
@@ -112,6 +113,7 @@ pub extern "C" fn fusion_encode_move_raw(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[no_mangle]
 pub static FUSION_ENCODE_MOVE_RAW_ERROR: i32 = -1;
 

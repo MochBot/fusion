@@ -292,6 +292,7 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
+ "sha2",
  "smallvec",
  "tract-onnx",
  "wasm-bindgen",

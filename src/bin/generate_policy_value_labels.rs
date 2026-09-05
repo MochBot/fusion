@@ -7,7 +7,7 @@ use std::time::Instant;
 use fusion_engine::board::{Board, BOARD_HEIGHT};
 use fusion_engine::eval::EvalWeights;
 use fusion_engine::header::{Piece, COL_NB};
-use fusion_engine::search::find_best_move_with_scores;
+use fusion_engine::search::{search, SearchRequest};
 use fusion_engine::search_config::SearchConfig;
 use fusion_engine::state::GameState;
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,6 @@ const ORACLE_PROFILE: &str = "stronger_offline_oracle";
 const POLICY_TEMPERATURE: f32 = 1.0;
 const ORACLE_BEAM_WIDTH: usize = 2000;
 const ORACLE_DEPTH: usize = 18;
-const ORACLE_USE_TT: bool = true;
 
 #[derive(Debug, Deserialize)]
 struct PolicyValueOracleRequest {
@@ -78,14 +77,12 @@ struct PolicyValueMetadata {
     oracle_profile: String,
     oracle_beam_width: usize,
     oracle_depth: usize,
-    oracle_use_tt: bool,
 }
 
 fn stronger_offline_oracle_config(time_budget_ms: Option<u64>) -> SearchConfig {
     SearchConfig {
         beam_width: ORACLE_BEAM_WIDTH,
         depth: ORACLE_DEPTH,
-        use_tt: ORACLE_USE_TT,
         quiescence_max_extensions: 5,
         quiescence_beam_fraction: 0.20,
         time_budget_ms,
@@ -181,7 +178,16 @@ fn build_target(
     let state = game_state_from_request(&request)?;
     let config = stronger_offline_oracle_config(time_budget_ms);
     let started = Instant::now();
-    let search = find_best_move_with_scores(&state, &config, &EvalWeights::default());
+    let weights = EvalWeights::default();
+    let search_result = search(
+        &state,
+        &SearchRequest {
+            config: &config,
+            weights: &weights,
+            runtime: None,
+            forced_root_move: None,
+        },
+    );
     let elapsed_ms = started.elapsed().as_millis() as u64;
     if let Some(budget) = time_budget_ms {
         if elapsed_ms >= budget {
@@ -191,7 +197,7 @@ fn build_target(
             ));
         }
     }
-    let result = search.ok_or_else(|| {
+    let result = search_result.ok_or_else(|| {
         format!(
             "search produced no result for {}:{}",
             request.replay_id, request.frame_id
@@ -247,7 +253,6 @@ fn metadata(
         oracle_profile: ORACLE_PROFILE.to_string(),
         oracle_beam_width: ORACLE_BEAM_WIDTH,
         oracle_depth: ORACLE_DEPTH,
-        oracle_use_tt: ORACLE_USE_TT,
     }
 }
 

@@ -17,7 +17,8 @@
 
 use crate::attack::calculate_attack_s2_tl_with_multiplier;
 use crate::board::{Board, FULL_ROW};
-use crate::header::{Move, Piece};
+use crate::eval::{evaluate, EvalWeights};
+use crate::header::{piece_from_external, piece_to_external, Move};
 use crate::move_buffer::MoveBuffer;
 use crate::movegen::generate_playable;
 use std::cmp::Ordering;
@@ -160,31 +161,6 @@ fn board_health_rows(rows: &[u16; 40]) -> (i32, i32) {
         seen |= row;
     }
     (height, holes)
-}
-
-fn piece_from_external(v: u8) -> Option<Piece> {
-    match v {
-        0 => Some(Piece::I),
-        1 => Some(Piece::O),
-        2 => Some(Piece::T),
-        3 => Some(Piece::S),
-        4 => Some(Piece::Z),
-        5 => Some(Piece::J),
-        6 => Some(Piece::L),
-        _ => None,
-    }
-}
-
-fn piece_to_external(p: Piece) -> u8 {
-    match p {
-        Piece::I => 0,
-        Piece::O => 1,
-        Piece::T => 2,
-        Piece::S => 3,
-        Piece::Z => 4,
-        Piece::J => 5,
-        Piece::L => 6,
-    }
 }
 
 /// Build a Board (rows + cols cache) from pre-masked u16 rows. Equivalent to
@@ -514,6 +490,25 @@ fn line_idx_cmp(order: &[LineNode], ia: u32, ib: u32) -> Ordering {
 /// start board). With hole_w=height_w=0 the max accumulated attack is
 /// identical to the surge-shaped beam_best_gm. Reconstructs the chosen
 /// line's per-step breakdown matching the TS s2BestLine contract.
+///
+/// `terminal_lambda` re-ranks the final frontier by
+/// `sel + terminal_lambda * eval(final board)`. `eval::evaluate` scores with
+/// negative weights (clean empty board = 0, holes/height push the score
+/// down), so adding the term rewards cleaner terminal boards and the chosen
+/// line cannot dump its last piece for a marginal attack win. 0.0 = pick by
+/// selection score, bit-identical to the pre-lambda kernel.
+///
+/// `dig_combo_w`/`dig_attack_w` shape selection IN-BEAM while the parent node
+/// still has garbage rows (`gm != 0`): clearing steps earn
+/// `dig_combo_w * combo_after` and every step earns
+/// `dig_attack_w * step_attack`, added to `sel` only — `acc` (the reported
+/// attack) is never touched, so the panel's attack arithmetic and the gap
+/// numerator are unaffected. Both 0.0 = bit-identical to the pre-dig kernel.
+///
+/// `spin_w` prices spin clears IN-BEAM (rank-readability dial, retarget C):
+/// every spin-clear step adds `spin_w` to `sel` — negative discourages
+/// spin-hunting lines (low-rank readability), positive encourages them.
+/// Like the dig weights it is sel-only; 0.0 = bit-identical.
 #[allow(clippy::too_many_arguments)]
 pub fn beam_best_gm_line(
     rows0: &[u16; 40],
@@ -527,6 +522,10 @@ pub fn beam_best_gm_line(
     hole_w: f64,
     height_w: f64,
     height_grace: f64,
+    terminal_lambda: f64,
+    dig_combo_w: f64,
+    dig_attack_w: f64,
+    spin_w: f64,
 ) -> Option<CoachLineResult> {
     let bw = beam_width as usize;
     let wellness_on = hole_w != 0.0 || height_w != 0.0;
@@ -616,7 +615,19 @@ pub fn beam_best_gm_line(
                 let acc_new =
                     (node.acc + attack.attack as f64 + surge_delta as f64).max(f64::NEG_INFINITY);
                 let (h_height, h_holes) = board_health_rows(&cr);
-                let sel = (acc_new - penalty_of(h_height, h_holes)).max(f64::NEG_INFINITY);
+                let mut sel = (acc_new - penalty_of(h_height, h_holes)).max(f64::NEG_INFINITY);
+                if (dig_combo_w != 0.0 || dig_attack_w != 0.0) && node.gm != 0 {
+                    let combo_bonus = if lines > 0 {
+                        dig_combo_w * attack.combo_after.max(0) as f64
+                    } else {
+                        0.0
+                    };
+                    sel = (sel + combo_bonus + dig_attack_w * attack.attack as f64)
+                        .max(f64::NEG_INFINITY);
+                }
+                if spin_w != 0.0 && lines > 0 && spin_u8 != 0 {
+                    sel = (sel + spin_w).max(f64::NEG_INFINITY);
+                }
                 let key = (cr, attack.b2b_after, attack.combo_after);
                 let existing = index.get(&key).copied();
                 if let Some(idx) = existing {
@@ -670,7 +681,23 @@ pub fn beam_best_gm_line(
         hist.push(idx.iter().map(|&i| order[i as usize]).collect());
     }
 
-    let best = *hist.last().expect("hist starts non-empty").first()?;
+    let last_ply = hist.last().expect("hist starts non-empty");
+    let best = if terminal_lambda != 0.0 && last_ply.len() > 1 {
+        let weights = EvalWeights::default();
+        let mut best_i = 0usize;
+        let mut best_score = f64::NEG_INFINITY;
+        for (i, node) in last_ply.iter().enumerate() {
+            let quality = evaluate(&board_from_u16(&node.rows), &weights) as f64;
+            let score = node.sel + terminal_lambda * quality;
+            if score > best_score {
+                best_score = score;
+                best_i = i;
+            }
+        }
+        last_ply[best_i]
+    } else {
+        *last_ply.first()?
+    };
     let mut steps: Vec<CoachLineStep> = Vec::with_capacity(hist.len() - 1);
     let mut ply = hist.len() - 1;
     let mut cur = &best;
@@ -1043,6 +1070,10 @@ mod oracle {
         hole_w: f64,
         height_w: f64,
         height_grace: f64,
+        terminal_lambda: f64,
+        dig_combo_w: f64,
+        dig_attack_w: f64,
+        spin_w: f64,
     ) -> Option<CoachLineResult> {
         struct LNode {
             board: Board,
@@ -1125,7 +1156,18 @@ mod oracle {
                             - crate::attack::surge_potential(node.b2b, garbage_multiplier);
                     let acc_new = node.acc + attack.attack as f64 + surge_delta as f64;
                     let (h_height, h_holes) = board_health_rows(&nb.rows);
-                    let sel = acc_new - penalty_of(h_height, h_holes);
+                    let mut sel = acc_new - penalty_of(h_height, h_holes);
+                    if (dig_combo_w != 0.0 || dig_attack_w != 0.0) && node.gm != 0 {
+                        let combo_bonus = if lines > 0 {
+                            dig_combo_w * attack.combo_after.max(0) as f64
+                        } else {
+                            0.0
+                        };
+                        sel += combo_bonus + dig_attack_w * attack.attack as f64;
+                    }
+                    if spin_w != 0.0 && lines > 0 && spin_u8 != 0 {
+                        sel += spin_w;
+                    }
                     let key = (nb.rows, attack.b2b_after, attack.combo_after);
                     let existing = index.get(&key).copied();
                     if let Some(idx) = existing {
@@ -1192,6 +1234,26 @@ mod oracle {
             std::mem::swap(&mut beam, &mut order);
         }
 
+        if terminal_lambda != 0.0 && beam.len() > 1 {
+            let weights = crate::eval::EvalWeights::default();
+            let mut best_i = 0usize;
+            let mut best_score = f64::NEG_INFINITY;
+            for (i, node) in beam.iter().enumerate() {
+                let quality = crate::eval::evaluate(&node.board, &weights) as f64;
+                let score = node.sel + terminal_lambda * quality;
+                if score > best_score {
+                    best_score = score;
+                    best_i = i;
+                }
+            }
+            let best = beam.swap_remove(best_i);
+            return Some(CoachLineResult {
+                attack: best.acc,
+                selection_score: best.sel,
+                steps: best.steps,
+                final_rows: best.board.rows,
+            });
+        }
         beam.into_iter().next().map(|best| CoachLineResult {
             attack: best.acc,
             selection_score: best.sel,
@@ -1384,6 +1446,7 @@ mod oracle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::header::Piece;
 
     fn xs(state: &mut u64) -> u64 {
         *state ^= *state << 13;
@@ -1582,6 +1645,10 @@ mod tests {
             let hole_w = [0.0, 0.5, 2.0][(xs(&mut state) as usize) % 3];
             let height_w = [0.0, 1.0][(xs(&mut state) as usize) % 2];
             let height_grace = [0.0, 2.0][(xs(&mut state) as usize) % 2];
+            let terminal_lambda = [0.0, 0.5, 2.0][(xs(&mut state) as usize) % 3];
+            let dig_combo_w = [0.0, 2.0, 4.0][(xs(&mut state) as usize) % 3];
+            let dig_attack_w = [0.0, 0.75][(xs(&mut state) as usize) % 2];
+            let spin_w = [0.0, -2.0, 1.0][(xs(&mut state) as usize) % 3];
             let got = beam_best_gm_line(
                 &rows0,
                 gm0,
@@ -1594,6 +1661,10 @@ mod tests {
                 hole_w,
                 height_w,
                 height_grace,
+                terminal_lambda,
+                dig_combo_w,
+                dig_attack_w,
+                spin_w,
             );
             let want = oracle::beam_best_gm_line(
                 &rows0,
@@ -1607,6 +1678,10 @@ mod tests {
                 hole_w,
                 height_w,
                 height_grace,
+                terminal_lambda,
+                dig_combo_w,
+                dig_attack_w,
+                spin_w,
             );
             match (&got, &want) {
                 (Some(g), Some(w)) => {
@@ -1773,18 +1848,210 @@ mod tests {
             time(&|| oracle::beam_best_gm(&rows0, gm0, &pieces, 1, 0, 0, None, 300, 1.0, true));
         assert_eq!(s1.to_bits(), s2.to_bits());
         let (ln_new, s3) = time(&|| {
-            beam_best_gm_line(&rows0, gm0, &pieces, 1, 0, 0, 300, 1.0, 1.5, 0.35, 2.0)
-                .map_or(0.0, |r| r.selection_score)
+            beam_best_gm_line(
+                &rows0, gm0, &pieces, 1, 0, 0, 300, 1.0, 1.5, 0.35, 2.0, 1.5, 2.0, 0.5, -1.0,
+            )
+            .map_or(0.0, |r| r.selection_score)
         });
         let (ln_old, s4) = time(&|| {
-            oracle::beam_best_gm_line(&rows0, gm0, &pieces, 1, 0, 0, 300, 1.0, 1.5, 0.35, 2.0)
-                .map_or(0.0, |r| r.selection_score)
+            oracle::beam_best_gm_line(
+                &rows0, gm0, &pieces, 1, 0, 0, 300, 1.0, 1.5, 0.35, 2.0, 1.5, 2.0, 0.5, -1.0,
+            )
+            .map_or(0.0, |r| r.selection_score)
         });
         assert_eq!(s3.to_bits(), s4.to_bits());
         println!(
             "kernel_timing gm_old={gm_old}us gm_new={gm_new}us ({:.2}x)  line_old={ln_old}us line_new={ln_new}us ({:.2}x)",
             gm_old as f64 / gm_new as f64,
             ln_old as f64 / ln_new as f64
+        );
+    }
+
+    // Pins the eval sign convention the terminal_lambda re-rank depends on:
+    // default-weight evaluate() is 0 on an empty board and DROPS as holes
+    // appear, so "cleaner terminal" means HIGHER eval. Without this anchor the
+    // re-rank invariant test below is circular (it would pass with either
+    // sign, as the 2026-07-09 inverted-sign bug proved).
+    #[test]
+    fn eval_default_weights_score_cleaner_boards_higher() {
+        let weights = EvalWeights::default();
+        let empty = [0u16; 40];
+        let mut clean = [0u16; 40];
+        clean[..4].fill(0b0111111111);
+        let mut holey = clean;
+        holey[0] = 0b0111111011;
+        let e_empty = evaluate(&board_from_u16(&empty), &weights);
+        let e_clean = evaluate(&board_from_u16(&clean), &weights);
+        let e_holey = evaluate(&board_from_u16(&holey), &weights);
+        assert_eq!(e_empty, 0.0, "empty board must anchor eval at 0");
+        assert!(
+            e_clean > e_holey,
+            "covered hole must lower eval: clean={e_clean} holey={e_holey}"
+        );
+    }
+
+    #[test]
+    fn terminal_lambda_never_picks_dirtier_terminal_and_moves_lines() {
+        let mut state = 0x7E12_ACE5_2026_0709u64;
+        let weights = EvalWeights::default();
+        let mut changed = 0u32;
+        let mut strictly_cleaner = 0u32;
+        for case in 0..200 {
+            let rows0 = random_stack(&mut state);
+            let gm0 = random_gm(&mut state, &rows0);
+            let pieces = random_queue(&mut state);
+            let base = beam_best_gm_line(
+                &rows0, gm0, &pieces, 1, 0, 0, 120, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            );
+            let shaped = beam_best_gm_line(
+                &rows0, gm0, &pieces, 1, 0, 0, 120, 1.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0,
+            );
+            let (Some(base), Some(shaped)) = (base, shaped) else {
+                continue;
+            };
+            let eval_base = evaluate(&board_from_u16(&base.final_rows), &weights) as f64;
+            let eval_shaped = evaluate(&board_from_u16(&shaped.final_rows), &weights) as f64;
+            assert!(
+                eval_shaped >= eval_base - 1e-6,
+                "case={case} lambda picked dirtier terminal: {eval_shaped} < {eval_base}"
+            );
+            if shaped.final_rows != base.final_rows {
+                changed += 1;
+            }
+            if eval_shaped > eval_base + 1e-6 {
+                strictly_cleaner += 1;
+            }
+        }
+        assert!(changed > 0, "terminal lambda never changed a line at 3.0");
+        assert!(
+            strictly_cleaner > 0,
+            "terminal lambda never improved a terminal board at 3.0"
+        );
+    }
+
+    // Dig-shaping sign pin (non-circular, per the 2026-07-09 lambda lesson):
+    // asserts population direction, not per-case monotonicity — an in-beam
+    // term interacts with pruning, so single cases may trade combo away, but
+    // a sign error would push the aggregate DOWN. Also pins the gm gate:
+    // garbage-free starts must be bit-identical with weights engaged.
+    #[test]
+    fn dig_weights_raise_line_combo_and_gate_on_garbage() {
+        let mut state = 0xD16C_0DE5_2026_0711u64;
+        let mut changed = 0u32;
+        let mut sum_base = 0i64;
+        let mut sum_shaped = 0i64;
+        let mut zero_gm_cases = 0u32;
+        for case in 0..200 {
+            let hole_rows = 4 + (xs(&mut state) % 5) as usize;
+            let mut rows0 = [0u16; 40];
+            for row in rows0.iter_mut().take(hole_rows) {
+                *row = 0x03FF & !(1u16 << (xs(&mut state) % 10));
+            }
+            let gm0 = if case % 5 == 0 {
+                0
+            } else {
+                (1u64 << hole_rows) - 1
+            };
+            let pieces = random_queue(&mut state);
+            let base = beam_best_gm_line(
+                &rows0, gm0, &pieces, 1, 0, 0, 120, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            );
+            let shaped = beam_best_gm_line(
+                &rows0, gm0, &pieces, 1, 0, 0, 120, 1.0, 0.0, 0.0, 0.0, 0.0, 3.0, 0.75, 0.0,
+            );
+            let (Some(base), Some(shaped)) = (base, shaped) else {
+                continue;
+            };
+            if gm0 == 0 {
+                zero_gm_cases += 1;
+                assert_eq!(
+                    base.final_rows, shaped.final_rows,
+                    "case={case} dig weights fired without garbage"
+                );
+                assert_eq!(
+                    base.attack.to_bits(),
+                    shaped.attack.to_bits(),
+                    "case={case} attack drifted without garbage"
+                );
+                assert_eq!(
+                    base.selection_score.to_bits(),
+                    shaped.selection_score.to_bits(),
+                    "case={case} sel drifted without garbage"
+                );
+                continue;
+            }
+            let max_combo =
+                |r: &CoachLineResult| r.steps.iter().map(|s| s.combo.max(0)).max().unwrap_or(0);
+            sum_base += i64::from(max_combo(&base));
+            sum_shaped += i64::from(max_combo(&shaped));
+            if shaped.final_rows != base.final_rows {
+                changed += 1;
+            }
+        }
+        println!("dig sign-pin: base={sum_base} shaped={sum_shaped} changed={changed}");
+        assert!(
+            zero_gm_cases >= 20,
+            "gate coverage too thin: {zero_gm_cases}"
+        );
+        assert!(
+            changed > 0,
+            "dig weights never changed a line on garbage boards"
+        );
+        assert!(
+            sum_shaped > sum_base,
+            "dig weights failed to raise aggregate line combo: {sum_shaped} <= {sum_base}"
+        );
+    }
+
+    #[test]
+    fn spin_w_negative_reduces_line_spin_clears() {
+        let mut state = 0x5217_0DE5_2026_0712u64;
+        let mut changed = 0u32;
+        let mut spins_base = 0i64;
+        let mut spins_shaped = 0i64;
+        let mut attack_base = 0.0f64;
+        let mut attack_shaped = 0.0f64;
+        for _case in 0..200 {
+            let hole_rows = 4 + (xs(&mut state) % 5) as usize;
+            let mut rows0 = [0u16; 40];
+            for row in rows0.iter_mut().take(hole_rows) {
+                *row = 0x03FF & !(1u16 << (xs(&mut state) % 10));
+            }
+            let pieces = random_queue(&mut state);
+            let base = beam_best_gm_line(
+                &rows0, 0, &pieces, 1, 0, 0, 120, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            );
+            let shaped = beam_best_gm_line(
+                &rows0, 0, &pieces, 1, 0, 0, 120, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -3.0,
+            );
+            let (Some(base), Some(shaped)) = (base, shaped) else {
+                continue;
+            };
+            let spins = |r: &CoachLineResult| -> i64 {
+                r.steps
+                    .iter()
+                    .filter(|s| s.lines > 0 && s.spin != 0)
+                    .count() as i64
+            };
+            spins_base += spins(&base);
+            spins_shaped += spins(&shaped);
+            attack_base += base.attack;
+            attack_shaped += shaped.attack;
+            if shaped.final_rows != base.final_rows {
+                changed += 1;
+            }
+        }
+        println!(
+            "spin sign-pin: base={spins_base} shaped={spins_shaped} changed={changed} atk {attack_base:.0}->{attack_shaped:.0}"
+        );
+        assert!(
+            spins_base >= 10,
+            "fixtures produced too few base spin clears: {spins_base}"
+        );
+        assert!(changed > 0, "spin_w never changed a line");
+        assert!(
+            spins_shaped < spins_base,
+            "spin_w=-3 failed to reduce spin clears: {spins_shaped} >= {spins_base}"
         );
     }
 
@@ -1818,20 +2085,9 @@ mod tests {
         assert!(checked > 2000, "placement coverage too thin: {checked}");
     }
 
-    /// External piece convention must match the wasm surface (Triangle order:
-    /// I O T S Z J L). A drifted private copy is invisible to the oracle
-    /// differential, so this is pinned against wasm_types directly.
-    #[cfg(feature = "wasm")]
     #[test]
-    fn external_piece_maps_match_wasm_types() {
-        for v in 0u8..=7 {
-            assert_eq!(
-                piece_from_external(v),
-                crate::wasm_types::piece_from_external(v),
-                "piece_from_external({v})"
-            );
-        }
-        for p in [
+    fn external_piece_roundtrip_stays_stable() {
+        let expected = [
             Piece::I,
             Piece::O,
             Piece::T,
@@ -1839,13 +2095,11 @@ mod tests {
             Piece::Z,
             Piece::J,
             Piece::L,
-        ] {
-            assert_eq!(
-                piece_to_external(p),
-                crate::wasm_types::piece_to_external(p),
-                "piece_to_external({p:?})"
-            );
-            assert_eq!(piece_from_external(piece_to_external(p)), Some(p));
+        ];
+        for (external, piece) in expected.into_iter().enumerate() {
+            assert_eq!(piece_from_external(external as u8), Some(piece));
+            assert_eq!(piece_to_external(piece), external as u8);
         }
+        assert_eq!(piece_from_external(7), None);
     }
 }

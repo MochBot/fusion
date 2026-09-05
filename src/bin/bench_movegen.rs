@@ -1,12 +1,12 @@
 // bench_movegen -- per-call movegen microbenchmark on a pinned seeded corpus.
 // Reports ns/call and calls/sec per piece for the paths that matter:
-//   dispatch-count = count_moves_dispatch (production count routing)
+//   placement-count = count_placements (production placement routing)
 //   engine-count   = count_moves (scalar engine, always)
 //   generate       = production generate() (materializing dispatch)
 use fusion_engine::board::Board;
 use fusion_engine::header::Piece;
 use fusion_engine::move_buffer::MoveBuffer;
-use fusion_engine::movegen::{count_moves, count_moves_dispatch, generate};
+use fusion_engine::movegen::{count_moves, count_placements, generate};
 use std::hint::black_box;
 use std::time::Instant;
 
@@ -83,14 +83,14 @@ fn main() {
     println!();
     println!(
         "{:>6}  {:>10}  {:>18}  {:>18}  {:>18}",
-        "piece", "avg moves", "dispatch-count", "engine-count", "generate"
+        "piece", "avg moves", "placement-count", "engine-count", "generate"
     );
     println!("{}", "-".repeat(78));
 
     let fmt = |ns: f64| -> String { format!("{:7.1}ns {:6.2}M/s", ns, 1e3 / ns) };
 
     for p in pieces {
-        let (disp_ns, avg_moves) = bench(&boards, |b| count_moves_dispatch(b, p, false));
+        let (placement_ns, avg_moves) = bench(&boards, |b| count_placements(b, p, false));
         let (eng_ns, _) = bench(&boards, |b| count_moves(b, p, false));
         let (gen_ns, _) = bench(&boards, |b| {
             let mut mb = MoveBuffer::new();
@@ -101,7 +101,7 @@ fn main() {
             "{:>6?}  {:>10}  {:>18}  {:>18}  {:>18}",
             p,
             avg_moves,
-            fmt(disp_ns),
+            fmt(placement_ns),
             fmt(eng_ns),
             fmt(gen_ns)
         );

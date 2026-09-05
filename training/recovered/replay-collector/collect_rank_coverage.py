@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 TARGET_RANKS = ("ss", "s+", "s", "s-", "a+", "a")
+RETRYABLE_REPLAY_STATUSES = {0, 429, 500, 502, 503, 504}
 LOWER_BOUND_RANKS = {"a-", "b+", "b", "b-", "c+", "c", "c-", "d+", "d", "z"}
 CHANNEL_BASE = "https://ch.tetr.io/api"
 INOUE_REPLAY = "https://inoue.szy.lol/api/replay/{replayid}"
@@ -26,12 +27,13 @@ FUSION_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_OUT = FUSION_ROOT / "data" / "replays-coverage-ssa"
 DEFAULT_LOCAL_PROXY = "http://127.0.0.1:7897"
 DEFAULT_GEONODE_PORTS = tuple(range(9000, 9011))
+MAX_REPLAY_BODY_BYTES = 32 * 1024 * 1024
 
 Json = dict[str, Any]
 
 
 def utc_now_iso() -> str:
-    return dt.datetime.now(dt.timezone.utc).isoformat()
+    return dt.datetime.now(dt.UTC).isoformat()
 
 
 def cursor_from_entry(entry: Json) -> str | None:
@@ -63,17 +65,33 @@ def parse_ports(value: str) -> list[int]:
     return ports
 
 
+def parse_rank_targets(value: str) -> dict[str, int]:
+    targets: dict[str, int] = {}
+    for chunk in value.split(","):
+        rank_raw, separator, target_raw = chunk.strip().partition("=")
+        rank = rank_raw.lower()
+        if not separator or rank not in TARGET_RANKS:
+            raise ValueError(f"invalid rank target: {chunk!r}")
+        target = int(target_raw)
+        if target < 0:
+            raise ValueError(f"rank target must be non-negative: {chunk!r}")
+        targets[rank] = target
+    if not targets:
+        raise ValueError("at least one rank target is required")
+    return targets
+
+
 def geonode_proxy_urls(env: dict[str, str] | os._Environ[str], ports: list[int] | tuple[int, ...]) -> list[str]:
     user = (env.get("GEONODE_PROXY_USER") or "").strip()
     password = (env.get("GEONODE_PROXY_PASS") or "").strip()
-    base = (env.get("GEONODE_PROXY_BASE") or "").strip()
-    if not user or not password or not base:
-        raise RuntimeError("GEONODE_PROXY_USER, GEONODE_PROXY_PASS, and GEONODE_PROXY_BASE must be set")
-    if "://" in base:
-        parsed = urllib.parse.urlparse(base)
-        host = parsed.hostname or base
+    host_raw = (env.get("GEONODE_PROXY_HOST") or "").strip()
+    if not user or not password or not host_raw:
+        raise RuntimeError("GEONODE_PROXY_USER, GEONODE_PROXY_PASS, and GEONODE_PROXY_HOST must be set")
+    if "://" in host_raw:
+        parsed = urllib.parse.urlparse(host_raw)
+        host = parsed.hostname or host_raw
     else:
-        host = base.split(":", 1)[0]
+        host = host_raw.split(":", 1)[0]
     quoted_user = urllib.parse.quote(user, safe="")
     quoted_password = urllib.parse.quote(password, safe="")
     return [f"http://{quoted_user}:{quoted_password}@{host}:{port}" for port in ports]
@@ -175,6 +193,8 @@ class HttpClient:
         handlers = []
         if proxy:
             handlers.append(urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
+        else:
+            handlers.append(urllib.request.ProxyHandler({}))
         self.opener = urllib.request.build_opener(*handlers)
         self.label = label or ("proxy" if proxy else "direct")
 
@@ -185,9 +205,15 @@ class HttpClient:
         req = urllib.request.Request(url, headers=merged)
         try:
             with self.opener.open(req, timeout=timeout) as response:
-                return int(response.status), response.read()
+                content_length = response.headers.get("Content-Length")
+                if content_length and int(content_length) > MAX_REPLAY_BODY_BYTES:
+                    return 413, b"response_too_large"
+                body = response.read(MAX_REPLAY_BODY_BYTES + 1)
+                if len(body) > MAX_REPLAY_BODY_BYTES:
+                    return 413, b"response_too_large"
+                return int(response.status), body
         except urllib.error.HTTPError as exc:
-            return int(exc.code), exc.read()
+            return int(exc.code), exc.read(4096)
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             return 0, str(exc).encode("utf-8", "replace")
 
@@ -229,6 +255,13 @@ class CoverageCollector:
         self.meta = self.root / "_meta"
         self.logs = self.root / "_logs"
         self.target = args.target
+        explicit_targets = getattr(args, "rank_targets", None)
+        self.target_by_rank = (
+            dict(explicit_targets)
+            if explicit_targets is not None
+            else {rank: self.target for rank in TARGET_RANKS}
+        )
+        self.active_ranks = tuple(rank for rank in TARGET_RANKS if rank in self.target_by_rank)
         self.player_pool = args.player_pool
         self.records_limit = args.records_limit
         self.channel_delay = args.channel_delay
@@ -239,6 +272,8 @@ class CoverageCollector:
         self.channel_attempts = max(1, int(getattr(args, "channel_attempts", 5)))
         self.channel_retry_delay = max(0.0, float(getattr(args, "channel_retry_delay", 0.15)))
         self.max_replays_per_player = max(1, int(getattr(args, "max_replays_per_player", 2)))
+        stop_file = getattr(args, "geonode_stop_file", None)
+        self.geonode_stop_file = Path(stop_file) if stop_file else self.meta / "STOP_GEONODE"
         self.channel_gate = threading.BoundedSemaphore(self.channel_workers)
         use_geonode = bool(getattr(args, "use_geonode", False))
         channel_use_geonode = bool(getattr(args, "channel_use_geonode", False))
@@ -250,7 +285,7 @@ class CoverageCollector:
         else:
             self.channel = HttpClient(args.channel_proxy)
             self.inoue_proxy = HttpClient(args.inoue_proxy) if args.inoue_proxy else None
-        self.inoue_direct = HttpClient(None) if args.allow_inoue_direct or (not self.inoue_proxy and not use_geonode) else None
+        self.inoue_direct = HttpClient(None) if args.allow_inoue_direct or use_geonode or not self.inoue_proxy else None
         self.session_id = args.session_id or f"mosaic-coverage-ssa-{uuid.uuid4()}"
         self.random = random.Random(args.seed)
         self.players_by_rank: dict[str, list[Json]] = {rank: [] for rank in TARGET_RANKS}
@@ -260,6 +295,8 @@ class CoverageCollector:
         self.fail_rows: list[Json] = []
         self.seen_replay_ids: set[str] = set()
         self.dead_replay_ids: set[str] = set()
+        self.claimed_replay_ids: set[str] = set()
+        self.claim_lock = threading.Lock()
 
     def log(self, message: str) -> None:
         self.logs.mkdir(parents=True, exist_ok=True)
@@ -427,7 +464,7 @@ class CoverageCollector:
         raise RuntimeError(f"Channel HTTP {last_status}: {last_body[:160]!r}")
 
     def discover_players(self) -> None:
-        if all(len(self.players_by_rank[rank]) >= self.player_pool for rank in TARGET_RANKS):
+        if all(len(self.players_by_rank[rank]) >= self.player_pool for rank in self.active_ranks):
             return
         cursor: str | None = None
         page = 0
@@ -450,6 +487,8 @@ class CoverageCollector:
                 if not player:
                     continue
                 rank = player["rank"]
+                if rank not in self.target_by_rank:
+                    continue
                 player_id = player["_id"]
                 if player_id in seen or len(self.players_by_rank[rank]) >= self.player_pool:
                     continue
@@ -457,9 +496,9 @@ class CoverageCollector:
                 self.players_by_rank[rank].append(player)
             counts = {rank: len(self.players_by_rank[rank]) for rank in TARGET_RANKS}
             self.log(f"leaderboard page={page} last_rank={last_rank} pools={counts}")
-            if all(counts[rank] >= self.player_pool for rank in TARGET_RANKS):
+            if all(counts[rank] >= self.player_pool for rank in self.active_ranks):
                 return
-            if all(counts[rank] >= self.target for rank in TARGET_RANKS) and last_rank in LOWER_BOUND_RANKS:
+            if all(counts[rank] >= self.target_by_rank[rank] for rank in self.active_ranks) and last_rank in LOWER_BOUND_RANKS:
                 return
             cursor = cursor_from_entry(entries[-1])
             if not cursor:
@@ -476,8 +515,39 @@ class CoverageCollector:
     def download_replay(self, replayid: str) -> tuple[bytes | None, Json]:
         url = INOUE_REPLAY.format(replayid=urllib.parse.quote(replayid))
         attempts: list[tuple[str, int, bytes]] = []
+        if self.inoue_direct is not None:
+            status, body, label = self.inoue_direct.get_with_label(
+                url, timeout=45.0, headers={"Accept": "application/octet-stream"}
+            )
+            attempts.append((label, status, body))
+            if status == 200:
+                return body, {
+                    "replayid": replayid,
+                    "status": status,
+                    "bytes": len(body),
+                    "err": None,
+                    "via": f"inoue:{label}",
+                    "attempts": len(attempts),
+                    "ts": utc_now_iso(),
+                }
+            if status not in RETRYABLE_REPLAY_STATUSES:
+                return None, {
+                    "replayid": replayid,
+                    "status": status,
+                    "bytes": 0,
+                    "err": body[:240].decode("utf-8", "replace"),
+                    "via": f"inoue:{label}",
+                    "attempts": len(attempts),
+                    "ts": utc_now_iso(),
+                }
         if self.inoue_proxy is not None:
             for _attempt in range(self.download_attempts):
+                if self.geonode_stop_file.exists():
+                    return None, {
+                        "replayid": replayid, "status": 0, "bytes": 0,
+                        "err": "geonode_budget_stop", "via": "geonode:stopped",
+                        "attempts": len(attempts), "ts": utc_now_iso(),
+                    }
                 if hasattr(self.inoue_proxy, "get_with_label"):
                     status, body, label = self.inoue_proxy.get_with_label(
                         url, timeout=45.0, headers={"Accept": "application/octet-stream"}
@@ -500,25 +570,10 @@ class CoverageCollector:
                         "attempts": len(attempts),
                         "ts": utc_now_iso(),
                     }
-                if status not in {0, 429, 500, 502, 503, 504}:
+                if status not in RETRYABLE_REPLAY_STATUSES:
                     break
                 if self.inoue_delay:
                     time.sleep(self.inoue_delay)
-        if self.inoue_direct is not None:
-            status, body, label = self.inoue_direct.get_with_label(
-                url, timeout=45.0, headers={"Accept": "application/octet-stream"}
-            )
-            attempts.append((label, status, body))
-            if status == 200:
-                return body, {
-                    "replayid": replayid,
-                    "status": status,
-                    "bytes": len(body),
-                    "err": None,
-                    "via": f"inoue:{label}",
-                    "attempts": len(attempts),
-                    "ts": utc_now_iso(),
-                }
         if not attempts:
             return None, {
                 "replayid": replayid,
@@ -578,34 +633,49 @@ class CoverageCollector:
                 continue
             if record.get("gamemode") not in (None, "league"):
                 continue
-            body, download_row = self.download_replay(str(replayid))
+            replayid = str(replayid)
+            with self.claim_lock:
+                if replayid in self.seen_replay_ids or replayid in self.claimed_replay_ids:
+                    continue
+                self.claimed_replay_ids.add(replayid)
+            try:
+                body, download_row = self.download_replay(replayid)
+            except Exception:
+                with self.claim_lock:
+                    self.claimed_replay_ids.discard(replayid)
+                raise
             download_rows.append(download_row)
             if body is None:
                 fail_row = {"rank": rank, "player_id": player_id, **download_row}
                 fail_rows.append(fail_row)
                 if self.is_permanent_replay_failure(fail_row):
-                    self.dead_replay_ids.add(str(replayid))
+                    self.dead_replay_ids.add(replayid)
+                with self.claim_lock:
+                    self.claimed_replay_ids.discard(replayid)
                 continue
             try:
                 payload = json.loads(body.decode("utf-8"))
                 summary = validate_ttrm_payload(payload)
             except Exception as exc:
                 fail_rows.append({"rank": rank, "player_id": player_id, "replayid": replayid, "err": str(exc), "ts": utc_now_iso()})
+                with self.claim_lock:
+                    self.claimed_replay_ids.discard(replayid)
                 continue
             return (player, record, body, summary), download_rows, fail_rows
         return None, download_rows, fail_rows
 
     def collect_rank(self, rank: str) -> None:
+        target = self.target_by_rank[rank]
         players = list(self.players_by_rank[rank])
         self.random.shuffle(players)
         per_player = collections.Counter(row["player_id"] for row in self.saved_rows[rank])
         for pass_limit in range(1, self.max_replays_per_player + 1):
             pending = [player for player in players if per_player[str(player["_id"])] < pass_limit]
-            batch_size = max(self.download_workers * 4, self.target - len(self.saved_rows[rank]))
-            for start in range(0, len(pending), batch_size):
-                if len(self.saved_rows[rank]) >= self.target:
+            for start in range(0, len(pending), self.download_workers):
+                if len(self.saved_rows[rank]) >= target:
                     return
-                batch = pending[start:start + batch_size]
+                remaining = target - len(self.saved_rows[rank])
+                batch = pending[start:start + min(self.download_workers, remaining)]
                 with concurrent.futures.ThreadPoolExecutor(max_workers=self.download_workers) as executor:
                     futures = [executor.submit(self.collect_player_candidate, rank, player) for player in batch]
                     for future in concurrent.futures.as_completed(futures):
@@ -620,16 +690,18 @@ class CoverageCollector:
                             continue
                         player, record, body, summary = result
                         replayid = str(record["replayid"])
-                        if replayid in self.seen_replay_ids:
-                            continue
-                        self.save_replay(player, record, body, summary)
-                        per_player[str(player["_id"])] += 1
-                        if len(self.saved_rows[rank]) >= self.target:
-                            for pending_future in futures:
-                                pending_future.cancel()
-                            return
+                        try:
+                            if replayid in self.seen_replay_ids:
+                                continue
+                            self.save_replay(player, record, body, summary)
+                            per_player[str(player["_id"])] += 1
+                            if len(self.saved_rows[rank]) >= target:
+                                return
+                        finally:
+                            with self.claim_lock:
+                                self.claimed_replay_ids.discard(replayid)
                 self.write_meta()
-        raise RuntimeError(f"rank {rank} collected {len(self.saved_rows[rank])}, target {self.target}")
+        raise RuntimeError(f"rank {rank} collected {len(self.saved_rows[rank])}, target {target}")
 
     def state(self) -> Json:
         replay_counts = {rank: len(self.saved_rows[rank]) for rank in TARGET_RANKS}
@@ -647,7 +719,8 @@ class CoverageCollector:
             "source": "TETRA CHANNEL metadata + Inoue replay relay",
             "replay_body_endpoint": INOUE_REPLAY,
             "target_per_rank": self.target,
-            "rank_order": list(TARGET_RANKS),
+            "target_by_rank": self.target_by_rank,
+            "rank_order": list(self.active_ranks),
             "on_disk_rank_counts": replay_counts,
             "distinct_players_by_rank": distinct_players,
             "country_histogram": country_histogram,
@@ -679,12 +752,21 @@ class CoverageCollector:
 
     def run(self) -> None:
         self.prepare()
+        capacity = self.player_pool * self.max_replays_per_player
+        for rank in self.active_ranks:
+            deficit = max(0, self.target_by_rank[rank] - len(self.saved_rows[rank]))
+            if deficit > capacity:
+                raise RuntimeError(
+                    f"rank {rank} deficit {deficit} exceeds configured candidate capacity {capacity}; "
+                    "increase --player-pool or --max-replays-per-player"
+                )
         self.discover_players()
         self.write_meta()
-        for rank in TARGET_RANKS:
-            if len(self.saved_rows[rank]) >= self.target:
+        for rank in self.active_ranks:
+            target = self.target_by_rank[rank]
+            if len(self.saved_rows[rank]) >= target:
                 continue
-            self.log(f"rank_start rank={rank} target={self.target}")
+            self.log(f"rank_start rank={rank} target={target}")
             self.collect_rank(rank)
             self.write_meta()
         self.write_meta()
@@ -695,14 +777,16 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Collect SS-to-A TETR.IO league replay coverage via Inoue relay")
     parser.add_argument("--out", default=str(DEFAULT_OUT))
     parser.add_argument("--target", type=int, default=100)
+    parser.add_argument("--rank-targets", type=parse_rank_targets, default=None)
     parser.add_argument("--player-pool", type=int, default=260)
     parser.add_argument("--records-limit", type=int, default=20)
-    parser.add_argument("--channel-proxy", default=DEFAULT_LOCAL_PROXY)
-    parser.add_argument("--inoue-proxy", default=DEFAULT_LOCAL_PROXY)
+    parser.add_argument("--channel-proxy", default=None)
+    parser.add_argument("--inoue-proxy", default=None)
     parser.add_argument("--allow-inoue-direct", action="store_true")
     parser.add_argument("--use-geonode", action="store_true")
     parser.add_argument("--channel-use-geonode", action="store_true")
     parser.add_argument("--geonode-ports", default="9000-9010")
+    parser.add_argument("--geonode-stop-file", default=None)
     parser.add_argument("--channel-delay", type=float, default=0.1)
     parser.add_argument("--inoue-delay", type=float, default=0.0)
     parser.add_argument("--download-workers", type=int, default=16)

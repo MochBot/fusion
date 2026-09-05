@@ -1,7 +1,6 @@
 use crate::analysis::{assemble_composite, shape_chain_value, shape_context_modifier};
-use crate::attack::{calculate_attack_full, AttackContext};
 use crate::board::{Board, BOARD_HEIGHT};
-use crate::eval::{evaluate, EvalWeights};
+use crate::eval::evaluate;
 use crate::header::{Move, Piece};
 use crate::movegen::generate_search;
 use crate::policy_value_runtime::{CANDIDATE_CAPACITY, MAX_INFER_BATCH};
@@ -9,10 +8,8 @@ use crate::search::level_batch_enabled;
 use crate::search_config::{NnScoringMode, SearchExpansionContext, SearchNode};
 use crate::search_config::{MAX_DEPTH_FACTOR, POLICY_BONUS_WEIGHT};
 use crate::state::{
-    ClearEvent, ClearType, CoachingState, FatalityState, GameState, ObligationState, PhaseState,
-    SurgeState, TransitionObservation,
+    ChainState, CoachingState, FatalityState, GameState, ObligationState, SurgeState,
 };
-use crate::transposition::{TranspositionTable, ZobristKeys};
 use smallvec::{smallvec, SmallVec};
 use std::sync::Arc;
 #[cfg(not(target_arch = "wasm32"))]
@@ -30,16 +27,11 @@ pub struct SearchExpansionStats {
     pub child_eval_nanos: u64,
     pub do_move_nanos: u64,
     pub eval_fallback_nanos: u64,
-    pub tt_hash_nanos: u64,
-    pub tt_probe_nanos: u64,
-    pub tt_store_nanos: u64,
     pub sort_prune_truncate_nanos: u64,
     pub candidate_copy_nanos: u64,
     pub root_score_aggregation_nanos: u64,
     pub unique_action_keys: u64,
     pub repeated_action_builds: u64,
-    pub cache_hits: u64,
-    pub cache_misses: u64,
     pub runtime_attempt_rows: u64,
     pub runtime_unavailable_nodes: u64,
     pub abandoned_nodes: u64,
@@ -69,16 +61,11 @@ thread_local! {
     static CHILD_EVAL_NANOS: Cell<u64> = const { Cell::new(0) };
     static DO_MOVE_NANOS: Cell<u64> = const { Cell::new(0) };
     static EVAL_FALLBACK_NANOS: Cell<u64> = const { Cell::new(0) };
-    static TT_HASH_NANOS: Cell<u64> = const { Cell::new(0) };
-    static TT_PROBE_NANOS: Cell<u64> = const { Cell::new(0) };
-    static TT_STORE_NANOS: Cell<u64> = const { Cell::new(0) };
     static SORT_PRUNE_TRUNCATE_NANOS: Cell<u64> = const { Cell::new(0) };
     static CANDIDATE_COPY_NANOS: Cell<u64> = const { Cell::new(0) };
     static ROOT_SCORE_AGGREGATION_NANOS: Cell<u64> = const { Cell::new(0) };
     static UNIQUE_ACTION_KEYS: Cell<u64> = const { Cell::new(0) };
     static REPEATED_ACTION_BUILDS: Cell<u64> = const { Cell::new(0) };
-    static CACHE_HITS: Cell<u64> = const { Cell::new(0) };
-    static CACHE_MISSES: Cell<u64> = const { Cell::new(0) };
     static RUNTIME_ATTEMPT_ROWS: Cell<u64> = const { Cell::new(0) };
     static RUNTIME_UNAVAILABLE_NODES: Cell<u64> = const { Cell::new(0) };
     static ABANDONED_NODES: Cell<u64> = const { Cell::new(0) };
@@ -160,16 +147,11 @@ pub fn reset_search_expansion_stats() {
         CHILD_EVAL_NANOS.with(|count| count.set(0));
         DO_MOVE_NANOS.with(|count| count.set(0));
         EVAL_FALLBACK_NANOS.with(|count| count.set(0));
-        TT_HASH_NANOS.with(|count| count.set(0));
-        TT_PROBE_NANOS.with(|count| count.set(0));
-        TT_STORE_NANOS.with(|count| count.set(0));
         SORT_PRUNE_TRUNCATE_NANOS.with(|count| count.set(0));
         CANDIDATE_COPY_NANOS.with(|count| count.set(0));
         ROOT_SCORE_AGGREGATION_NANOS.with(|count| count.set(0));
         UNIQUE_ACTION_KEYS.with(|count| count.set(0));
         REPEATED_ACTION_BUILDS.with(|count| count.set(0));
-        CACHE_HITS.with(|count| count.set(0));
-        CACHE_MISSES.with(|count| count.set(0));
         RUNTIME_ATTEMPT_ROWS.with(|count| count.set(0));
         RUNTIME_UNAVAILABLE_NODES.with(|count| count.set(0));
         ABANDONED_NODES.with(|count| count.set(0));
@@ -203,16 +185,11 @@ pub fn search_expansion_stats() -> SearchExpansionStats {
             child_eval_nanos: CHILD_EVAL_NANOS.with(|count| count.get()),
             do_move_nanos: DO_MOVE_NANOS.with(|count| count.get()),
             eval_fallback_nanos: EVAL_FALLBACK_NANOS.with(|count| count.get()),
-            tt_hash_nanos: TT_HASH_NANOS.with(|count| count.get()),
-            tt_probe_nanos: TT_PROBE_NANOS.with(|count| count.get()),
-            tt_store_nanos: TT_STORE_NANOS.with(|count| count.get()),
             sort_prune_truncate_nanos: SORT_PRUNE_TRUNCATE_NANOS.with(|count| count.get()),
             candidate_copy_nanos: CANDIDATE_COPY_NANOS.with(|count| count.get()),
             root_score_aggregation_nanos: ROOT_SCORE_AGGREGATION_NANOS.with(|count| count.get()),
             unique_action_keys: UNIQUE_ACTION_KEYS.with(|count| count.get()),
             repeated_action_builds: REPEATED_ACTION_BUILDS.with(|count| count.get()),
-            cache_hits: CACHE_HITS.with(|count| count.get()),
-            cache_misses: CACHE_MISSES.with(|count| count.get()),
             runtime_attempt_rows: RUNTIME_ATTEMPT_ROWS.with(|count| count.get()),
             runtime_unavailable_nodes: RUNTIME_UNAVAILABLE_NODES.with(|count| count.get()),
             abandoned_nodes: ABANDONED_NODES.with(|count| count.get()),
@@ -295,18 +272,6 @@ fn record_action_key(board: &Board, current: Option<Piece>, hold: Option<Piece>,
             }
         });
     }
-}
-
-#[inline]
-fn record_cache_hit() {
-    #[cfg(not(target_arch = "wasm32"))]
-    CACHE_HITS.with(|count| count.set(count.get() + 1));
-}
-
-#[inline]
-fn record_cache_miss() {
-    #[cfg(not(target_arch = "wasm32"))]
-    CACHE_MISSES.with(|count| count.set(count.get() + 1));
 }
 
 #[inline]
@@ -551,63 +516,6 @@ fn profile_eval_fallback<T>(f: impl FnOnce() -> T) -> T {
 }
 
 #[inline]
-fn profile_tt_probe<T>(f: impl FnOnce() -> T) -> T {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        if !search_profiling_enabled() {
-            return f();
-        }
-        let started = Instant::now();
-        let result = f();
-        add_elapsed(&TT_PROBE_NANOS, started);
-        result
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        f()
-    }
-}
-
-#[inline]
-fn profile_tt_hash<T>(f: impl FnOnce() -> T) -> T {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        if !search_profiling_enabled() {
-            return f();
-        }
-        let started = Instant::now();
-        let result = f();
-        add_elapsed(&TT_HASH_NANOS, started);
-        result
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        f()
-    }
-}
-
-#[inline]
-fn profile_tt_store<T>(f: impl FnOnce() -> T) -> T {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        if !search_profiling_enabled() {
-            return f();
-        }
-        let started = Instant::now();
-        let result = f();
-        add_elapsed(&TT_STORE_NANOS, started);
-        result
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        f()
-    }
-}
-
-#[inline]
 pub(crate) fn profile_sort_prune_truncate<T>(f: impl FnOnce() -> T) -> T {
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -691,12 +599,7 @@ fn coaching_context_bias(previous: CoachingState, next: CoachingState) -> f32 {
             SurgeState::Building => 0.20,
             SurgeState::Active => 0.35,
         };
-        let phase = match state.phase {
-            PhaseState::Opener => 0.10,
-            PhaseState::Midgame => 0.0,
-            PhaseState::Endgame => -0.10,
-        };
-        fatality + obligation + surge + phase
+        fatality + obligation + surge
     }
 
     score(next) - score(previous)
@@ -1301,13 +1204,7 @@ fn evaluate_child_state(
     proxy_fallback_used: bool,
 ) -> ChildEval {
     if ctx.config.nn_scoring == NnScoringMode::PolicyProxy {
-        let board_eval = evaluate_with_tt(
-            board,
-            ctx.weights,
-            ctx.remaining_depth,
-            ctx.zobrist_keys,
-            ctx.tt,
-        );
+        let board_eval = profile_eval_fallback(|| evaluate(board, ctx.weights));
         let score = assemble_composite(
             board_eval,
             fallback_attack,
@@ -1348,13 +1245,7 @@ fn evaluate_child_state(
         };
     }
 
-    let board_eval = evaluate_with_tt(
-        board,
-        ctx.weights,
-        ctx.remaining_depth,
-        ctx.zobrist_keys,
-        ctx.tt,
-    );
+    let board_eval = profile_eval_fallback(|| evaluate(board, ctx.weights));
     let score = assemble_composite(
         board_eval,
         fallback_attack,
@@ -1467,88 +1358,40 @@ pub(crate) fn gen_and_eval_root(
 
     for (action, policy_score) in actions.into_iter().zip(policy_scores) {
         let mut result_board = state.board.clone();
-        let lines_cleared = profile_do_move(|| result_board.do_move(&action.mv)) as u8;
-        let next_pending_garbage = state.pending_garbage.saturating_sub(lines_cleared);
+        let mechanics = profile_do_move(|| result_board.lock(&action.mv));
         let spawn_envelope_blocked = GameState::spawn_envelope_blocked(&result_board);
-        let (next_b2b, next_combo) =
-            GameState::next_chain_values(state.b2b, state.combo, &action.mv, lines_cleared);
-        let coaching = state.coaching.transition(TransitionObservation {
-            resulting_height: result_board.height(),
-            resulting_b2b: next_b2b,
-            resulting_combo: next_combo,
-            lines_cleared,
-            hold_used: action.hold_used,
-            pending_garbage: state.pending_garbage,
-            imminent_garbage: next_pending_garbage,
+        let transition = state.chain_state().advance_lock(
+            &action.mv,
+            &mechanics,
+            action.hold_used,
             spawn_envelope_blocked,
-        });
-        let next_pieces_into_bag = (state.pieces_into_bag + 1) % 7;
-        let next_bag_number = if state.pieces_into_bag == 6 {
-            state.bag_number.saturating_add(1)
-        } else {
-            state.bag_number
-        };
-        let next_lines_total = state.lines_total.saturating_add(lines_cleared as u32);
-
-        let b2b_broken_from = if state.b2b >= 4 && next_b2b == 0 && lines_cleared > 0 {
-            Some(state.b2b)
-        } else {
-            None
-        };
-        let clears_garbage = state.pending_garbage > 0 && lines_cleared > 0;
-        let is_perfect_clear = result_board.is_empty();
-        let attack_val = calculate_attack_full(&AttackContext {
-            lines: lines_cleared,
-            spin: action.mv.spin(),
-            b2b: next_b2b,
-            combo: next_combo as u8,
-            config: &ctx.config.attack_config,
-            is_perfect_clear,
-            b2b_broken_from,
-            clears_garbage,
-        });
-        let clear_event = if lines_cleared > 0 {
-            Some(ClearEvent {
-                clear_type: ClearType::from_lines(lines_cleared),
-                spin_type: action.mv.spin(),
-                lines_cleared,
-                attack_sent: attack_val,
-                b2b_before: state.b2b,
-                b2b_after: next_b2b,
-                combo_before: state.combo,
-                combo_after: next_combo,
-                is_surge_release: b2b_broken_from.is_some(),
-                is_garbage_clear: clears_garbage,
-                is_perfect_clear,
-                piece: action.mv.piece(),
-            })
-        } else {
-            None
-        };
-        let path_clear_events = match clear_event {
+            &ctx.config.attack_config,
+        );
+        let path_clear_events = match transition.clear_event {
             Some(event) => Arc::new(vec![event]),
             None => Arc::new(Vec::new()),
         };
-        let chain_val = shape_chain_value(next_combo as f32);
-        let combo_context = next_combo as f32 - state.combo as f32;
-        let context_mod =
-            shape_context_modifier(combo_context + coaching_context_bias(state.coaching, coaching));
+        let chain_val = shape_chain_value(transition.chain.combo as f32);
+        let combo_context = transition.chain.combo as f32 - state.combo as f32;
+        let context_mod = shape_context_modifier(
+            combo_context + coaching_context_bias(state.coaching, transition.chain.coaching),
+        );
         let child_eval = profile_child_eval(|| {
             evaluate_child_state(
                 &result_board,
                 action.next_current,
                 action.next_hold,
                 action.next_queue.as_slice(),
-                next_b2b,
-                next_combo,
-                next_pending_garbage,
-                next_lines_total,
-                next_bag_number,
-                next_pieces_into_bag,
-                coaching,
+                transition.chain.b2b,
+                transition.chain.combo,
+                transition.chain.pending_garbage,
+                transition.chain.lines_total,
+                transition.chain.bag_number,
+                transition.chain.pieces_into_bag,
+                transition.chain.coaching,
                 policy_score,
                 ctx,
-                attack_val,
+                transition.attack,
                 chain_val,
                 context_mod,
                 parent_value,
@@ -1562,21 +1405,21 @@ pub(crate) fn gen_and_eval_root(
             queue: action.next_queue,
             score: child_eval.score,
             hold: action.next_hold,
-            b2b: next_b2b,
-            combo: next_combo,
-            pending_garbage: next_pending_garbage,
-            lines_total: next_lines_total,
-            bag_number: next_bag_number,
-            pieces_into_bag: next_pieces_into_bag,
-            coaching,
+            b2b: transition.chain.b2b,
+            combo: transition.chain.combo,
+            pending_garbage: transition.chain.pending_garbage,
+            lines_total: transition.chain.lines_total,
+            bag_number: transition.chain.bag_number,
+            pieces_into_bag: transition.chain.pieces_into_bag,
+            coaching: transition.chain.coaching,
             root_move: action.mv,
             root_hold_used: action.hold_used,
             path: smallvec![action.mv],
             board_score: child_eval.board_score,
-            attack_score: attack_val,
+            attack_score: transition.attack,
             chain_score: chain_val,
             context_score: context_mod,
-            path_attack: attack_val,
+            path_attack: transition.attack,
             path_chain: chain_val,
             path_context: context_mod,
             policy_score: child_eval.policy_score,
@@ -1681,77 +1524,37 @@ fn materialize_node_children(
     let depth_factor = (parent.path.len() as f32 + 1.0)
         .sqrt()
         .min(MAX_DEPTH_FACTOR);
+    let parent_chain = ChainState {
+        b2b: parent.b2b,
+        combo: parent.combo,
+        pending_garbage: parent.pending_garbage,
+        lines_total: parent.lines_total,
+        bag_number: parent.bag_number,
+        pieces_into_bag: parent.pieces_into_bag,
+        coaching: parent.coaching,
+    };
 
     for (action, policy_score) in actions.into_iter().zip(policy_scores) {
         let mut result_board = parent.board.clone();
-        let lines_cleared = profile_do_move(|| result_board.do_move(&action.mv)) as u8;
-        let next_pending_garbage = parent.pending_garbage.saturating_sub(lines_cleared);
+        let mechanics = profile_do_move(|| result_board.lock(&action.mv));
         let spawn_envelope_blocked = GameState::spawn_envelope_blocked(&result_board);
-        let (next_b2b, next_combo) =
-            GameState::next_chain_values(parent.b2b, parent.combo, &action.mv, lines_cleared);
-        let coaching = parent.coaching.transition(TransitionObservation {
-            resulting_height: result_board.height(),
-            resulting_b2b: next_b2b,
-            resulting_combo: next_combo,
-            lines_cleared,
-            hold_used: action.hold_used,
-            pending_garbage: parent.pending_garbage,
-            imminent_garbage: next_pending_garbage,
+        let transition = parent_chain.advance_lock(
+            &action.mv,
+            &mechanics,
+            action.hold_used,
             spawn_envelope_blocked,
-        });
-        let next_pieces_into_bag = (parent.pieces_into_bag + 1) % 7;
-        let next_bag_number = if parent.pieces_into_bag == 6 {
-            parent.bag_number.saturating_add(1)
-        } else {
-            parent.bag_number
-        };
-        let next_lines_total = parent.lines_total.saturating_add(lines_cleared as u32);
-
-        let b2b_broken_from = if parent.b2b >= 4 && next_b2b == 0 && lines_cleared > 0 {
-            Some(parent.b2b)
-        } else {
-            None
-        };
-        let clears_garbage = parent.pending_garbage > 0 && lines_cleared > 0;
-        let is_perfect_clear = result_board.is_empty();
-        let attack_val = calculate_attack_full(&AttackContext {
-            lines: lines_cleared,
-            spin: action.mv.spin(),
-            b2b: next_b2b,
-            combo: next_combo as u8,
-            config: &ctx.config.attack_config,
-            is_perfect_clear,
-            b2b_broken_from,
-            clears_garbage,
-        });
-        let clear_event = if lines_cleared > 0 {
-            Some(ClearEvent {
-                clear_type: ClearType::from_lines(lines_cleared),
-                spin_type: action.mv.spin(),
-                lines_cleared,
-                attack_sent: attack_val,
-                b2b_before: parent.b2b,
-                b2b_after: next_b2b,
-                combo_before: parent.combo,
-                combo_after: next_combo,
-                is_surge_release: b2b_broken_from.is_some(),
-                is_garbage_clear: clears_garbage,
-                is_perfect_clear,
-                piece: action.mv.piece(),
-            })
-        } else {
-            None
-        };
+            &ctx.config.attack_config,
+        );
         let mut path_clear_events = Arc::clone(&parent.path_clear_events);
-        if let Some(event) = clear_event {
+        if let Some(event) = transition.clear_event {
             Arc::make_mut(&mut path_clear_events).push(event);
         }
-        let chain_val = shape_chain_value(next_combo as f32);
-        let combo_context = next_combo as f32 - parent.combo as f32;
+        let chain_val = shape_chain_value(transition.chain.combo as f32);
+        let combo_context = transition.chain.combo as f32 - parent.combo as f32;
         let context_mod = shape_context_modifier(
-            combo_context + coaching_context_bias(parent.coaching, coaching),
+            combo_context + coaching_context_bias(parent.coaching, transition.chain.coaching),
         );
-        let cum_attack = parent.path_attack + attack_val;
+        let cum_attack = parent.path_attack + transition.attack;
         let cum_chain = parent.path_chain + chain_val;
         let child_eval = profile_child_eval(|| {
             evaluate_child_state(
@@ -1759,13 +1562,13 @@ fn materialize_node_children(
                 action.next_current,
                 action.next_hold,
                 action.next_queue.as_slice(),
-                next_b2b,
-                next_combo,
-                next_pending_garbage,
-                next_lines_total,
-                next_bag_number,
-                next_pieces_into_bag,
-                coaching,
+                transition.chain.b2b,
+                transition.chain.combo,
+                transition.chain.pending_garbage,
+                transition.chain.lines_total,
+                transition.chain.bag_number,
+                transition.chain.pieces_into_bag,
+                transition.chain.coaching,
                 policy_score,
                 ctx,
                 cum_attack / depth_factor,
@@ -1785,18 +1588,18 @@ fn materialize_node_children(
             queue: action.next_queue,
             score: child_eval.score,
             hold: action.next_hold,
-            b2b: next_b2b,
-            combo: next_combo,
-            pending_garbage: next_pending_garbage,
-            lines_total: next_lines_total,
-            bag_number: next_bag_number,
-            pieces_into_bag: next_pieces_into_bag,
-            coaching,
+            b2b: transition.chain.b2b,
+            combo: transition.chain.combo,
+            pending_garbage: transition.chain.pending_garbage,
+            lines_total: transition.chain.lines_total,
+            bag_number: transition.chain.bag_number,
+            pieces_into_bag: transition.chain.pieces_into_bag,
+            coaching: transition.chain.coaching,
             root_move: parent.root_move,
             root_hold_used: parent.root_hold_used,
             path,
             board_score: child_eval.board_score,
-            attack_score: attack_val,
+            attack_score: transition.attack,
             chain_score: chain_val,
             context_score: context_mod,
             path_attack: cum_attack,
@@ -1809,31 +1612,6 @@ fn materialize_node_children(
             path_clear_events,
         });
     }
-}
-
-pub(crate) fn evaluate_with_tt(
-    board: &Board,
-    weights: &EvalWeights,
-    remaining_depth: usize,
-    zobrist_keys: &ZobristKeys,
-    tt: &mut Option<TranspositionTable>,
-) -> f32 {
-    if let Some(table) = tt.as_mut() {
-        let depth = remaining_depth.min(u8::MAX as usize) as u8;
-        let hash = profile_tt_hash(|| zobrist_keys.hash_board(board));
-
-        if let Some(score) = profile_tt_probe(|| table.probe(hash, depth)) {
-            record_cache_hit();
-            return score;
-        }
-        record_cache_miss();
-
-        let score = profile_eval_fallback(|| evaluate(board, weights));
-        profile_tt_store(|| table.store(hash, depth, score));
-        return score;
-    }
-
-    profile_eval_fallback(|| evaluate(board, weights))
 }
 
 #[cfg(test)]
@@ -1854,8 +1632,9 @@ mod tests {
     use crate::search_config::{
         NnBatchMode, NnScoringMode, SearchConfig, SearchExpansionContext, SearchNode,
     };
-    use crate::state::{ClearEvent, ClearType, CoachingState};
-    use crate::transposition::get_zobrist_keys;
+    use crate::state::{
+        ClearEvent, ClearType, CoachingState, FatalityState, ObligationState, SurgeState,
+    };
     use smallvec::{smallvec, SmallVec};
     use std::sync::Arc;
 
@@ -1888,15 +1667,11 @@ mod tests {
             ..SearchConfig::default()
         }));
         let weights = Box::leak(Box::new(EvalWeights::default()));
-        let zobrist = Box::leak(Box::new(get_zobrist_keys()));
-        let tt = Box::leak(Box::new(None));
         SearchExpansionContext {
             config,
             current_beam_width: beam_width,
             weights,
             remaining_depth: 0,
-            zobrist_keys: zobrist,
-            tt,
             policy_value: None,
             runtime_context: None,
             deadline: None,
@@ -2230,8 +2005,6 @@ clear:43
             ..SearchConfig::default()
         };
         let weights = EvalWeights::default();
-        let zobrist = get_zobrist_keys();
-        let mut tt = None;
         let runtime_context = PolicyValueRuntimeContext {
             opponent_board: Board::new(),
         };
@@ -2240,8 +2013,6 @@ clear:43
             current_beam_width: 64,
             weights: &weights,
             remaining_depth: 1,
-            zobrist_keys: zobrist,
-            tt: &mut tt,
             policy_value: Some(&runtime),
             runtime_context: Some(&runtime_context),
             deadline: None,
@@ -2286,8 +2057,6 @@ clear:43
             ..SearchConfig::default()
         };
         let weights = EvalWeights::default();
-        let zobrist = get_zobrist_keys();
-        let mut tt = None;
         let runtime_context = PolicyValueRuntimeContext {
             opponent_board: Board::new(),
         };
@@ -2296,8 +2065,6 @@ clear:43
             current_beam_width: 4,
             weights: &weights,
             remaining_depth: 0,
-            zobrist_keys: zobrist,
-            tt: &mut tt,
             policy_value: Some(&runtime),
             runtime_context: Some(&runtime_context),
             deadline: None,
@@ -2331,28 +2098,22 @@ clear:43
             policy_proxy_weight: 0.0,
             ..SearchConfig::default()
         };
-        let mut runtime_tt = None;
         let mut runtime_ctx = SearchExpansionContext {
             config: &zero_config,
             current_beam_width: 64,
             weights: &weights,
             remaining_depth: 0,
-            zobrist_keys: zobrist,
-            tt: &mut runtime_tt,
             policy_value: Some(&runtime),
             runtime_context: Some(&runtime_context),
             deadline: None,
         };
         let mut runtime_nodes = Vec::new();
         gen_and_eval_root(&state, &mut runtime_ctx, &mut runtime_nodes);
-        let mut heuristic_tt = None;
         let mut heuristic_ctx = SearchExpansionContext {
             config: &zero_config,
             current_beam_width: 64,
             weights: &weights,
             remaining_depth: 0,
-            zobrist_keys: zobrist,
-            tt: &mut heuristic_tt,
             policy_value: None,
             runtime_context: None,
             deadline: None,
@@ -2373,7 +2134,6 @@ clear:43
             return;
         };
         let weights = EvalWeights::default();
-        let zobrist = get_zobrist_keys();
         let runtime_context = PolicyValueRuntimeContext {
             opponent_board: Board::new(),
         };
@@ -2389,14 +2149,11 @@ clear:43
         let run = |state: &crate::state::GameState,
                    supplied_runtime: Option<&PolicyValueRuntime>,
                    supplied_context: Option<&PolicyValueRuntimeContext>| {
-            let mut tt = None;
             let mut ctx = SearchExpansionContext {
                 config: &config,
                 current_beam_width: 64,
                 weights: &weights,
                 remaining_depth: 0,
-                zobrist_keys: zobrist,
-                tt: &mut tt,
                 policy_value: supplied_runtime,
                 runtime_context: supplied_context,
                 deadline: None,
@@ -2442,8 +2199,6 @@ clear:43
             ..SearchConfig::default()
         };
         let weights = EvalWeights::default();
-        let zobrist = get_zobrist_keys();
-        let mut tt = None;
         let runtime_context = PolicyValueRuntimeContext {
             opponent_board: Board::new(),
         };
@@ -2460,8 +2215,6 @@ clear:43
             current_beam_width: 128,
             weights: &weights,
             remaining_depth: 0,
-            zobrist_keys: zobrist,
-            tt: &mut tt,
             policy_value: Some(&runtime),
             runtime_context: Some(&runtime_context),
             deadline: None,
@@ -2529,8 +2282,6 @@ clear:43
             ..SearchConfig::default()
         };
         let weights = EvalWeights::default();
-        let zobrist = get_zobrist_keys();
-        let mut tt = None;
         let runtime_context = PolicyValueRuntimeContext {
             opponent_board: Board::new(),
         };
@@ -2546,8 +2297,6 @@ clear:43
             current_beam_width: 64,
             weights: &weights,
             remaining_depth: 0,
-            zobrist_keys: zobrist,
-            tt: &mut tt,
             policy_value: Some(&runtime),
             runtime_context: Some(&runtime_context),
             deadline: None,
@@ -2619,8 +2368,6 @@ clear:43
             ..SearchConfig::default()
         };
         let weights = EvalWeights::default();
-        let zobrist = get_zobrist_keys();
-        let mut tt = None;
         let runtime_context = PolicyValueRuntimeContext {
             opponent_board: Board::new(),
         };
@@ -2652,8 +2399,6 @@ clear:43
             current_beam_width: 128,
             weights: &weights,
             remaining_depth: 0,
-            zobrist_keys: zobrist,
-            tt: &mut tt,
             policy_value: Some(&runtime),
             runtime_context: Some(&runtime_context),
             deadline: None,
@@ -2712,20 +2457,16 @@ clear:43
             ),
         ];
         let weights = EvalWeights::default();
-        let zobrist = get_zobrist_keys();
         let runtime_context = PolicyValueRuntimeContext {
             opponent_board: Board::new(),
         };
 
         let scalar_config = make_config(NnBatchMode::Scalar);
-        let mut scalar_tt = None;
         let mut scalar_ctx = SearchExpansionContext {
             config: &scalar_config,
             current_beam_width: 128,
             weights: &weights,
             remaining_depth: 0,
-            zobrist_keys: zobrist,
-            tt: &mut scalar_tt,
             policy_value: Some(&runtime),
             runtime_context: Some(&runtime_context),
             deadline: None,
@@ -2739,14 +2480,11 @@ clear:43
         let scalar_stats = search_expansion_stats();
 
         let level_config = make_config(NnBatchMode::Level);
-        let mut level_tt = None;
         let mut level_ctx = SearchExpansionContext {
             config: &level_config,
             current_beam_width: 128,
             weights: &weights,
             remaining_depth: 0,
-            zobrist_keys: zobrist,
-            tt: &mut level_tt,
             policy_value: Some(&runtime),
             runtime_context: Some(&runtime_context),
             deadline: None,
@@ -2836,15 +2574,26 @@ clear:43
         assert_eq!(stats.child_eval_nanos, 0);
         assert_eq!(stats.do_move_nanos, 0);
         assert_eq!(stats.eval_fallback_nanos, 0);
-        assert_eq!(stats.tt_hash_nanos, 0);
-        assert_eq!(stats.tt_probe_nanos, 0);
-        assert_eq!(stats.tt_store_nanos, 0);
         assert_eq!(stats.sort_prune_truncate_nanos, 0);
         assert_eq!(stats.candidate_copy_nanos, 0);
         assert_eq!(stats.root_score_aggregation_nanos, 0);
         assert_eq!(stats.unique_action_keys, 0);
         assert_eq!(stats.repeated_action_builds, 0);
-        assert_eq!(stats.cache_hits, 0);
-        assert_eq!(stats.cache_misses, 0);
+    }
+
+    #[test]
+    fn coaching_context_bias_uses_active_dimensions() {
+        let previous = CoachingState {
+            fatality: FatalityState::Safe,
+            obligation: ObligationState::None,
+            surge: SurgeState::Dormant,
+        };
+        let next = CoachingState {
+            fatality: FatalityState::Critical,
+            obligation: ObligationState::MustDownstack,
+            surge: SurgeState::Building,
+        };
+
+        assert!((super::coaching_context_bias(previous, next) + 0.4).abs() < 1e-6);
     }
 }

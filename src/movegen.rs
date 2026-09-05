@@ -1,7 +1,9 @@
 // movegen.rs -- 1:1 port of movegen.hpp + movegen.cpp
 // const generics mirror C++ template<Piece p1> specialization
 use crate::board::Board;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::default_ruleset::ACTIVE_RULES;
+#[cfg(not(target_arch = "wasm32"))]
 use crate::gen::{
     canonical_offset, canonical_r, canonical_size, group2, in_bounds, kick_180_index, kick_index,
     rotate, CollisionMap, CollisionMap16, Direction, KICKS, KICKS_180, SPAWN_COL,
@@ -11,6 +13,7 @@ use crate::header::*;
 pub use crate::move_buffer::{MoveBuffer, MoveList};
 
 // compile-time piece from const generic index; must match Piece enum discriminants
+#[cfg(not(target_arch = "wasm32"))]
 #[inline(always)]
 const fn piece_from_index(p: usize) -> Piece {
     match p {
@@ -25,6 +28,7 @@ const fn piece_from_index(p: usize) -> Piece {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Copy)]
 struct WaveTab {
     r1: u8,
@@ -34,6 +38,7 @@ struct WaveTab {
     dy: [u8; 6],
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl WaveTab {
     const EMPTY: WaveTab = WaveTab {
         r1: 0,
@@ -47,6 +52,7 @@ impl WaveTab {
 // Kick tables computed at compile time per piece; the wave loop unrolls with
 // literal offsets and constant shift amounts, matching the upstream C++
 // constexpr-template codegen.
+#[cfg(not(target_arch = "wasm32"))]
 const fn build_wave_tables(p_idx: usize) -> [[WaveTab; ROTATION_NB]; 3] {
     let p = piece_from_index(p_idx);
     let ki = kick_index(p, ACTIVE_RULES.srs_plus);
@@ -108,18 +114,22 @@ const fn build_wave_tables(p_idx: usize) -> [[WaveTab; ROTATION_NB]; 3] {
     tabs
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 struct WaveTables<const P: usize>;
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<const P: usize> WaveTables<P> {
     const TABS: [[WaveTab; ROTATION_NB]; 3] = build_wave_tables(P);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 static ZERO_SMAP: [[Bitboard; 5]; COL_NB] = [[0; 5]; COL_NB];
 
 // Hot path: rotation/canonical/offset/kick lookups are folded into WaveTab once
 // per generate call, so this loop touches only precomputed deltas and masks.
 #[inline(always)]
 #[allow(clippy::too_many_arguments)]
+#[cfg(not(target_arch = "wasm32"))]
 fn rotation_wave<const CHECK_SPIN: bool, const HAS_SMAP: bool>(
     w: &WaveTab,
     x: usize,
@@ -196,6 +206,7 @@ fn rotation_wave<const CHECK_SPIN: bool, const HAS_SMAP: bool>(
 }
 
 // const-generic generate_inner; compiler specializes per piece + spin mode
+#[cfg(not(target_arch = "wasm32"))]
 #[inline(never)]
 fn generate_inner<
     const P: usize,
@@ -505,6 +516,7 @@ fn generate_inner<
     count
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn immobile_bits(cm: &CollisionMap, x: usize, r: Rotation, reachable: Bitboard) -> Bitboard {
     let blocked_left = if x > 0 { cm.get(x - 1, r) } else { !0u64 };
     let blocked_right = if x < COL_NB - 1 {
@@ -521,6 +533,7 @@ fn immobile_bits(cm: &CollisionMap, x: usize, r: Rotation, reachable: Bitboard) 
 // 16-lane mirror of rotation_wave: same const kick table, 16-bit rotation
 // lanes per packed word. Write order is interchangeable with the legacy
 // per-direction order (all waves of a pop read the same `current_all`).
+#[cfg(not(target_arch = "wasm32"))]
 struct Wave16Ctx<'a> {
     current_all: Bitboard,
     to_search: &'a mut [Bitboard; COL_NB],
@@ -530,6 +543,7 @@ struct Wave16Ctx<'a> {
 }
 
 #[inline(always)]
+#[cfg(not(target_arch = "wasm32"))]
 fn wave16(w: &WaveTab, x: usize, src_bits: Bitboard, ctx: &mut Wave16Ctx<'_>) {
     let sd = (w.r1 as usize) * 16;
     let mut src = src_bits;
@@ -561,6 +575,7 @@ fn wave16(w: &WaveTab, x: usize, src_bits: Bitboard, ctx: &mut Wave16Ctx<'_>) {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn generate16<const P: usize, const EMIT: bool>(
     cols: &[Bitboard; COL_NB],
     moves: &mut MoveBuffer,
@@ -800,16 +815,6 @@ fn t_spin_masks16(cols: &[Bitboard; COL_NB], cm: &CollisionMap16) -> (SpinMasks1
     (masks, check_spin)
 }
 
-// Packed is used where its coverage is proven: I/S/Z/L/J up to height 24,
-// force-mode slow-seed boards fall back to the scalar engine.
-// Non-packed pieces (O, T) and heights above 24 always use the scalar engine.
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum MovegenConsumer {
-    General,
-    Search,
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MovegenOrder {
     ScalarCompatible,
@@ -820,7 +825,6 @@ pub enum MovegenOrder {
 pub struct MovegenRequest {
     pub piece: Piece,
     pub force: bool,
-    pub consumer: MovegenConsumer,
     pub order: MovegenOrder,
 }
 
@@ -829,18 +833,12 @@ impl MovegenRequest {
         Self {
             piece,
             force: false,
-            consumer: MovegenConsumer::General,
             order: MovegenOrder::ScalarCompatible,
         }
     }
 
     pub fn with_force(mut self, force: bool) -> Self {
         self.force = force;
-        self
-    }
-
-    pub fn with_consumer(mut self, consumer: MovegenConsumer) -> Self {
-        self.consumer = consumer;
         self
     }
 
@@ -867,23 +865,21 @@ pub fn generate_search(b: &Board, moves: &mut MoveBuffer, p: Piece) {
         moves,
         MovegenRequest::new(p)
             .with_force(true)
-            .with_consumer(MovegenConsumer::Search)
             .with_order(MovegenOrder::ScalarCompatible),
     );
 }
 
-/// Move count without materialization: runs the same dispatch and BFS as
-/// `generate`, but popcounts the emission masks instead of writing moves.
-/// Mirrors upstream cobra's popcount-leaf perft harness semantics.
+/// Scalar-oracle labeled move count without materialization.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn count_moves(b: &Board, p: Piece, force: bool) -> u32 {
     let mut scratch = MoveBuffer::new();
     generate_engine::<false>(b, &mut scratch, p, force)
 }
 
-/// Production move count via the smear count kernel. Matches
-/// `generate_placements` len exactly; the engine count is a diagnostic
-/// upper bound only (worklist phantoms + T spin duals inflate it).
-pub fn count_moves_dispatch(b: &Board, p: Piece, force: bool) -> u32 {
+/// Counts distinct placements via the smear kernel. Matches
+/// `generate_placements` len exactly; labeled `generate` may emit more
+/// moves for T spin duals.
+pub fn count_placements(b: &Board, p: Piece, force: bool) -> u32 {
     crate::smear_core::count_smear(b, p, force)
 }
 
@@ -894,7 +890,6 @@ pub fn generate(b: &Board, moves: &mut MoveBuffer, p: Piece, force: bool) {
         moves,
         MovegenRequest::new(p)
             .with_force(force)
-            .with_consumer(MovegenConsumer::General)
             .with_order(MovegenOrder::CanonicalRaw),
     );
 }
@@ -903,6 +898,7 @@ pub fn generate(b: &Board, moves: &mut MoveBuffer, p: Piece, force: bool) {
 /// physically reachable placements can differ from the geometric `generate`
 /// over-approximation. On a clean (no-hole) surface every geometric placement
 /// is reachable, so the reachability filter can be skipped.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn needs_reachability_filter(b: &Board) -> bool {
     for &col in &b.cols {
         if col == 0 {
@@ -917,13 +913,9 @@ pub fn needs_reachability_filter(b: &Board) -> bool {
     false
 }
 
-/// `generate`, but restricted to placements reachable by a legal move
-/// sequence from spawn. Order-preserving (consumers pairing this with
-/// `expand_all_gm` stay index-aligned). Skips the per-move pathfinder
-/// check on clean (no-hole) boards where `generate` is already exact.
-/// Checks physical reachability of the placement's occupied cells; the
-/// spin label is attack metadata, so every label stratum that can arrive
-/// counts (a bare tuck query must still say true).
+/// Checks physical reachability of a placement from spawn, including every
+/// spin-label stratum that can reach its occupied cells.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn move_reachable(b: &Board, m: &Move, force: bool) -> bool {
     let p = m.piece();
     let bare = Move::new(p, m.rotation(), m.x(), m.y(), false);
@@ -963,9 +955,9 @@ pub fn generate_playable(b: &Board, moves: &mut MoveBuffer, p: Piece, force: boo
     generate(b, moves, p, force);
 }
 
-/// Pure engine path (per-column collision-map BFS / generate16).
-/// `generate` dispatches here for O/T/force/tall boards; also exposed
-/// for benchmarks and the parity harness.
+/// Scalar parity-oracle path (per-column collision-map BFS / generate16).
+/// Retained for native benchmarks and the parity harness.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn generate_engine<const EMIT: bool>(
     b: &Board,
     moves: &mut MoveBuffer,
@@ -1176,7 +1168,7 @@ mod tests {
     }
 
     #[test]
-    fn count_moves_dispatch_matches_engine_on_seeded_boards() {
+    fn count_placements_matches_generate_placements_on_seeded_boards() {
         let mut seed = 0xC0DE_2026_0704_FACEu64;
         let mut xs = || {
             seed ^= seed << 13;
@@ -1217,7 +1209,7 @@ mod tests {
             let clean = !needs_reachability_filter(&b);
             for &p in &pieces {
                 for force in [false, true] {
-                    let dispatch = count_moves_dispatch(&b, p, force);
+                    let placements = count_placements(&b, p, force);
                     let mut mb = MoveBuffer::new();
                     generate(&b, &mut mb, p, force);
                     let distinct: std::collections::BTreeSet<(u8, i32, i32)> = mb
@@ -1225,25 +1217,25 @@ mod tests {
                         .map(|m| (m.rotation() as u8, m.x(), m.y()))
                         .collect();
                     assert_eq!(
-                        dispatch,
+                        placements,
                         distinct.len() as u32,
                         "case={case} piece={p:?} force={force} h={h} (distinct placements)"
                     );
                     let mut pb = MoveBuffer::new();
                     crate::smear_core::generate_placements(&b, &mut pb, p, force);
                     assert_eq!(
-                        dispatch,
+                        placements,
                         pb.len() as u32,
                         "case={case} piece={p:?} force={force} h={h} (placement emission)"
                     );
                     let engine = count_moves(&b, p, force);
                     assert!(
-                        engine >= dispatch,
-                        "case={case} piece={p:?} force={force} h={h} engine {engine} < strict {dispatch}"
+                        engine >= placements,
+                        "case={case} piece={p:?} force={force} h={h} engine {engine} < strict {placements}"
                     );
                     if clean && p != Piece::T {
                         assert_eq!(
-                            engine, dispatch,
+                            engine, placements,
                             "case={case} piece={p:?} force={force} h={h} (clean board)"
                         );
                     }
@@ -1644,7 +1636,6 @@ mod tests {
     fn raw_moves_for_request(board: &Board, piece: Piece, force: bool) -> Vec<u16> {
         let request = MovegenRequest::new(piece)
             .with_force(force)
-            .with_consumer(MovegenConsumer::Search)
             .with_order(MovegenOrder::ScalarCompatible);
         let mut moves = MoveBuffer::new();
         generate_with_request(board, &mut moves, request);
@@ -1665,7 +1656,6 @@ mod tests {
     ) -> Vec<u16> {
         let request = MovegenRequest::new(piece)
             .with_force(force)
-            .with_consumer(MovegenConsumer::General)
             .with_order(order);
         let mut moves = MoveBuffer::new();
         generate_with_request(board, &mut moves, request);
@@ -1675,7 +1665,6 @@ mod tests {
     fn raw_moves_for_scalar_request(board: &Board, piece: Piece, force: bool) -> Vec<u16> {
         let request = MovegenRequest::new(piece)
             .with_force(force)
-            .with_consumer(MovegenConsumer::Search)
             .with_order(MovegenOrder::ScalarCompatible);
         let mut moves = MoveBuffer::new();
         generate_engine::<true>(board, &mut moves, request.piece, request.force);
@@ -1889,6 +1878,16 @@ mod tests {
 
     #[test]
     fn reachable_locks_matches_move_reachable_on_holed_boards() {
+        reachable_locks_corpus(300, 10, 100);
+    }
+
+    #[test]
+    #[ignore = "full 3000-board corpus; the default tier runs a 300-board slice"]
+    fn reachable_locks_matches_move_reachable_full_corpus() {
+        reachable_locks_corpus(3000, 100, 1000);
+    }
+
+    fn reachable_locks_corpus(boards: u64, min_holed: u64, min_checks: u64) {
         fn xs(s: &mut u64) -> u64 {
             let mut x = *s;
             x ^= x << 13;
@@ -1909,7 +1908,7 @@ mod tests {
         ];
         let mut checks = 0u64;
         let mut holed = 0u64;
-        for _ in 0..3000 {
+        for _ in 0..boards {
             let h = 3 + (xs(&mut st) % 14) as usize;
             let mut rows = vec![0u16; h];
             for r in rows.iter_mut() {
@@ -1948,7 +1947,7 @@ mod tests {
             }
         }
         assert!(
-            holed > 100 && checks > 1000,
+            holed > min_holed && checks > min_checks,
             "insufficient coverage holed={holed} checks={checks}"
         );
     }
@@ -1968,6 +1967,16 @@ mod tests {
     // NoSpin I North (1,7) placement, is pinned closed).
     #[test]
     fn pathfinder_filter_is_identity_on_strict_generate() {
+        pathfinder_filter_identity_corpus(200, 12);
+    }
+
+    #[test]
+    #[ignore = "full 800-board corpus; the default tier runs a 200-board slice"]
+    fn pathfinder_filter_is_identity_full_corpus() {
+        pathfinder_filter_identity_corpus(800, 50);
+    }
+
+    fn pathfinder_filter_identity_corpus(boards: u64, min_holed: u64) {
         fn xs(s: &mut u64) -> u64 {
             let mut x = *s;
             x ^= x << 13;
@@ -1987,7 +1996,7 @@ mod tests {
             Piece::Z,
         ];
         let mut holed = 0u64;
-        for _ in 0..800 {
+        for _ in 0..boards {
             let h = 3 + (xs(&mut st) % 14) as usize;
             let mut rows = vec![0u16; h];
             for r in rows.iter_mut() {
@@ -2022,7 +2031,7 @@ mod tests {
                 }
             }
         }
-        assert!(holed > 50, "insufficient holed coverage {holed}");
+        assert!(holed > min_holed, "insufficient holed coverage {holed}");
     }
 
     /// Byte-identical to the legacy per-move pathfinder filter on real boards.

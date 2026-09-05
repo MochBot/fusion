@@ -6,7 +6,7 @@ use fusion_engine::eval::EvalWeights;
 use fusion_engine::header::Piece;
 use fusion_engine::header::COL_NB;
 use fusion_engine::policy_value_runtime::{PolicyValueRuntime, PolicyValueRuntimeContext};
-use fusion_engine::search::{find_best_move_with_scores_runtime, SearchConfig};
+use fusion_engine::search::{search, SearchConfig, SearchRequest, SearchRuntime};
 use fusion_engine::state::GameState;
 
 fn constrained_board() -> Board {
@@ -40,17 +40,24 @@ fn main() {
         opponent_board: Board::new(),
     };
     let state = GameState::new(constrained_board(), Piece::I, vec![Piece::O, Piece::L]);
-    let result = find_best_move_with_scores_runtime(
+    let config = SearchConfig {
+        depth: 1,
+        beam_width: 8,
+        extend_queue_7bag: false,
+        ..SearchConfig::default()
+    };
+    let weights = EvalWeights::default();
+    let result = search(
         &state,
-        &SearchConfig {
-            depth: 1,
-            beam_width: 8,
-            extend_queue_7bag: false,
-            ..SearchConfig::default()
+        &SearchRequest {
+            config: &config,
+            weights: &weights,
+            runtime: Some(SearchRuntime {
+                policy_value: &runtime,
+                context: &runtime_context,
+            }),
+            forced_root_move: None,
         },
-        &EvalWeights::default(),
-        &runtime,
-        &runtime_context,
     )
     .expect("native runtime search result");
     println!("search_completed=true");

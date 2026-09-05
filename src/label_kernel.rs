@@ -236,17 +236,10 @@ pub fn parse_context(buf: &[u8], k: usize) -> ContextRec {
     rec
 }
 
-pub fn piece_from_external(v: i8) -> Option<Piece> {
-    match v {
-        0 => Some(Piece::I),
-        1 => Some(Piece::O),
-        2 => Some(Piece::T),
-        3 => Some(Piece::S),
-        4 => Some(Piece::Z),
-        5 => Some(Piece::J),
-        6 => Some(Piece::L),
-        _ => None,
-    }
+fn piece_from_external_i8(v: i8) -> Option<Piece> {
+    u8::try_from(v)
+        .ok()
+        .and_then(crate::header::piece_from_external)
 }
 
 pub fn board_from_rows(rows: &[u16; 40]) -> Board {
@@ -351,7 +344,7 @@ pub fn nonempty_bits(rows: &[u16; 40]) -> u64 {
 }
 
 pub fn expand_raw(s: &FrameRec, piece: i8) -> Vec<ExpandRec> {
-    let Some(p) = piece_from_external(piece) else {
+    let Some(p) = piece_from_external_i8(piece) else {
         return Vec::new();
     };
     let board = board_from_rows(&s.rows);
@@ -483,7 +476,7 @@ pub fn beam_best(
         pending,
     }];
     for t in 0..pieces.len() {
-        let Some(piece) = piece_from_external(pieces[t]) else {
+        let Some(piece) = piece_from_external_i8(pieces[t]) else {
             break;
         };
         let mult = multipliers.get(t).copied().unwrap_or(1.0);
@@ -634,7 +627,7 @@ pub fn compact_gmask_rows(gmask: &[u16; 40], cleared: u64) -> [u16; 40] {
 
 /// Parity target: expand_all_gm enumeration in rankDumpRecallCandidates - one candidate per playable move, no dedup.
 pub fn expand_candidates(s: &FrameRec, piece: i8) -> Vec<Candidate> {
-    let Some(p) = piece_from_external(piece) else {
+    let Some(p) = piece_from_external_i8(piece) else {
         return Vec::new();
     };
     let board = board_from_rows(&s.rows);

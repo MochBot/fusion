@@ -5,8 +5,9 @@ use wasm_bindgen::prelude::*;
 
 use crate::board::Board;
 use crate::header::*;
+pub(crate) use crate::header::{piece_from_external, piece_to_external};
 use crate::state::{
-    ClearEvent, CoachingState, FatalityState, GameState, ObligationState, PhaseState, SurgeState,
+    ClearEvent, CoachingState, FatalityState, GameState, ObligationState, SurgeState,
 };
 
 // Serialization helpers (serde_json + js_sys to avoid serde-wasm-bindgen 0.6 bug)
@@ -22,36 +23,6 @@ pub(crate) fn from_js<T: serde::de::DeserializeOwned>(js_val: JsValue) -> Option
     js_sys::JSON::stringify(&js_val)
         .ok()
         .and_then(|s| serde_json::from_str(&s.as_string().unwrap_or_default()).ok())
-}
-
-// Piece conversion helpers
-// WASM API uses the external / Triangle piece-ID order: I=0,O=1,T=2,S=3,Z=4,J=5,L=6
-// (historically called "Fusion v1 ordering" - a numbering convention, NOT an engine version).
-// Internal (Cobra / Fusion V2) ordering:                 I=0,O=1,T=2,L=3,J=4,S=5,Z=6
-
-pub(crate) fn piece_from_external(v: u8) -> Option<Piece> {
-    match v {
-        0 => Some(Piece::I),
-        1 => Some(Piece::O),
-        2 => Some(Piece::T),
-        3 => Some(Piece::S),
-        4 => Some(Piece::Z),
-        5 => Some(Piece::J),
-        6 => Some(Piece::L),
-        _ => None,
-    }
-}
-
-pub(crate) fn piece_to_external(p: Piece) -> u8 {
-    match p {
-        Piece::I => 0,
-        Piece::O => 1,
-        Piece::T => 2,
-        Piece::S => 3,
-        Piece::Z => 4,
-        Piece::J => 5,
-        Piece::L => 6,
-    }
 }
 
 pub(crate) fn queue_from_external(queue: Option<&[u8]>) -> Vec<Piece> {
@@ -141,20 +112,11 @@ pub(crate) fn surge_to_contract(v: SurgeState) -> &'static str {
     }
 }
 
-pub(crate) fn phase_to_contract(v: PhaseState) -> &'static str {
-    match v {
-        PhaseState::Opener => "opener",
-        PhaseState::Midgame => "midgame",
-        PhaseState::Endgame => "endgame",
-    }
-}
-
 pub(crate) fn coaching_to_contract(v: CoachingState) -> MachineDiagnosticsJson {
     MachineDiagnosticsJson {
         fatality: fatality_to_contract(v.fatality).to_string(),
         obligation: obligation_to_contract(v.obligation).to_string(),
         surge: surge_to_contract(v.surge).to_string(),
-        phase: phase_to_contract(v.phase).to_string(),
     }
 }
 
@@ -176,7 +138,6 @@ pub(crate) struct MachineDiagnosticsJson {
     pub fatality: String,
     pub obligation: String,
     pub surge: String,
-    pub phase: String,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -422,5 +383,19 @@ mod tests {
         assert_eq!(state.pending_garbage, 4);
         assert_eq!(state.bag_number, 6);
         assert_eq!(state.pieces_into_bag, 5);
+    }
+
+    #[test]
+    fn coaching_diagnostics_expose_active_dimensions_only() {
+        let diagnostics = coaching_to_contract(CoachingState::default());
+
+        assert_eq!(
+            serde_json::to_value(diagnostics).expect("diagnostics must serialize"),
+            serde_json::json!({
+                "fatality": "safe",
+                "obligation": "none",
+                "surge": "dormant",
+            }),
+        );
     }
 }

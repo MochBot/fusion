@@ -8,7 +8,7 @@ use fusion_engine::{
     board::{Board, FULL_ROW},
     eval::{evaluate, EvalWeights},
     header::{Piece, SpinType, COL_NB},
-    search::{find_best_move_with_scores, SearchConfig},
+    search::{search, SearchConfig, SearchRequest},
     state::GameState,
 };
 
@@ -360,7 +360,15 @@ fn run_scenario(scenario: &Scenario, config: &SearchConfig) -> Option<ScenarioRe
     let w = weights();
     let eval_before = evaluate(&state.board, &w);
 
-    let result = find_best_move_with_scores(&state, config, &w)?;
+    let result = search(
+        &state,
+        &SearchRequest {
+            config,
+            weights: &w,
+            runtime: None,
+            forced_root_move: None,
+        },
+    )?;
 
     let best = &result.best;
     let _eval_after_best = evaluate(&state.board, &w); // approximation (pre-move board)

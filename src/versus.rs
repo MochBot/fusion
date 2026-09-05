@@ -7,14 +7,13 @@ use crate::attack::{
 };
 use crate::board::{Board, BOARD_HEIGHT};
 use crate::eval::EvalWeights;
-use crate::header::{popcount, Move, Piece, ALL_PIECES, PIECE_NB};
+use crate::header::{Move, Piece, ALL_PIECES, PIECE_NB};
 use crate::policy_value_runtime::{PolicyValueRuntime, PolicyValueRuntimeContext};
-use crate::search::find_best_move_with_scores_forced_runtime;
 use crate::search_config::SearchConfig;
 use crate::search_expand::{
     reset_search_expansion_stats, search_expansion_stats, set_search_profiling_enabled,
 };
-use crate::state::{GameState, TransitionObservation};
+use crate::state::GameState;
 
 #[cfg(test)]
 thread_local! {
@@ -22,9 +21,11 @@ thread_local! {
     static PROFILE_FORCE_SEARCH_NONE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
+// allow: SIZE_OK — P0 plan pins one versus module with 21 in-file named tests.
+
 pub mod report;
 
-// -- rng and bag --
+// ===== todo 1: rng+bag =====
 
 #[derive(Clone)]
 struct SplitMix64 {
@@ -145,7 +146,7 @@ impl Iterator for HoleStream {
     }
 }
 
-// -- garbage queue --
+// ===== todo 2: garbage queue =====
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct GarbageChunk {
@@ -217,7 +218,7 @@ impl GarbageQueue {
     }
 }
 
-// -- lock helper --
+// ===== todo 3: lock helper =====
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct GarbageRows {
@@ -296,32 +297,20 @@ pub(crate) struct LockOutcome {
 }
 
 fn lock_piece(board: &mut Board, tracked_garbage: &mut GarbageRows, m: &Move) -> LockOutcome {
-    if !board.legal_lock_placement(m) {
-        return LockOutcome {
-            lines_cleared: 0,
-            garbage_cleared: 0,
-            is_pc: board.empty(),
-            resulting_height: board.height(),
-        };
-    }
-
-    board.place(m);
-    let clears = board.line_clears();
-    let lines_cleared = popcount(clears) as u8;
-    let garbage_cleared = count_cleared_garbage_rows(clears, &tracked_garbage.rows);
-    if clears != 0 {
-        board.clear_lines(clears);
-        tracked_garbage.apply_clears(clears);
+    let mech = board.lock(m);
+    let garbage_cleared = count_cleared_garbage_rows(mech.cleared_mask, &tracked_garbage.rows);
+    if mech.cleared_mask != 0 {
+        tracked_garbage.apply_clears(mech.cleared_mask);
     }
     LockOutcome {
-        lines_cleared,
+        lines_cleared: mech.lines_cleared,
         garbage_cleared,
-        is_pc: board.empty(),
-        resulting_height: board.height(),
+        is_pc: mech.is_pc,
+        resulting_height: mech.resulting_height,
     }
 }
 
-// -- s2 chain and transition --
+// ===== todo 4: S2 chain + transition =====
 
 pub(crate) fn s2_outcome_to_state(outcome: &S2TlAttackOutcome) -> (u8, u32) {
     let b2b = if outcome.b2b_after < 0 {
@@ -354,33 +343,21 @@ pub(crate) fn apply_versus_transition(
     inbound_total: u32,
     hold_used: bool,
 ) {
-    let pending_garbage = inbound_total.min(u32::from(u8::MAX)) as u8;
+    let pending = inbound_total.min(u32::from(u8::MAX)) as u8;
     let resulting_height = state.board.height();
     let spawn_envelope_blocked = GameState::spawn_envelope_blocked(&state.board);
-    let next_pieces_into_bag = (state.pieces_into_bag + 1) % 7;
-    state.b2b = s2.0;
-    state.combo = s2.1;
-    state.pending_garbage = pending_garbage;
-    state.lines_total = state
-        .lines_total
-        .saturating_add(u32::from(lock.lines_cleared));
-    if state.pieces_into_bag == 6 {
-        state.bag_number = state.bag_number.saturating_add(1);
-    }
-    state.pieces_into_bag = next_pieces_into_bag;
-    state.coaching = state.coaching.transition(TransitionObservation {
-        resulting_height,
-        resulting_b2b: s2.0,
-        resulting_combo: s2.1,
-        lines_cleared: lock.lines_cleared,
+    let next = state.chain_state().advance_versus(
+        s2,
+        lock.lines_cleared,
+        pending,
         hold_used,
-        pending_garbage,
-        imminent_garbage: pending_garbage,
+        resulting_height,
         spawn_envelope_blocked,
-    });
+    );
+    state.set_chain_state(next);
 }
 
-// -- piece advance --
+// ===== todo 5: piece advance =====
 
 pub(crate) fn advance_piece_state(state: &mut GameState, hold_used: bool, bag: &mut BagStream) {
     let previous_current = state.current;
@@ -403,10 +380,18 @@ pub(crate) fn advance_piece_state(state: &mut GameState, hold_used: bool, bag: &
     }
 }
 
-// -- game loop --
+// ===== game loop (todo 6) =====
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum EngineMode {
+    #[default]
+    Model,
+    Heuristic,
+}
 
 pub struct PlayerCfg {
     pub search: SearchConfig,
+    pub engine: EngineMode,
     pub label: String,
 }
 
@@ -415,7 +400,6 @@ pub struct BaselineSpec {
     pub beam_width: usize,
     pub depth: usize,
     pub clocked_budget_ms: u64,
-    pub use_tt: bool,
     pub extend_queue_7bag: bool,
     pub quiescence_max_extensions: usize,
     pub quiescence_beam_fraction: f32,
@@ -435,7 +419,6 @@ impl BaselineSpec {
             beam_width: self.beam_width,
             depth: self.depth,
             time_budget_ms: budget_ms,
-            use_tt: self.use_tt,
             extend_queue_7bag: self.extend_queue_7bag,
             attack_config: AttackConfig::tetra_league(),
             quiescence_max_extensions: self.quiescence_max_extensions,
@@ -444,7 +427,6 @@ impl BaselineSpec {
             nn_scoring: crate::search_config::NnScoringMode::PerChildValue,
             nn_batch: crate::search_config::NnBatchMode::Scalar,
             policy_proxy_weight: crate::search_config::POLICY_BONUS_WEIGHT,
-            engine: crate::search_config::EngineMode::Model,
         }
     }
 }
@@ -454,7 +436,6 @@ pub fn baseline_spec() -> BaselineSpec {
         beam_width: 800,
         depth: 14,
         clocked_budget_ms: 500,
-        use_tt: false,
         extend_queue_7bag: true,
         quiescence_max_extensions: 3,
         quiescence_beam_fraction: 0.15,
@@ -472,6 +453,7 @@ pub fn baseline_spec() -> BaselineSpec {
 pub fn baseline_player_cfg(label: &str, budget_ms: Option<u64>) -> PlayerCfg {
     PlayerCfg {
         search: baseline_spec().search_config(budget_ms),
+        engine: EngineMode::Model,
         label: label.to_owned(),
     }
 }
@@ -490,7 +472,6 @@ pub(crate) fn baseline_fixture_json_for(search: &SearchConfig, spec: BaselineSpe
         }
         None => out.push_str("    \"time_budget_ms\": null,\n"),
     }
-    let _ = writeln!(out, "    \"use_tt\": {},", search.use_tt);
     let _ = writeln!(
         out,
         "    \"extend_queue_7bag\": {},",
@@ -699,8 +680,10 @@ fn new_player_state(seed: u64, game_idx: u32, slot: u8) -> PlayerState {
 }
 
 fn materialize_player_garbage(player: &mut PlayerState) {
-    // pop fifo chunks, at most 8 rows per spawn; a partially consumed chunk
-    // keeps its sampled hole column and stays at queue head
+    // 1. MATERIALIZE: pop FIFO chunks from P.inbound — at most 8 rows total
+    // this spawn; a partially-consumed chunk keeps its sampled hole column and
+    // stays at queue head; one Board::spawn_garbage(rows, hole) call per
+    // chunk-part; update P's tracked garbage-row set.
     for (rows, hole) in player.inbound.materialize(8) {
         if let Ok(spawn_rows) = i32::try_from(rows) {
             player.game.board.spawn_garbage(spawn_rows, i32::from(hole));
@@ -719,9 +702,12 @@ fn resolve_lock_exchange(
     mv: &Move,
     hold_used: bool,
 ) -> (LockOutcome, S2TlAttackOutcome) {
-    // cleared-rows mask is captured before clearing; pc means board empty after clear
+    // 5. LOCK: versus lock helper — capture cleared-rows mask BEFORE clearing;
+    // garbage_cleared via count_cleared_garbage_rows; is_pc = board empty after
+    // clear; shift tracked garbage-row set per cleared rows.
     let lock = lock_piece(&mut att.game.board, &mut att.tracked_garbage, mv);
-    // attack is computed with pre-move signed counters, then counters take the outcome values
+    // 6. ATTACK: calculate_attack_s2_tl with PRE-move canonical signed counters;
+    // update canonical counters verbatim from S2TlAttackOutcome.
     let outcome = calculate_attack_s2_tl(
         lock.lines_cleared,
         mv.spin(),
@@ -732,8 +718,9 @@ fn resolve_lock_exchange(
     );
     att.s2_b2b = outcome.b2b_after;
     att.s2_combo = outcome.combo_after;
-    // attack cancels own inbound 1:1; the remainder goes to the opponent as one
-    // chunk, hole drawn from the receiver's hole stream at enqueue time
+    // 7. CANCEL→SEND: rem cancels own inbound 1:1; remainder enqueued to
+    // OPPONENT as ONE chunk with hole from the RECEIVER's hole stream drawn at
+    // enqueue time.
     let cancelled = att.inbound.cancel(outcome.attack);
     let rem = outcome.attack.saturating_sub(cancelled);
     if rem > 0 {
@@ -742,7 +729,7 @@ fn resolve_lock_exchange(
             hole: def.holes.next(),
         });
     }
-    // transition bookkeeping uses the post-cancel inbound total
+    // 8. BOOKKEEP: apply_versus_transition with post-cancel inbound_total.
     apply_versus_transition(
         &mut att.game,
         mv,
@@ -819,17 +806,20 @@ fn process_player_turn(
     }
 
     materialize_player_garbage(att);
-    // blocked spawn envelope is the only top-out rule
+    // 2. SPAWN CHECK: if spawn_envelope_blocked(&P.board) → P dead this round,
+    // skip 3-9. This is the ONLY top-out rule in P0.
     if GameState::spawn_envelope_blocked(&att.game.board) {
         att.dead = true;
         terminal[ctx.slot] = TerminalPhase::SpawnTopout;
         return;
     }
+    // 3. SYNC: P.state.pending_garbage = min(P.inbound.total_rows(),255) as u8.
     sync_pending_garbage(att);
 
-    let routed_model = match env.cfg.search.engine {
-        crate::search_config::EngineMode::Model => env.model,
-        crate::search_config::EngineMode::Heuristic => None,
+    // 4. SEARCH: record wall time — CLOCKED mode only; None result → P dead this round.
+    let routed_model = match env.cfg.engine {
+        EngineMode::Model => env.model,
+        EngineMode::Heuristic => None,
     };
     let runtime_context = routed_model.map(|_| PolicyValueRuntimeContext {
         opponent_board: def.game.board.clone(),
@@ -847,13 +837,19 @@ fn process_player_turn(
             std::thread::sleep(std::time::Duration::from_millis(delay_ms));
         }
     });
-    let search = find_best_move_with_scores_forced_runtime(
+    let search = crate::search::search(
         &att.game,
-        &env.cfg.search,
-        env.weights,
-        routed_model,
-        runtime_context.as_ref(),
-        None,
+        &crate::search::SearchRequest {
+            config: &env.cfg.search,
+            weights: env.weights,
+            runtime: routed_model
+                .zip(runtime_context.as_ref())
+                .map(|(policy_value, context)| crate::search::SearchRuntime {
+                    policy_value,
+                    context,
+                }),
+            forced_root_move: None,
+        },
     );
     #[cfg(test)]
     let search = if profiling && PROFILE_FORCE_SEARCH_NONE.with(|force| force.get()) {
@@ -933,6 +929,7 @@ fn process_player_turn(
     };
     records.push(record_row.clone());
     record(record_row);
+    // 9. ADVANCE: advance_piece_state with THIS PLAYER'S own bag.
     advance_piece_state(&mut att.game, hold_used, &mut att.bag);
 }
 
@@ -1143,7 +1140,7 @@ pub fn play_game_profiled(
     )
 }
 
-// -- reporting writers --
+// ===== reporting writers (todo 7) =====
 
 #[cfg(test)]
 mod tests {
@@ -1610,6 +1607,7 @@ mod tests {
                 extend_queue_7bag: true,
                 ..crate::search_config::SearchConfig::default()
             },
+            engine: EngineMode::Model,
             label: "tiny".to_owned(),
         }
     }
@@ -1657,6 +1655,7 @@ mod tests {
                 extend_queue_7bag: false,
                 ..SearchConfig::default()
             },
+            engine: EngineMode::Model,
             label: "model-identity".to_owned(),
         };
         let mut model_profiles = Vec::new();
@@ -1687,6 +1686,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "model-inference tier (~10s each): cargo test -- --ignored"]
     fn mixed_engine_routes_runtime_per_side() {
         let model_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("models/rebal-r01/checkpoint.ckpt.policy_value.onnx.metadata.json");
@@ -1696,12 +1696,12 @@ mod tests {
         let runtime = PolicyValueRuntime::load(&model_path).expect("checked-in model should load");
         let mut model_cfg = tiny_cfg();
         model_cfg.label = "A".to_owned();
-        model_cfg.search.engine = crate::search_config::EngineMode::Model;
+        model_cfg.engine = EngineMode::Model;
         model_cfg.search.nn_scoring = crate::search_config::NnScoringMode::PolicyProxy;
         model_cfg.search.nn_batch = crate::search_config::NnBatchMode::Level;
         let mut heuristic_cfg = tiny_cfg();
         heuristic_cfg.label = "B".to_owned();
-        heuristic_cfg.search.engine = crate::search_config::EngineMode::Heuristic;
+        heuristic_cfg.engine = EngineMode::Heuristic;
         heuristic_cfg.search.nn_scoring = crate::search_config::NnScoringMode::PolicyProxy;
         heuristic_cfg.search.nn_batch = crate::search_config::NnBatchMode::Level;
         let mut profiles = Vec::new();

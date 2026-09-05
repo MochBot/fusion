@@ -88,8 +88,7 @@ impl GhostMove {
 // Mirrors the per-kick-wave labeling in generate() (movegen.rs do_rotate):
 // T uses the diagonal-corner 3-corner rule with the front-corner Full/Mini
 // split, the kick-index>=4 Full override, and the immobility fallback; other
-// spin-eligible pieces label immobile arrivals as Mini. Keeping one rule here
-// keeps pathfinder retention in agreement with movegen emission.
+// spin-eligible pieces label immobile arrivals as Mini.
 /// All four unit shifts collide (canonical frame).
 fn immobile_at(cm: &CollisionMap, x1: i32, y1: i32, rc: Rotation) -> bool {
     let x1u = x1 as usize;
@@ -113,8 +112,7 @@ fn classify_rotation_spin(
     kick_idx: usize,
 ) -> SpinType {
     let stuck = immobile_at(cm, x1, y1, rt_c);
-
-    if is_t {
+    let (has_three_corners, has_front_corners) = if is_t {
         let corner = |dx: i32, dy: i32| -> bool {
             let cx = x1 + dx;
             let cy = y1 + dy;
@@ -124,37 +122,25 @@ fn classify_rotation_spin(
         let ne = corner(1, 1);
         let se = corner(1, -1);
         let sw = corner(-1, -1);
-        let spins = (nw && ne && (se || sw)) || (se && sw && (nw || ne));
-        if !spins && !stuck {
-            return SpinType::NoSpin;
-        }
-        if kick_idx >= 4 {
-            return if spins {
-                SpinType::Full
-            } else {
-                SpinType::Mini
-            };
-        }
-        let front = match rt {
+        let has_three_corners = (nw && ne && (se || sw)) || (se && sw && (nw || ne));
+        let has_front_corners = match rt {
             Rotation::North => nw && ne,
             Rotation::East => ne && se,
             Rotation::South => se && sw,
             Rotation::West => sw && nw,
         };
-        if spins && front {
-            SpinType::Full
-        } else {
-            SpinType::Mini
-        }
-    } else if is_allspin {
-        if stuck {
-            SpinType::Mini
-        } else {
-            SpinType::NoSpin
-        }
+        (has_three_corners, has_front_corners)
     } else {
-        SpinType::NoSpin
-    }
+        (false, false)
+    };
+    rotation_spin_type(
+        is_t,
+        is_allspin,
+        has_three_corners,
+        has_front_corners,
+        stuck,
+        kick_idx,
+    )
 }
 
 // -- get_input --

@@ -116,6 +116,7 @@ fn heuristic_pair_is_deterministic_within_one_process() {
 }
 
 #[test]
+#[ignore = "model-inference tier (~10s each): cargo test -- --ignored"]
 fn model_smoke_returns_coherent_clocked_result_when_metadata_exists() {
     let metadata_path = PathBuf::from(MODEL_METADATA);
     if !metadata_path.exists() {

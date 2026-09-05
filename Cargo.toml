@@ -45,6 +45,7 @@ smallvec = "1.13"
 wasm-bindgen = { version = "=0.2.100", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
+sha2 = "0.10"
 js-sys = { version = "0.3", optional = true }
 console_error_panic_hook = { version = "0.1", optional = true }
 
@@ -53,6 +54,12 @@ tract-onnx = "0.21"
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = ['-O3', '-all']
+
+# Tests are dominated by seeded differential corpora (bit-twiddling loops
+# 10-30x slower unoptimized). opt-level 2 keeps debug_assert! (the parity
+# arbiters rely on it) while making the corpus tests run in seconds.
+[profile.test]
+opt-level = 2
 
 [profile.release]
 opt-level = 3

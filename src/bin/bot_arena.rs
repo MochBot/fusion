@@ -5,15 +5,17 @@ use std::process::ExitCode;
 
 use fusion_engine::eval::EvalWeights;
 use fusion_engine::policy_value_runtime::PolicyValueRuntime;
-use fusion_engine::search_config::{EngineMode, NnBatchMode, NnScoringMode};
+use fusion_engine::search_config::{NnBatchMode, NnScoringMode};
 use fusion_engine::versus::report::{
     write_experiment_manifest_json, write_manifest_json, write_profile_jsonl, write_replays_jsonl,
     write_summary_json, ManifestExperiment, ManifestInput, ManifestModel, RecordedGame, ReportMode,
 };
 use fusion_engine::versus::{
-    baseline_player_cfg, baseline_spec, play_game_profiled, play_game_with_stream_index, GameSeeds,
+    baseline_player_cfg, baseline_spec, play_game_profiled, play_game_with_stream_index,
+    EngineMode, GameSeeds,
 };
 
+// allow: SIZE_OK — P0 pins this binary as a single manual-arg-loop CLI with pairing, reports, and probes.
 
 const USAGE: &str = "bot_arena [--experiment] [--games N=200] [--base-seed S=20260709] [--budget-ms X|none=500] [--heuristic] [--profile] [--model PATH=models/rebal-r01/checkpoint.ckpt.policy_value.onnx.metadata.json] [--model-sha256 HEX] [--metadata-sha256 HEX] [--{a,b}-engine model|heuristic] [--{a,b}-nn-scoring per-child-value|policy-proxy] [--{a,b}-batch scalar|level] [--{a,b}-proxy-weight F] [--a-beam N=800] [--a-depth N=14] [--b-beam N=800] [--b-depth N=14] [--piece-cap N=1000] [--engine-rev STR=unknown] [--out DIR=target/bot_arena_out]";
 
@@ -122,7 +124,7 @@ fn run(raw_args: Vec<String>) -> Result<(), String> {
     let mut cfg_a = baseline_player_cfg("A", args.budget_ms);
     cfg_a.search.beam_width = args.a_beam;
     cfg_a.search.depth = args.a_depth;
-    cfg_a.search.engine = if args.experiment {
+    cfg_a.engine = if args.experiment {
         args.a_engine
     } else if args.heuristic {
         EngineMode::Heuristic
@@ -135,7 +137,7 @@ fn run(raw_args: Vec<String>) -> Result<(), String> {
     let mut cfg_b = baseline_player_cfg("B", args.budget_ms);
     cfg_b.search.beam_width = args.b_beam;
     cfg_b.search.depth = args.b_depth;
-    cfg_b.search.engine = if args.experiment {
+    cfg_b.engine = if args.experiment {
         args.b_engine
     } else if args.heuristic {
         EngineMode::Heuristic
@@ -279,8 +281,8 @@ fn run(raw_args: Vec<String>) -> Result<(), String> {
     };
     let manifest_input = ManifestInput {
         engine_rev: &args.engine_rev,
-        side_a: &cfg_a.search,
-        side_b: &cfg_b.search,
+        side_a: &cfg_a,
+        side_b: &cfg_b,
         model: manifest_model,
         ruleset: spec.ruleset,
         rng: spec.rng,

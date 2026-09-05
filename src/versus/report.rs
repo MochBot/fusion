@@ -3,10 +3,13 @@ use std::fs::File;
 use std::io::{self, Write};
 use std::path::Path;
 
-use crate::search_config::{EngineMode, NnBatchMode, NnScoringMode, SearchConfig};
+use crate::search_config::{NnBatchMode, NnScoringMode};
 
-use super::{GameEndReason, GameResult, LockProfile, MoveRecord, ProfileEnd};
+use super::{
+    EngineMode, GameEndReason, GameResult, LockProfile, MoveRecord, PlayerCfg, ProfileEnd,
+};
 
+// allow: SIZE_OK — P0 plan allowlists one report submodule file for manual fixed-order JSON schemas and tests.
 
 #[derive(Clone, Copy)]
 pub enum ReportMode {
@@ -46,8 +49,8 @@ pub enum ManifestModel<'a> {
 
 pub struct ManifestInput<'a> {
     pub engine_rev: &'a str,
-    pub side_a: &'a SearchConfig,
-    pub side_b: &'a SearchConfig,
+    pub side_a: &'a PlayerCfg,
+    pub side_b: &'a PlayerCfg,
     pub model: ManifestModel<'a>,
     pub ruleset: &'a str,
     pub rng: &'a str,
@@ -687,7 +690,8 @@ fn maximum(mode: ReportMode, values: &[f64]) -> Option<f64> {
         .flatten()
 }
 
-fn push_search_config(out: &mut String, key: &str, config: &SearchConfig, experiment: bool) {
+fn push_search_config(out: &mut String, key: &str, player: &PlayerCfg, experiment: bool) {
+    let config = &player.search;
     out.push_str(",\"");
     out.push_str(key);
     out.push_str("\":{");
@@ -702,8 +706,6 @@ fn push_search_config(out: &mut String, key: &str, config: &SearchConfig, experi
         }
         None => out.push_str("null"),
     }
-    out.push_str(",\"use_tt\":");
-    out.push_str(if config.use_tt { "true" } else { "false" });
     out.push_str(",\"extend_queue_7bag\":");
     out.push_str(if config.extend_queue_7bag {
         "true"
@@ -718,7 +720,7 @@ fn push_search_config(out: &mut String, key: &str, config: &SearchConfig, experi
     let _ = write!(out, "{}", config.policy_guided_expansion_cap);
     out.push_str(",\"attack_config\":\"tetra_league\"");
     if experiment {
-        push_str(out, "engine", engine_name(config.engine), false);
+        push_str(out, "engine", engine_name(player.engine), false);
         push_str(out, "nn_scoring", scoring_name(config.nn_scoring), false);
         push_str(out, "nn_batch", batch_name(config.nn_batch), false);
         out.push_str(",\"proxy_weight\":");
@@ -983,17 +985,17 @@ mod tests {
     fn experiment_manifest_records_sides_and_hash() {
         let spec = baseline_spec();
         let mut cfg_a = baseline_player_cfg("A", None);
-        cfg_a.search.engine = EngineMode::Model;
+        cfg_a.engine = EngineMode::Model;
         cfg_a.search.nn_scoring = NnScoringMode::PolicyProxy;
         cfg_a.search.nn_batch = NnBatchMode::Level;
         cfg_a.search.policy_proxy_weight = 0.25;
         let mut cfg_b = baseline_player_cfg("B", None);
-        cfg_b.search.engine = EngineMode::Heuristic;
+        cfg_b.engine = EngineMode::Heuristic;
         let cli_args = vec!["--experiment".to_owned()];
         let input = ManifestInput {
             engine_rev: "rev",
-            side_a: &cfg_a.search,
-            side_b: &cfg_b.search,
+            side_a: &cfg_a,
+            side_b: &cfg_b,
             model: ManifestModel::Loaded {
                 path: spec.model_path,
                 bytes: 17,
@@ -1047,8 +1049,8 @@ mod tests {
         let cli_args = vec!["bot_arena".to_owned()];
         let manifest = manifest_json(&ManifestInput {
             engine_rev: "rev-under-test",
-            side_a: &cfg_a.search,
-            side_b: &cfg_b.search,
+            side_a: &cfg_a,
+            side_b: &cfg_b,
             model: ManifestModel::Loaded {
                 path: spec.model_path,
                 bytes: 123,

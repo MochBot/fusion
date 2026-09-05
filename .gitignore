@@ -37,3 +37,5 @@ training/_supp_slice/
 training/supplement_full*
 training/training_data_triangle_v1_supplement*
 training/_archive/
+/evidence-out/
+/fixtures/openers/

@@ -5,18 +5,142 @@ use wasm_bindgen::prelude::*;
 
 use crate::analysis::{self, coaching_dp_multiplier};
 use crate::attack::{
-    self, calculate_attack_full, calculate_attack_s2_tl_with_multiplier,
-    count_cleared_garbage_rows, AttackConfig, AttackContext, ComboTable,
+    self, calculate_attack_s2_tl_with_multiplier, count_cleared_garbage_rows, AttackConfig,
+    ComboTable,
 };
 use crate::eval::{self, evaluate, EvalWeights};
 use crate::header::*;
 use crate::move_buffer::MoveBuffer;
 use crate::movegen::{generate, generate_playable};
+use crate::openers::{
+    analyze_opener_round, install_opener_runtime, AnalyzeError, CatalogError, OpenerInstallError,
+    OpenerInstallStats, OpenerRoundAnalysis, OpenerRoundInput, WitnessCatalogError,
+};
 use crate::pathfinder;
-use crate::search::{find_best_move, find_best_move_with_scores_forced, SearchConfig};
-use crate::state::{ClearType, GameState, TransitionObservation};
+use crate::search::{search, SearchConfig, SearchRequest};
+use crate::state::{ChainState, GameState, TransitionObservation};
 use crate::wasm_board::JsBoard;
 use crate::wasm_types::*;
+
+fn caught_to_js<T: serde::Serialize>(result: std::thread::Result<Option<T>>) -> JsValue {
+    match result {
+        Ok(Some(value)) => to_js(&value),
+        _ => JsValue::NULL,
+    }
+}
+
+fn move_result_json(m: &Move, score: f32, hold_used: bool) -> MoveResultJson {
+    MoveResultJson {
+        piece: piece_to_external(m.piece()),
+        rotation: m.rotation() as u8,
+        x: m.x() as i8,
+        y: m.y() as i8,
+        score,
+        spin: m.spin() as u8,
+        hold_used,
+    }
+}
+
+#[derive(serde::Serialize)]
+#[serde(tag = "status", rename_all = "lowercase")]
+enum OpenerWasmPayload<T> {
+    Ok { data: T },
+    Error { error: OpenerWasmError },
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OpenerWasmError {
+    code: &'static str,
+    message: String,
+}
+
+fn catalog_wasm_error(error: CatalogError) -> OpenerWasmError {
+    let code = match &error {
+        CatalogError::MalformedJson { .. } => "malformedCatalog",
+        CatalogError::UnsupportedFormatVersion { .. } => "unsupportedCatalogVersion",
+        CatalogError::InvalidCatalog { .. } => "invalidCatalog",
+    };
+    OpenerWasmError {
+        code,
+        message: error.to_string(),
+    }
+}
+
+fn witness_catalog_wasm_error(error: WitnessCatalogError) -> OpenerWasmError {
+    let code = match &error {
+        WitnessCatalogError::NoCatalog => "noCatalog",
+        WitnessCatalogError::MalformedJson { .. } => "malformedWitnessCatalog",
+        WitnessCatalogError::UnsupportedSchemaVersion { .. } => "unsupportedWitnessCatalogVersion",
+        WitnessCatalogError::CatalogIdentityMismatch => "catalogIdentityMismatch",
+        WitnessCatalogError::InvalidAsset { .. } => "invalidWitnessCatalog",
+    };
+    OpenerWasmError {
+        code,
+        message: error.to_string(),
+    }
+}
+
+fn analyze_wasm_error(error: AnalyzeError) -> OpenerWasmError {
+    let code = match error {
+        AnalyzeError::NoCatalog => "noCatalog",
+    };
+    OpenerWasmError {
+        code,
+        message: error.to_string(),
+    }
+}
+
+fn invalid_opener_round_input() -> OpenerWasmError {
+    OpenerWasmError {
+        code: "invalidInput",
+        message: "invalid opener round input".to_owned(),
+    }
+}
+
+fn opener_install_payload(
+    catalog_json_bytes: &[u8],
+    witness_json_bytes: Option<&[u8]>,
+) -> OpenerWasmPayload<OpenerInstallStats> {
+    match install_opener_runtime(catalog_json_bytes, witness_json_bytes) {
+        Ok(stats) => OpenerWasmPayload::Ok { data: stats },
+        Err(OpenerInstallError::Catalog(error)) => OpenerWasmPayload::Error {
+            error: catalog_wasm_error(error),
+        },
+        Err(OpenerInstallError::Witnesses(error)) => OpenerWasmPayload::Error {
+            error: witness_catalog_wasm_error(error),
+        },
+    }
+}
+
+fn opener_round_payload_bytes(input_json_bytes: &[u8]) -> Vec<u8> {
+    let payload = opener_round_payload(serde_json::from_slice(input_json_bytes).ok());
+    serde_json::to_vec(&payload).unwrap_or_else(|error| {
+        let fallback = OpenerWasmPayload::<()>::Error {
+            error: OpenerWasmError {
+                code: "serializationFailed",
+                message: format!("opener round analysis could not be serialized: {error}"),
+            },
+        };
+        serde_json::to_vec(&fallback).unwrap_or_default()
+    })
+}
+
+fn opener_round_payload(
+    parsed_input: Option<OpenerRoundInput>,
+) -> OpenerWasmPayload<OpenerRoundAnalysis> {
+    match parsed_input {
+        Some(input) => match analyze_opener_round(&input) {
+            Ok(analysis) => OpenerWasmPayload::Ok { data: analysis },
+            Err(error) => OpenerWasmPayload::Error {
+                error: analyze_wasm_error(error),
+            },
+        },
+        None => OpenerWasmPayload::Error {
+            error: invalid_opener_round_input(),
+        },
+    }
+}
 
 // init
 
@@ -188,8 +312,15 @@ pub fn evaluate_position_wasm(
         }
 
         // Run search with forced root move to keep the player's actual move in beam
-        let full_result =
-            find_best_move_with_scores_forced(&state, &config, &weights, actual_move_for_search);
+        let full_result = search(
+            &state,
+            &SearchRequest {
+                config: &config,
+                weights: &weights,
+                runtime: None,
+                forced_root_move: actual_move_for_search,
+            },
+        );
 
         let (
             best_eval,
@@ -214,15 +345,7 @@ pub fn evaluate_position_wasm(
                 let best_search_score = sr.score;
 
                 let move_json = if !post_board_clone.obstructed_move(&sr.best_move) {
-                    MoveResultJson {
-                        piece: piece_to_external(sr.best_move.piece()),
-                        rotation: sr.best_move.rotation() as u8,
-                        x: sr.best_move.x() as i8,
-                        y: sr.best_move.y() as i8,
-                        score: best_search_score,
-                        spin: sr.best_move.spin() as u8,
-                        hold_used: sr.hold_used,
-                    }
+                    move_result_json(&sr.best_move, best_search_score, sr.hold_used)
                 } else {
                     MoveResultJson {
                         piece: piece_to_external(sr.best_move.piece()),
@@ -280,15 +403,7 @@ pub fn evaluate_position_wasm(
                 let recommended_path: Vec<MoveResultJson> = sr
                     .pv
                     .iter()
-                    .map(|m| MoveResultJson {
-                        piece: piece_to_external(m.piece()),
-                        rotation: m.rotation() as u8,
-                        x: m.x() as i8,
-                        y: m.y() as i8,
-                        score: 0.0,
-                        spin: m.spin() as u8,
-                        hold_used: false,
-                    })
+                    .map(|m| move_result_json(m, 0.0, false))
                     .collect();
 
                 (
@@ -373,22 +488,12 @@ pub fn evaluate_position_wasm(
             insight_tags,
             recommended_path,
             best_path_attack_summary,
-            actual_move: actual_move_for_search.map(|m| MoveResultJson {
-                piece: piece_to_external(m.piece()),
-                rotation: m.rotation() as u8,
-                x: m.x() as i8,
-                y: m.y() as i8,
-                score: actual_search_score_opt.unwrap_or(0.0),
-                spin: m.spin() as u8,
-                hold_used: false,
-            }),
+            actual_move: actual_move_for_search
+                .map(|m| move_result_json(&m, actual_search_score_opt.unwrap_or(0.0), false)),
         })
     }));
 
-    match result {
-        Ok(Some(json)) => to_js(&json),
-        _ => JsValue::NULL,
-    }
+    caught_to_js(result)
 }
 
 #[wasm_bindgen(js_name = "find_best_move")]
@@ -408,22 +513,24 @@ pub fn find_best_move_wasm(board: &JsBoard, piece: u8, frame: JsValue) -> JsValu
         config.attack_config.pc_garbage = 0;
         config.attack_config.pc_b2b = 0;
 
-        let search_result = find_best_move(&state, &config, &weights)?;
-        Some(MoveResultJson {
-            piece: piece_to_external(search_result.best_move.piece()),
-            rotation: search_result.best_move.rotation() as u8,
-            x: search_result.best_move.x() as i8,
-            y: search_result.best_move.y() as i8,
-            score: search_result.score,
-            spin: search_result.best_move.spin() as u8,
-            hold_used: search_result.hold_used,
-        })
+        let search_result = search(
+            &state,
+            &SearchRequest {
+                config: &config,
+                weights: &weights,
+                runtime: None,
+                forced_root_move: None,
+            },
+        )
+        .map(|full| full.best)?;
+        Some(move_result_json(
+            &search_result.best_move,
+            search_result.score,
+            search_result.hold_used,
+        ))
     }));
 
-    match result {
-        Ok(Some(json)) => to_js(&json),
-        _ => JsValue::NULL,
-    }
+    caught_to_js(result)
 }
 
 #[wasm_bindgen(js_name = "get_all_moves")]
@@ -439,18 +546,26 @@ pub fn get_all_moves_wasm(board: &JsBoard, piece: u8) -> JsValue {
     let all_moves: Vec<MoveResultJson> = moves
         .as_slice()
         .iter()
-        .map(|m| MoveResultJson {
-            piece: piece_to_external(m.piece()),
-            rotation: m.rotation() as u8,
-            x: m.x() as i8,
-            y: m.y() as i8,
-            score: 0.0,
-            spin: m.spin() as u8,
-            hold_used: false,
-        })
+        .map(|m| move_result_json(m, 0.0, false))
         .collect();
 
     to_js(&all_moves)
+}
+
+#[wasm_bindgen(js_name = "install_opener_runtime")]
+pub fn install_opener_runtime_wasm(
+    catalog_json_bytes: &[u8],
+    witness_json_bytes: Option<Box<[u8]>>,
+) -> JsValue {
+    to_js(&opener_install_payload(
+        catalog_json_bytes,
+        witness_json_bytes.as_deref(),
+    ))
+}
+
+#[wasm_bindgen(js_name = "analyze_opener_round")]
+pub fn analyze_opener_round_wasm(input_json_bytes: &[u8]) -> Vec<u8> {
+    opener_round_payload_bytes(input_json_bytes)
 }
 
 // Batched expansion for offline search/labeling. Returns a fixed 46-float
@@ -458,17 +573,6 @@ pub fn get_all_moves_wasm(board: &JsBoard, piece: u8) -> JsValue {
 // pending_after, spin, rows[0..40]].
 
 pub(crate) const EXPAND_REC: usize = 46;
-
-#[wasm_bindgen(js_name = "expand_all")]
-pub fn expand_all_wasm(
-    board: &JsBoard,
-    piece: u8,
-    b2b: i32,
-    combo: i32,
-    pending_garbage: u32,
-) -> Vec<f64> {
-    expand_all_with_garbage_rows(board, piece, b2b, combo, pending_garbage, None, 1.0)
-}
 
 #[wasm_bindgen(js_name = "expand_all_gm")]
 pub fn expand_all_gm_wasm(
@@ -882,6 +986,10 @@ pub fn beam_best_gm_line_wasm(
     hole_w: f64,
     height_w: f64,
     height_grace: f64,
+    terminal_lambda: f64,
+    dig_combo_w: f64,
+    dig_attack_w: f64,
+    spin_w: f64,
 ) -> JsValue {
     if start_board.len() < 40 || start_gmask.len() < 40 {
         return to_js(&empty_line_result());
@@ -899,6 +1007,10 @@ pub fn beam_best_gm_line_wasm(
         hole_w,
         height_w,
         height_grace,
+        terminal_lambda,
+        dig_combo_w,
+        dig_attack_w,
+        spin_w,
     ) {
         Some(best) => to_js(&LineResultJson {
             attack: best.attack,
@@ -1002,6 +1114,292 @@ pub fn beam_best_gm_gi_wasm(
 mod tests {
     use super::*;
     use crate::coach_beam::{compact_gm_bits, nonempty_row_mask, FxFullSet, FxRowSet};
+    use serde_json::{json, Value};
+
+    fn payload_json<T: serde::Serialize>(payload: T) -> Value {
+        match serde_json::to_value(payload) {
+            Ok(value) => value,
+            Err(error) => panic!("opener payload should serialize: {error}"),
+        }
+    }
+
+    #[test]
+    fn opener_payloads_preserve_tagged_source_contract() {
+        let _scope = crate::openers::isolated_catalog_test();
+        let no_catalog = payload_json(opener_round_payload(Some(OpenerRoundInput::default())));
+        assert_eq!(
+            no_catalog,
+            json!({
+                "status": "error",
+                "error": {
+                    "code": "noCatalog",
+                    "message": "no opener catalog is installed"
+                }
+            })
+        );
+
+        let invalid_round = payload_json(opener_round_payload(None));
+        assert_eq!(
+            invalid_round,
+            json!({
+                "status": "error",
+                "error": {
+                    "code": "invalidInput",
+                    "message": "invalid opener round input"
+                }
+            })
+        );
+
+        let malformed_witnesses = payload_json(opener_install_payload(
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/fixtures/openers/catalog-mini.json"
+            )),
+            Some(b"{}"),
+        ));
+        assert_eq!(malformed_witnesses["status"], json!("error"));
+        assert_eq!(
+            malformed_witnesses["error"]["code"],
+            json!("malformedWitnessCatalog")
+        );
+
+        let malformed = payload_json(opener_install_payload(b"!", None));
+        assert_eq!(
+            malformed,
+            json!({
+                "status": "error",
+                "error": {
+                    "code": "malformedCatalog",
+                    "message": "malformed opener catalog JSON: expected value at line 1 column 1"
+                }
+            })
+        );
+
+        let unsupported = payload_json(opener_install_payload(
+            br#"{"formatVersion": 1, "openers": []}"#,
+            None,
+        ));
+        assert_eq!(
+            unsupported,
+            json!({
+                "status": "error",
+                "error": {
+                    "code": "unsupportedCatalogVersion",
+                    "message": "unsupported opener catalog format version: 1"
+                }
+            })
+        );
+
+        let invalid_catalog = payload_json(opener_install_payload(
+            br#"{
+                "formatVersion": 2,
+                "openers": [{
+                    "id": "",
+                    "aliases": {"en": "Invalid"},
+                    "shapeKey": "invalid",
+                    "tree": []
+                }]
+            }"#,
+            None,
+        ));
+        assert_eq!(
+            invalid_catalog,
+            json!({
+                "status": "error",
+                "error": {
+                    "code": "invalidCatalog",
+                    "message": "invalid opener catalog: opener IDs must be unique and non-empty"
+                }
+            })
+        );
+
+        let valid_catalog = payload_json(opener_install_payload(
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/fixtures/openers/catalog-mini.json"
+            )),
+            None,
+        ));
+        assert_eq!(
+            valid_catalog,
+            json!({
+                "status": "ok",
+                "data": {
+                    "catalog": {
+                        "openerCount": 5,
+                        "treeNodeCount": 257,
+                        "searchShapeCount": 28
+                    },
+                    "witnesses": null
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn opener_round_payload_serializes_nullable_recognition() {
+        #[derive(serde::Deserialize)]
+        struct ParityFixture {
+            rounds: Vec<ParityRound>,
+        }
+
+        #[derive(serde::Deserialize)]
+        struct ParityRound {
+            input: ParityInput,
+        }
+
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct ParityInput {
+            observations: Vec<Option<crate::openers::OpenerObservation>>,
+        }
+
+        let _scope = crate::openers::isolated_catalog_test();
+        let valid_catalog = opener_install_payload(
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/fixtures/openers/catalog-mini.json"
+            )),
+            None,
+        );
+        assert!(matches!(valid_catalog, OpenerWasmPayload::Ok { .. }));
+
+        let empty_round = payload_json(opener_round_payload(Some(OpenerRoundInput::default())));
+        assert_eq!(
+            empty_round,
+            json!({
+                "status": "ok",
+                "data": {
+                    "assessments": [],
+                    "policies": [],
+                    "cataloguedBoardMatch": null,
+                    "report": null,
+                    "guide": null,
+                    "recognition": null
+                }
+            })
+        );
+
+        let fixture: ParityFixture = match serde_json::from_slice(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixtures/openers/parity-rounds.json"
+        ))) {
+            Ok(fixture) => fixture,
+            Err(error) => panic!("parity fixture should parse: {error}"),
+        };
+        let input = match fixture.rounds.into_iter().next() {
+            Some(round) => OpenerRoundInput {
+                observations: round.input.observations,
+                ..OpenerRoundInput::default()
+            },
+            None => panic!("parity fixture should contain a round"),
+        };
+        let recognized_round = payload_json(opener_round_payload(Some(input)));
+        let recognition = &recognized_round["data"]["recognition"];
+        assert_eq!(recognition["retrievalBounded"], json!(true));
+        assert_eq!(recognition["shortlistSize"], json!(3));
+        assert_eq!(recognition["truncated"], json!(false));
+        assert_eq!(recognition["shortlistCompileSkipped"], json!(0));
+        assert_eq!(
+            recognition["hypotheses"][0],
+            json!({
+                "record": "crowbar-v2",
+                "totalCost": 10,
+                "margin": 7,
+                "ops": {
+                    "synchronous": 2,
+                    "substitutions": 0,
+                    "cellMismatches": 0,
+                    "observedOnly": 2,
+                    "modelOnly": 0
+                },
+                "identityFrozen": false
+            })
+        );
+
+        assert!(serde_json::from_str::<OpenerRoundInput>(r#"{"unexpected":true}"#).is_err());
+    }
+
+    #[test]
+    fn opener_install_payload_reports_companion_rejections() {
+        let _scope = crate::openers::isolated_catalog_test();
+        let catalog = include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixtures/openers/catalog-mini.json"
+        ));
+
+        let mismatched = payload_json(opener_install_payload(
+            catalog,
+            Some(
+                br#"{"schemaVersion":1,"openerAssetSha256":"0","enrichmentSha256":"0","provenanceSha256":"0","summary":{"witnesses":0,"runtimeTargets":0,"viewerOnly":0},"witnesses":[]}"#,
+            ),
+        ));
+        assert_eq!(
+            mismatched,
+            json!({
+                "status": "error",
+                "error": {
+                    "code": "catalogIdentityMismatch",
+                    "message": "search-shape witnesses do not identify the installed opener catalog"
+                }
+            })
+        );
+
+        let malformed = payload_json(opener_install_payload(b"!", Some(b"{}")));
+        assert_eq!(malformed["error"]["code"], json!("malformedCatalog"));
+    }
+
+    #[test]
+    fn opener_round_bytes_seam_matches_the_structured_seam() {
+        let _scope = crate::openers::isolated_catalog_test();
+        let catalog = include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixtures/openers/catalog-mini.json"
+        ));
+        assert!(matches!(
+            opener_install_payload(catalog, None),
+            OpenerWasmPayload::Ok { .. }
+        ));
+
+        let invalid: Value = match serde_json::from_slice(&opener_round_payload_bytes(b"!")) {
+            Ok(value) => value,
+            Err(error) => panic!("bytes payload should be JSON: {error}"),
+        };
+        assert_eq!(invalid["status"], json!("error"));
+        assert_eq!(invalid["error"]["code"], json!("invalidInput"));
+
+        let fixture: Value = match serde_json::from_slice(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixtures/openers/parity-rounds.json"
+        ))) {
+            Ok(value) => value,
+            Err(error) => panic!("parity fixture should parse: {error}"),
+        };
+        let input = json!({ "observations": fixture["rounds"][0]["input"]["observations"] });
+        let input_bytes = match serde_json::to_vec(&input) {
+            Ok(bytes) => bytes,
+            Err(error) => panic!("round input should serialize: {error}"),
+        };
+        let via_bytes = opener_round_payload_bytes(&input_bytes);
+        let parsed: OpenerRoundInput = match serde_json::from_slice(&input_bytes) {
+            Ok(parsed) => parsed,
+            Err(error) => panic!("round input should parse: {error}"),
+        };
+        let via_structured = match serde_json::to_vec(&opener_round_payload(Some(parsed))) {
+            Ok(bytes) => bytes,
+            Err(error) => panic!("structured payload should serialize: {error}"),
+        };
+        assert_eq!(via_bytes, via_structured);
+        let decoded: Value = match serde_json::from_slice(&via_bytes) {
+            Ok(value) => value,
+            Err(error) => panic!("bytes payload should be JSON: {error}"),
+        };
+        assert_eq!(decoded["status"], json!("ok"));
+        assert_eq!(
+            decoded["data"]["recognition"]["hypotheses"][0]["record"],
+            json!("crowbar-v2")
+        );
+    }
 
     #[test]
     fn test_expand_all_gm_counts_cleared_garbage_rows() {
@@ -1647,8 +2045,7 @@ pub fn simulate_coaching_sequence_wasm(board: &JsBoard, path: JsValue) -> JsValu
         let moves: Vec<MoveResultJson> = from_js(path)?;
         let mut current_board = board.inner.clone();
         let mut steps: Vec<CoachingStepJson> = Vec::new();
-        let mut sim_b2b: u8 = 0;
-        let mut sim_combo: u32 = 0;
+        let mut sim_chain = ChainState::default();
         let attack_config = AttackConfig::tetra_league();
 
         for move_json in &moves {
@@ -1684,64 +2081,16 @@ pub fn simulate_coaching_sequence_wasm(board: &JsBoard, path: JsValue) -> JsValu
             let inputs = pathfinder::get_input(&current_board, &m, false, false);
             let input_data: Vec<u8> = inputs.data.iter().map(|i| *i as u8).collect();
 
-            let mut clearing_rows: Vec<u8> = Vec::new();
-            for row_idx in 0..40u8 {
-                let row = current_board.rows[row_idx as usize];
-                if row == 0x03FF {
-                    clearing_rows.push(row_idx);
-                }
-            }
+            let mech = current_board.lock(&m);
+            let clearing_rows: Vec<u8> = (0..40u8)
+                .filter(|y| mech.cleared_mask & (1u64 << y) != 0)
+                .collect();
 
-            let lines_cleared = current_board.do_move(&m) as u8;
-
-            let clear_event = if lines_cleared > 0 {
-                let spin_type = m.spin();
-                let b2b_eligible = spin_type != SpinType::NoSpin || lines_cleared >= 4;
-                let next_b2b = if b2b_eligible {
-                    sim_b2b.saturating_add(1)
-                } else {
-                    0
-                };
-                let next_combo = sim_combo + 1;
-                let b2b_broken_from = if sim_b2b >= 4 && next_b2b == 0 {
-                    Some(sim_b2b)
-                } else {
-                    None
-                };
-
-                let attack_val = calculate_attack_full(&AttackContext {
-                    lines: lines_cleared,
-                    spin: spin_type,
-                    b2b: sim_b2b,
-                    combo: sim_combo.min(255) as u8,
-                    config: &attack_config,
-                    is_perfect_clear: false,
-                    b2b_broken_from,
-                    clears_garbage: false,
-                });
-
-                let event = ClearEventJson {
-                    clear_type: ClearType::from_lines(lines_cleared).to_str().to_string(),
-                    spin_type: spin_type_to_str(spin_type).to_string(),
-                    lines_cleared,
-                    attack_sent: attack_val,
-                    b2b_before: sim_b2b,
-                    b2b_after: next_b2b,
-                    combo_before: sim_combo,
-                    combo_after: next_combo,
-                    is_surge_release: b2b_broken_from.is_some(),
-                    is_garbage_clear: false,
-                    is_perfect_clear: current_board.is_empty(),
-                    piece: move_json.piece,
-                };
-
-                sim_b2b = next_b2b;
-                sim_combo = next_combo;
-                Some(event)
-            } else {
-                sim_combo = 0;
-                None
-            };
+            let transition = sim_chain.advance_lock(&m, &mech, false, false, &attack_config);
+            let clear_event = transition
+                .clear_event
+                .map(|event| clear_event_to_json(&event));
+            sim_chain = transition.chain;
 
             steps.push(CoachingStepJson {
                 piece: move_json.piece,
@@ -1775,10 +2124,7 @@ pub fn simulate_coaching_sequence_wasm(board: &JsBoard, path: JsValue) -> JsValu
         Some(steps)
     }));
 
-    match result {
-        Ok(Some(steps)) => to_js(&steps),
-        _ => JsValue::NULL,
-    }
+    caught_to_js(result)
 }
 
 // Feature extraction for browser-side neural inference (onnxruntime-web)
@@ -1824,15 +2170,7 @@ pub fn extract_features_for_position_wasm(
 
         let move_descs: Vec<MoveResultJson> = candidates
             .iter()
-            .map(|m| MoveResultJson {
-                piece: piece_to_external(m.piece()),
-                rotation: m.rotation() as u8,
-                x: m.x() as i8,
-                y: m.y() as i8,
-                score: 0.0,
-                spin: m.spin() as u8,
-                hold_used: false,
-            })
+            .map(|m| move_result_json(m, 0.0, false))
             .collect();
 
         Some(FeatureExtractionResultJson {
@@ -1844,8 +2182,5 @@ pub fn extract_features_for_position_wasm(
         })
     }));
 
-    match result {
-        Ok(Some(json)) => to_js(&json),
-        _ => JsValue::NULL,
-    }
+    caught_to_js(result)
 }

@@ -12,6 +12,7 @@ pub(crate) fn in_bounds(p: Piece, r: Rotation, x: i32) -> bool {
     is_ok_x(pc[0].x as i32 + x) && is_ok_x(pc[1].x as i32 + x) && is_ok_x(pc[2].x as i32 + x)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) const fn group2(p: Piece) -> bool {
     matches!(p, Piece::I | Piece::S | Piece::Z)
 }
@@ -48,6 +49,33 @@ pub(crate) const fn canonical_offset(p: Piece, r: Rotation) -> Coordinates {
             _ => Coordinates::new(0, 0),
         },
         _ => Coordinates::new(0, 0),
+    }
+}
+
+pub(crate) const fn rotation_spin_type(
+    is_t: bool,
+    is_allspin: bool,
+    has_three_corners: bool,
+    has_front_corners: bool,
+    is_immobile: bool,
+    kick_index: usize,
+) -> SpinType {
+    if is_t {
+        if has_three_corners {
+            if has_front_corners || kick_index >= 4 {
+                SpinType::Full
+            } else {
+                SpinType::Mini
+            }
+        } else if is_immobile {
+            SpinType::Mini
+        } else {
+            SpinType::NoSpin
+        }
+    } else if is_allspin && is_immobile {
+        SpinType::Mini
+    } else {
+        SpinType::NoSpin
     }
 }
 
@@ -257,10 +285,12 @@ impl CollisionMap {
 // -- CollisionMap16 --
 // C++ CollisionMap16<p>: board[COL_NB] single Bitboard per column
 // 4 rotations packed in 16-bit lanes: bits [0..15]=North, [16..31]=East, etc.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) struct CollisionMap16 {
     pub(crate) board: [Bitboard; COL_NB],
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl CollisionMap16 {
     pub(crate) fn new(cols: &[Bitboard; COL_NB], p: Piece) -> Self {
         let mut board = [0u64; COL_NB];
@@ -373,5 +403,41 @@ mod tests {
         assert_eq!(KICKS[0][0][0].len(), 5);
         assert_eq!(KICKS_180[0].len(), ROTATION_NB);
         assert_eq!(KICKS_180[0][0].len(), 6);
+    }
+
+    #[test]
+    fn rotation_spin_type_classifies_t_and_allspin_arrivals() {
+        assert_eq!(
+            rotation_spin_type(true, false, true, true, false, 0),
+            SpinType::Full
+        );
+        assert_eq!(
+            rotation_spin_type(true, false, true, false, false, 0),
+            SpinType::Mini
+        );
+        assert_eq!(
+            rotation_spin_type(true, false, true, false, false, 4),
+            SpinType::Full
+        );
+        assert_eq!(
+            rotation_spin_type(true, false, false, false, true, 0),
+            SpinType::Mini
+        );
+        assert_eq!(
+            rotation_spin_type(true, false, false, false, false, 0),
+            SpinType::NoSpin
+        );
+        assert_eq!(
+            rotation_spin_type(false, true, false, false, true, 0),
+            SpinType::Mini
+        );
+        assert_eq!(
+            rotation_spin_type(false, true, false, false, false, 0),
+            SpinType::NoSpin
+        );
+        assert_eq!(
+            rotation_spin_type(false, false, false, false, true, 0),
+            SpinType::NoSpin
+        );
     }
 }

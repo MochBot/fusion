@@ -51,6 +51,7 @@ STATE_PATH = META_DIR / "state.json"
 LIVE_LOG_PATH = LOG_DIR / "collector.log"
 
 ROTATING_PORTS = list(range(9000, 9011))
+RETRYABLE_REPLAY_STATUSES = {0, 429, 500, 502, 503, 504}
 
 TETRA_LB = "https://ch.tetr.io/api/users/by/league"
 TETRA_RECORDS = "https://ch.tetr.io/api/users/{user}/records/league/recent"
@@ -63,6 +64,7 @@ DOWNLOAD_CONCURRENCY_MAX = 32
 DOWNLOAD_CONCURRENCY_BACKOFF = 18
 DOWNLOAD_TIMEOUT_S = 25.0
 MAX_DOWNLOAD_ATTEMPTS = 3
+MAX_REPLAY_BODY_BYTES = 32 * 1024 * 1024
 ERROR_WINDOW_SIZE = 100
 ERROR_500_RATE_TRIGGER = 0.02
 COOLDOWN_AFTER_500_BURST_S = 60.0
@@ -85,10 +87,10 @@ def log(msg: str) -> None:
 def proxy_config(env: Mapping[str, str] = os.environ) -> tuple[str, str, str]:
     user = (env.get("GEONODE_PROXY_USER") or "").strip()
     password = (env.get("GEONODE_PROXY_PASS") or "").strip()
-    base = (env.get("GEONODE_PROXY_BASE") or "").strip()
-    if not user or not password or not base:
-        raise RuntimeError("GEONODE_PROXY_USER, GEONODE_PROXY_PASS, and GEONODE_PROXY_BASE must be set")
-    return user, password, base.split(":", 1)[0]
+    host_raw = (env.get("GEONODE_PROXY_HOST") or "").strip()
+    if not user or not password or not host_raw:
+        raise RuntimeError("GEONODE_PROXY_USER, GEONODE_PROXY_PASS, and GEONODE_PROXY_HOST must be set")
+    return user, password, host_raw.split(":", 1)[0]
 
 
 def proxy_url(port: int, country: str | None = None) -> str:
@@ -99,17 +101,36 @@ def proxy_url(port: int, country: str | None = None) -> str:
     return f"http://{user}:{proxy_pass}@{proxy_host}:{port}"
 
 
-def make_client(port: int, session_id: str | None = None) -> httpx.AsyncClient:
+def client_headers(session_id: str | None = None) -> dict[str, str]:
     headers = {"User-Agent": UA, "Accept": "application/json,application/octet-stream"}
     if session_id:
         headers["X-Session-ID"] = session_id
+    return headers
+
+
+def make_direct_client(session_id: str | None = None) -> httpx.AsyncClient:
     return httpx.AsyncClient(
-        proxy=proxy_url(port),
-        headers=headers,
+        headers=client_headers(session_id),
         limits=httpx.Limits(max_keepalive_connections=80, max_connections=160),
         timeout=httpx.Timeout(DOWNLOAD_TIMEOUT_S, connect=10.0),
         follow_redirects=True,
+        trust_env=False,
     )
+
+
+def make_geonode_client(port: int, session_id: str | None = None) -> httpx.AsyncClient:
+    return httpx.AsyncClient(
+        proxy=proxy_url(port),
+        headers=client_headers(session_id),
+        limits=httpx.Limits(max_keepalive_connections=80, max_connections=160),
+        timeout=httpx.Timeout(DOWNLOAD_TIMEOUT_S, connect=10.0),
+        follow_redirects=True,
+        trust_env=False,
+    )
+
+
+def make_client(port: int, session_id: str | None = None) -> httpx.AsyncClient:
+    return make_geonode_client(port, session_id)
 
 
 def save_state(state: State) -> None:
@@ -163,7 +184,7 @@ async def phase_a_discover_players(state: State) -> list[Json]:
     page = 0
     rank_counts: Counter[str] = Counter()
 
-    async with make_client(ROTATING_PORTS[0], session_id=LB_SESSION) as c:
+    async with make_direct_client(session_id=LB_SESSION) as c:
         while True:
             url = f"{TETRA_LB}?limit=100"
             if cursor:
@@ -268,15 +289,14 @@ async def phase_b_discover_replays(state: State, players: list[Json]) -> dict[st
         return already_have
 
     log(f"Phase B: fetching paginated records for {len(needed)} new players")
-    clients = {p: make_client(p) for p in ROTATING_PORTS}
+    client = make_direct_client()
     sem = asyncio.Semaphore(RECORDS_FETCH_CONCURRENCY)
     completed = 0
     progress_lock = asyncio.Lock()
 
     async def one(idx: int, player: Json) -> tuple[str, list[Json]]:
         async with sem:
-            port = ROTATING_PORTS[idx % len(ROTATING_PORTS)]
-            recs = await fetch_player_records_all_pages(clients[port], player["_id"])
+            recs = await fetch_player_records_all_pages(client, player["_id"])
             return player["_id"], recs
 
     out_handle = open(REPLAY_INDEX_PATH, "a")
@@ -307,8 +327,7 @@ async def phase_b_discover_replays(state: State, players: list[Json]) -> dict[st
                         f"~{sum(len(v) for v in already_have.values())} replay refs total")
     finally:
         out_handle.close()
-        for c in clients.values():
-            await c.aclose()
+        await client.aclose()
 
     state["phase_b_complete"] = True
     state["total_replay_refs"] = sum(len(v) for v in already_have.values())
@@ -330,13 +349,12 @@ async def phase_c_attach_ranks(state: State, players: list[Json]) -> dict[str, J
         return existing
 
     log(f"Phase C: fetching /summaries/league for {len(needed)} new players")
-    clients = {p: make_client(p) for p in ROTATING_PORTS}
+    client = make_direct_client()
     sem = asyncio.Semaphore(META_FETCH_CONCURRENCY)
 
     async def one(idx: int, p: Json) -> tuple[str, Json | None]:
         async with sem:
-            port = ROTATING_PORTS[idx % len(ROTATING_PORTS)]
-            data = await fetch_json(clients[port], TETRA_SUMMARY.format(user=p["_id"]))
+            data = await fetch_json(client, TETRA_SUMMARY.format(user=p["_id"]))
             if data and data.get("success"):
                 d = data.get("data", {})
                 return p["_id"], {
@@ -367,8 +385,7 @@ async def phase_c_attach_ranks(state: State, players: list[Json]) -> dict[str, J
                 RANKS_PATH.write_text(json.dumps(existing, indent=2))
                 log(f"  Phase C: {completed}/{len(needed)} attached")
     finally:
-        for c in clients.values():
-            await c.aclose()
+        await client.aclose()
         RANKS_PATH.write_text(json.dumps(existing, indent=2))
 
     state["phase_c_complete"] = True
@@ -384,6 +401,7 @@ class DLOutcome:
     bytes_in: int
     err: str | None
     port: int
+    via: str
     attempts: int
     elapsed_ms: float
 
@@ -440,6 +458,28 @@ class CollectorStats:
                 f"err500_rate={self.error_500_rate()*100:.1f}% eta={eta_str}")
 
 
+class AdaptiveAdmission:
+    def __init__(self, limit: int) -> None:
+        self._condition = asyncio.Condition()
+        self._active = 0
+        self._limit = limit
+
+    async def acquire(self) -> None:
+        async with self._condition:
+            await self._condition.wait_for(lambda: self._active < self._limit)
+            self._active += 1
+
+    async def release(self) -> None:
+        async with self._condition:
+            self._active -= 1
+            self._condition.notify_all()
+
+    async def set_limit(self, limit: int) -> None:
+        async with self._condition:
+            self._limit = limit
+            self._condition.notify_all()
+
+
 def output_path_for(replayid: str, rank: str, player_id: str) -> Path:
     rank_dir = ROOT / rank
     player_dir = rank_dir / player_id
@@ -447,50 +487,101 @@ def output_path_for(replayid: str, rank: str, player_id: str) -> Path:
     return player_dir / f"{replayid}.ttrm"
 
 
+def is_valid_replay_body(body: bytes | bytearray) -> bool:
+    """A league replay body must be JSON with a non-empty replay.rounds structure."""
+    try:
+        payload = json.loads(body)
+    except (ValueError, UnicodeDecodeError):
+        return False
+    if not isinstance(payload, dict) or payload.get("gamemode") != "league":
+        return False
+    replay = payload.get("replay")
+    if not isinstance(replay, dict):
+        return False
+    rounds = replay.get("rounds")
+    if not isinstance(rounds, list) or not rounds:
+        return False
+    for round_data in rounds:
+        if not isinstance(round_data, list) or len(round_data) < 2:
+            return False
+        for side in round_data[:2]:
+            if not isinstance(side, dict):
+                return False
+            side_replay = side.get("replay")
+            if not isinstance(side_replay, dict):
+                return False
+            events = side_replay.get("events")
+            if not isinstance(events, list) or not events:
+                return False
+    return True
+
+
 async def download_one(
     sem: asyncio.Semaphore,
-    clients: dict[int, httpx.AsyncClient],
+    direct_client: httpx.AsyncClient,
+    geonode_clients: dict[int, httpx.AsyncClient] | None,
     replayid: str,
     out_path: Path,
+    geonode_stop_file: Path | None = None,
 ) -> DLOutcome:
     async with sem:
-        ports = list(clients.keys())
+        ports = list((geonode_clients or {}).keys())
         random.shuffle(ports)
         t0 = time.perf_counter()
         last_err: str | None = None
         last_status: int | None = None
         attempts = 0
         port = 0
-        for attempt in range(MAX_DOWNLOAD_ATTEMPTS):
-            port = ports[attempt % len(ports)]
-            client = clients[port]
+        via = "direct"
+        transports: list[tuple[int, str, httpx.AsyncClient]] = [(0, "direct", direct_client)]
+        transports.extend(
+            (proxy_port, f"geonode:{proxy_port}", geonode_clients[proxy_port])
+            for proxy_port in ports
+            if geonode_clients is not None
+        )
+        for attempt, (port, via, client) in enumerate(transports[: 1 + MAX_DOWNLOAD_ATTEMPTS]):
+            if port and geonode_stop_file is not None and geonode_stop_file.exists():
+                return DLOutcome(
+                    replayid, last_status, 0, "geonode_budget_stop", 0,
+                    "geonode:stopped", attempts, (time.perf_counter() - t0) * 1000,
+                )
             url = INOUE_REPLAY.format(replayid=replayid)
             attempts += 1
             try:
                 async with client.stream("GET", url, timeout=DOWNLOAD_TIMEOUT_S) as r:
-                    last_status = r.status_code
                     if r.status_code != 200:
-                        body = await r.aread()
+                        last_status = r.status_code
+                        body = bytearray()
+                        async for chunk in r.aiter_bytes():
+                            body.extend(chunk)
+                            if len(body) >= 4096:
+                                break
                         last_err = f"http_{r.status_code}"
-                        if r.status_code in (429, 500, 502, 503, 504):
+                        if r.status_code in RETRYABLE_REPLAY_STATUSES:
                             await asyncio.sleep(2.0 * (attempt + 1))
                             continue
-                        return DLOutcome(replayid, r.status_code, len(body), last_err, port, attempts, (time.perf_counter()-t0)*1000)
+                        return DLOutcome(replayid, r.status_code, len(body), last_err, port, via, attempts, (time.perf_counter()-t0)*1000)
                     buf = bytearray()
                     async for chunk in r.aiter_bytes():
                         buf.extend(chunk)
-                    if not buf or buf[:1] != b"{":
+                        if len(buf) > MAX_REPLAY_BODY_BYTES:
+                            return DLOutcome(
+                                replayid, 413, len(buf), "response_too_large", port, via,
+                                attempts, (time.perf_counter() - t0) * 1000,
+                            )
+                    if not buf or not is_valid_replay_body(buf):
                         last_err = "invalid_body"
+                        last_status = None
                         await asyncio.sleep(0.5)
                         continue
                     tmp = out_path.with_suffix(out_path.suffix + ".tmp")
                     tmp.write_bytes(buf)
                     tmp.replace(out_path)
-                    return DLOutcome(replayid, 200, len(buf), None, port, attempts, (time.perf_counter()-t0)*1000)
-            except asyncio.TimeoutError:
+                    return DLOutcome(replayid, 200, len(buf), None, port, via, attempts, (time.perf_counter()-t0)*1000)
+            except TimeoutError:
                 last_err = "timeout"
                 await asyncio.sleep(1.0)
-            except (httpx.TimeoutException,) as e:
+            except httpx.TimeoutException as e:
                 last_err = f"httpx_{type(e).__name__}"
                 await asyncio.sleep(1.0)
             except (httpx.ConnectError, httpx.RemoteProtocolError) as e:
@@ -499,11 +590,16 @@ async def download_one(
             except Exception as e:
                 last_err = f"{type(e).__name__}"
                 break
-        return DLOutcome(replayid, last_status, 0, last_err or "exhausted", port, attempts, (time.perf_counter()-t0)*1000)
+        return DLOutcome(replayid, last_status, 0, last_err or "exhausted", port, via, attempts, (time.perf_counter()-t0)*1000)
 
 
 async def phase_d_download(
-    state: State, replay_index: dict[str, list[Json]], rank_map: dict[str, Json]
+    state: State,
+    replay_index: dict[str, list[Json]],
+    rank_map: dict[str, Json],
+    *,
+    use_geonode: bool = False,
+    geonode_stop_file: Path | None = None,
 ) -> None:
     log("Phase D: build unique download queue")
 
@@ -548,7 +644,12 @@ async def phase_d_download(
 
     random.shuffle(queue)
 
-    clients = {p: make_client(p) for p in ROTATING_PORTS}
+    direct_client = make_direct_client()
+    geonode_clients = (
+        {port: make_geonode_client(port) for port in ROTATING_PORTS}
+        if use_geonode
+        else None
+    )
     stats = CollectorStats()
     log_handle = open(DOWNLOAD_LOG_PATH, "a")
 
@@ -557,16 +658,18 @@ async def phase_d_download(
     save_state(state)
 
     async def worker_pool() -> None:
-        sem = asyncio.Semaphore(stats.current_concurrency)
-        active = sem
+        admission = AdaptiveAdmission(stats.current_concurrency)
 
         async def gated(rid: str, rank: str, pid: str) -> DLOutcome:
-            nonlocal active
-            if active is not sem:
-                pass
-            async with sem:
+            await admission.acquire()
+            try:
                 out = output_path_for(rid, rank, pid)
-                return await download_one(asyncio.Semaphore(1), clients, rid, out)
+                return await download_one(
+                    asyncio.Semaphore(1), direct_client, geonode_clients, rid, out,
+                    geonode_stop_file,
+                )
+            finally:
+                await admission.release()
 
         tasks = []
         for rid, rank, pid in queue:
@@ -582,6 +685,7 @@ async def phase_d_download(
                 "bytes": outcome.bytes_in,
                 "err": outcome.err,
                 "port": outcome.port,
+                "via": outcome.via,
                 "attempts": outcome.attempts,
                 "ms": round(outcome.elapsed_ms, 1),
                 "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -608,16 +712,20 @@ async def phase_d_download(
                 stats.cooldowns_triggered += 1
                 await asyncio.sleep(COOLDOWN_AFTER_500_BURST_S)
                 stats.current_concurrency = DOWNLOAD_CONCURRENCY_BACKOFF
+                await admission.set_limit(DOWNLOAD_CONCURRENCY_BACKOFF)
             elif stats.healthy_streak() >= RECOVERY_HEALTHY_REQUESTS and stats.current_concurrency < DOWNLOAD_CONCURRENCY_MAX:
                 log(f"  + healthy streak {stats.healthy_streak()} - raise concurrency to {DOWNLOAD_CONCURRENCY_MAX}")
                 stats.current_concurrency = DOWNLOAD_CONCURRENCY_MAX
+                await admission.set_limit(DOWNLOAD_CONCURRENCY_MAX)
 
     try:
         await worker_pool()
     finally:
         log_handle.close()
-        for c in clients.values():
-            await c.aclose()
+        await direct_client.aclose()
+        if geonode_clients is not None:
+            for client in geonode_clients.values():
+                await client.aclose()
 
     state["phase_d_complete"] = True
     state["phase_d_final"] = {
@@ -648,7 +756,7 @@ async def main() -> None:
 
     state = load_state()
     log("=" * 70)
-    log(f"Mosaic X/X+ league replay collector starting")
+    log("Mosaic X/X+ league replay collector starting")
     log(f"Output root: {ROOT}")
     log(f"Resuming from state: phase_a={state.get('phase_a_complete', False)} "
         f"phase_b={state.get('phase_b_complete', False)} "

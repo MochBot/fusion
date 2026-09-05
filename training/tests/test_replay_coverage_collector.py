@@ -120,7 +120,7 @@ def test_http_client_returns_status_zero_for_transport_error():
     assert b"ssl eof" in body
 
 
-def test_inoue_proxy_is_used_without_direct_probe_when_configured():
+def test_inoue_proxy_is_used_when_no_direct_client_is_configured():
     mod = load_module()
     args = types.SimpleNamespace(
         out="unused",
@@ -137,15 +137,10 @@ def test_inoue_proxy_is_used_without_direct_probe_when_configured():
     )
     collector = mod.CoverageCollector(args)
 
-    class ExplodingClient:
-        def get(self, *_args, **_kwargs):
-            raise AssertionError("direct client should not be used")
-
     class ProxyClient:
         def get(self, *_args, **_kwargs):
             return 200, b'{"gamemode":"league"}'
 
-    collector.inoue_direct = ExplodingClient()
     collector.inoue_proxy = ProxyClient()
 
     body, row = collector.download_replay("abc123")
@@ -239,7 +234,7 @@ def test_geonode_proxy_urls_use_all_configured_ports_without_printing_secret():
     env = {
         "GEONODE_PROXY_USER": "user",
         "GEONODE_PROXY_PASS": "pass",
-        "GEONODE_PROXY_BASE": "proxy.example:9999",
+        "GEONODE_PROXY_HOST": "proxy.example:9999",
     }
 
     urls = mod.geonode_proxy_urls(env, [9000, 9001, 9010])
@@ -315,6 +310,8 @@ def test_use_geonode_keeps_channel_on_configured_proxy_by_default(tmp_path):
 
     assert isinstance(collector.channel, mod.HttpClient)
     assert collector.channel.label == "proxy"
+    assert isinstance(collector.inoue_direct, mod.HttpClient)
+    assert collector.inoue_direct.label == "direct"
     assert isinstance(collector.inoue_proxy, mod.RotatingHttpClient)
 
 
