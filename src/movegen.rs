@@ -250,6 +250,11 @@ fn generate_inner<
     }
 
     if slow {
+        #[allow(
+            unknown_lints,
+            clippy::manual_isolate_lowest_one,
+            reason = "isolate_lowest_one is unstable on older supported toolchains"
+        )]
         let spawn: Bitboard = if force {
             let s = !cm.get(SPAWN_COL, Rotation::North) & (!0u64 << ACTIVE_RULES.spawn_row);
             s & s.wrapping_neg()

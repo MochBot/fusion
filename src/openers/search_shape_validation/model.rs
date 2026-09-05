@@ -72,6 +72,10 @@ pub struct FrameEvidence {
     pub construction_rows: Option<Vec<String>>,
 }
 
+#[expect(
+    clippy::enum_variant_names,
+    reason = "camelCase variant names are the frame contract Mosaic witness assets validate"
+)]
 #[derive(Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum CandidateFrame {

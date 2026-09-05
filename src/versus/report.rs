@@ -280,8 +280,10 @@ pub(crate) fn build_summary(
     }
     let decisive_games = wins_a + losses_a;
     let pair_scores = game_scores
-        .chunks_exact(2)
-        .map(|pair| pair[0] + pair[1])
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|[first, second]| first + second)
         .collect::<Vec<_>>();
     let mut pair_wins_a = 0u32;
     let mut pair_losses_a = 0u32;

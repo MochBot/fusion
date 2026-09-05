@@ -94,8 +94,6 @@ pub(crate) struct OpenerRecord {
     #[serde(default)]
     pub cover: Option<OpenerCover>,
     #[serde(default)]
-    pub pc_chance: Option<String>,
-    #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default)]
     pub links: Vec<OpenerLink>,
