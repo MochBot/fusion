@@ -47,6 +47,10 @@ pub(super) trait CompileObserver {
 
     fn legal_orders(&mut self, _count: u64) {}
 
+    fn wants_legal_orders(&self) -> bool {
+        false
+    }
+
     fn support_observed(&mut self) {}
 
     fn support_without_exact_srs(&mut self) {}

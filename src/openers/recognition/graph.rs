@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 #[cfg(test)]
 use super::census::CompileCensus;
+use super::legality::{LegalityCheck, LegalityMemo};
 use crate::board::Board;
 #[cfg(test)]
 use crate::board::LockMechanics;
@@ -179,6 +180,7 @@ pub(crate) struct GraphBuilder {
     out: Vec<Vec<Transition>>,
     interned: HashMap<StateInternKey, StateId>,
     bridged: HashSet<StateId>,
+    legality: LegalityMemo,
 }
 
 impl GraphBuilder {
@@ -189,7 +191,17 @@ impl GraphBuilder {
             out: Vec::new(),
             interned: HashMap::new(),
             bridged: HashSet::new(),
+            legality: LegalityMemo::default(),
         }
+    }
+
+    pub(crate) fn placement_legality(
+        &mut self,
+        state: StateId,
+        letter: u8,
+        cells: &[[u8; 2]; 4],
+    ) -> LegalityCheck {
+        self.legality.check(&self.boards[state.0], letter, cells)
     }
 
     pub(crate) fn board(&self, state: StateId) -> &Board {

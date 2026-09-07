@@ -415,6 +415,10 @@ impl CompileObserver for CompileCensus {
         self.legal_order_count = self.legal_order_count.saturating_add(count);
     }
 
+    fn wants_legal_orders(&self) -> bool {
+        true
+    }
+
     fn support_observed(&mut self) {
         self.support_observed_edges = self.support_observed_edges.saturating_add(1);
     }

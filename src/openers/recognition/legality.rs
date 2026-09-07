@@ -4,6 +4,7 @@ use crate::move_buffer::MoveBuffer;
 use crate::pathfinder::get_input;
 use crate::smear_core::generate_placements;
 
+#[derive(Clone)]
 pub(crate) enum LegalityVerdict {
     Legal {
         target: Move,
@@ -14,6 +15,7 @@ pub(crate) enum LegalityVerdict {
     NotAPlacement,
 }
 
+#[derive(Clone)]
 pub(crate) struct LegalityCheck {
     pub(crate) support_valid: bool,
     #[cfg(test)]
@@ -175,6 +177,43 @@ fn piece_for_letter(letter: u8) -> Option<Piece> {
 fn sorted_cells(mut cells: [[u8; 2]; 4]) -> [[u8; 2]; 4] {
     cells.sort_unstable();
     cells
+}
+
+/// Memoizes the exact legality verdict for a physical board, piece letter,
+/// and sorted cells within one compilation. The verdict is a pure function
+/// of those inputs, so repeated queries across DFS parents and branches pay
+/// movegen plus pathfinding once.
+#[derive(Default)]
+pub(crate) struct LegalityMemo {
+    entries: std::collections::HashMap<LegalityKey, LegalityCheck>,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct LegalityKey {
+    rows: [u16; BOARD_HEIGHT],
+    letter: u8,
+    cells: [[u8; 2]; 4],
+}
+
+impl LegalityMemo {
+    pub(crate) fn check(
+        &mut self,
+        board: &Board,
+        letter: u8,
+        cells: &[[u8; 2]; 4],
+    ) -> LegalityCheck {
+        let key = LegalityKey {
+            rows: board.rows,
+            letter,
+            cells: sorted_cells(*cells),
+        };
+        if let Some(hit) = self.entries.get(&key) {
+            return hit.clone();
+        }
+        let verdict = placement_is_srs_legal(board, letter, cells);
+        self.entries.insert(key, verdict.clone());
+        verdict
+    }
 }
 
 fn spin_targets(piece: Piece, bare: Move) -> Vec<Move> {

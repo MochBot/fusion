@@ -742,6 +742,130 @@ fn kick_only_t_placement_is_accepted_with_lock_mechanics() {
 }
 
 #[test]
+fn legal_order_counting_is_opt_in_for_census_only() {
+    use super::compile::CompileObserver;
+
+    struct DefaultObserver;
+    impl CompileObserver for DefaultObserver {}
+
+    assert!(
+        !DefaultObserver.wants_legal_orders(),
+        "default observer must skip legal-order DP"
+    );
+    assert!(
+        CompileCensus::new(512, 32, 20_000, 4_000_000).wants_legal_orders(),
+        "census must still count legal orders"
+    );
+}
+
+#[test]
+fn production_compile_matches_census_graph_while_census_keeps_legal_orders() {
+    let catalog = two_o_orders_catalog();
+
+    let production =
+        super::compile::compile_recognition_subgraph(&catalog, &CompileBudget::default())
+            .expect("production compile succeeds");
+    let census_graph = compile_catalog_census(&catalog).expect("census compile succeeds");
+
+    let production_transitions: usize = production.graph.out.iter().map(Vec::len).sum();
+    let census_transitions: usize = census_graph.out.iter().map(Vec::len).sum();
+    assert_eq!(production.graph.states.len(), census_graph.states.len());
+    assert_eq!(production_transitions, census_transitions);
+    assert_eq!(
+        production.graph.exact_index.len(),
+        census_graph.exact_index.len()
+    );
+    assert!(!production.budget_exceeded);
+    assert!(census_graph.census.budget_exceeded_edges.is_empty());
+    assert!(
+        census_graph.census.legal_order_count > 0,
+        "census must still count legal orders"
+    );
+}
+
+#[test]
+fn skipping_observer_reports_no_legal_orders_without_changing_completed_states() {
+    use super::compile::CompileObserver;
+
+    struct SkippingSpy {
+        reports: u32,
+    }
+    impl CompileObserver for SkippingSpy {
+        fn legal_orders(&mut self, _count: u64) {
+            self.reports = self.reports.saturating_add(1);
+        }
+    }
+
+    let catalog = two_o_orders_catalog();
+    let budget = CompileBudget::default();
+    let mut spy_builder = super::graph::GraphBuilder::new();
+    let mut spy = SkippingSpy { reports: 0 };
+    let spy_completed = compile_child_edge(&mut spy_builder, &mut spy, &catalog, &budget);
+    let mut census_builder = super::graph::GraphBuilder::new();
+    let mut census = CompileCensus::new(512, 32, 20_000, 4_000_000);
+    let census_completed = compile_child_edge(&mut census_builder, &mut census, &catalog, &budget);
+
+    assert!(!spy.wants_legal_orders());
+    assert!(!spy_completed.is_empty());
+    assert_eq!(spy_completed.len(), census_completed.len());
+    assert_eq!(
+        spy.reports, 0,
+        "production-style observer must skip legal-order DP"
+    );
+    assert!(
+        census.legal_order_count > 0,
+        "census must still count legal orders"
+    );
+}
+
+fn two_o_orders_catalog() -> OpenerCatalog {
+    catalog_from_json(
+        r#"{"formatVersion":2,"openers":[{
+            "id":"two-o-orders","aliases":{"en":"two o orders"},"shapeKey":"fixture",
+            "tree":[
+                {"id":0,"parent":null,"pieces":1,"rows":["OO________","OO________"],"placements":[{"letter":"O","cells":[[0,0],[1,0],[0,1],[1,1]]}]},
+                {"id":1,"parent":0,"pieces":2,"rows":["OOOO______","OOOO______"],"placements":[{"letter":"O","cells":[[2,0],[3,0],[2,1],[3,1]]}]}
+            ]
+        }]}"#,
+    )
+}
+
+fn compile_child_edge<O: super::compile::CompileObserver>(
+    builder: &mut super::graph::GraphBuilder,
+    observer: &mut O,
+    catalog: &OpenerCatalog,
+    budget: &CompileBudget,
+) -> Vec<super::graph::StateId> {
+    let record = &catalog.openers[0];
+    let parent = &record.tree[0];
+    let child = &record.tree[1];
+    let placements = placement_specs(child);
+    let start = DeclaredFrame::start(child, Some(parent), &placements, false).unwrap();
+    let parent_state = builder.intern(
+        start.physical_board(),
+        super::record::control(0, false, parent.id, 0),
+        super::record::origin(record, false, parent, 0, true),
+        false,
+    );
+    super::edge::compile_edge(
+        builder,
+        observer,
+        super::edge::EdgeInput {
+            record,
+            record_index: 0,
+            node: child,
+            parent: Some(parent),
+            mirrored: false,
+            parent_states: &[parent_state],
+            placements: &placements,
+            budget,
+            bridge_exposed: false,
+        },
+    )
+    .unwrap()
+}
+
+#[test]
 #[ignore]
 fn full_catalog_census() {
     let catalog = serde_json::from_slice::<OpenerCatalog>(include_bytes!(

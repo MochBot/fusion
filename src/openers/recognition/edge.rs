@@ -7,7 +7,7 @@ use super::graph::{cleared_rows, EpsilonReason};
 use super::graph::{
     physical_shadow_of_declared, BridgeReason, CanonicalKey, GraphBuilder, StateId, TransitionLabel,
 };
-use super::legality::{placement_is_srs_legal, LegalityVerdict};
+use super::legality::LegalityVerdict;
 use super::record::{bridge_control, control, origin};
 use crate::openers::catalog::{OpenerRecord, OpenerTreeNode};
 
@@ -123,6 +123,7 @@ pub(super) fn compile_edge<O: CompileObserver>(
     }
 
     let complete_subset = complete_subset(placements.len());
+    let wants_legal_orders = observer.wants_legal_orders();
     let mut completed = Vec::new();
     let mut legal_orders = 0u64;
     let mut support_observed = false;
@@ -145,8 +146,11 @@ pub(super) fn compile_edge<O: CompileObserver>(
         }];
         let mut visited = HashSet::from([(*parent_state, 0u32)]);
         let mut edge_states = HashSet::new();
-        let mut subsets = HashMap::from([(*parent_state, 0u32)]);
+        let mut subsets = HashMap::new();
         let mut transitions = HashMap::<StateId, Vec<StateId>>::new();
+        if wants_legal_orders {
+            subsets.insert(*parent_state, 0u32);
+        }
         let mut edge_completed = Vec::new();
 
         while let Some(current) = pending.pop() {
@@ -175,11 +179,8 @@ pub(super) fn compile_edge<O: CompileObserver>(
                         continue;
                     }
                 };
-                let legal = placement_is_srs_legal(
-                    builder.board(current.state),
-                    placement.letter,
-                    &physical.cells,
-                );
+                let legal =
+                    builder.placement_legality(current.state, placement.letter, &physical.cells);
                 observer.legality_attempt(legal.support_valid, &legal.verdict);
                 support_observed |= legal.support_valid;
                 let LegalityVerdict::Legal { target, mechanics } = legal.verdict else {
@@ -259,8 +260,10 @@ pub(super) fn compile_edge<O: CompileObserver>(
                         is_pc: mechanics.is_pc,
                     },
                 );
-                transitions.entry(current.state).or_default().push(to);
-                subsets.insert(to, next_subset);
+                if wants_legal_orders {
+                    transitions.entry(current.state).or_default().push(to);
+                    subsets.insert(to, next_subset);
+                }
                 if complete {
                     if !edge_completed.contains(&to) {
                         edge_completed.push(to);
@@ -287,12 +290,14 @@ pub(super) fn compile_edge<O: CompileObserver>(
         if budget_reason.is_some() {
             break;
         }
-        legal_orders = legal_orders.saturating_add(count_paths(
-            *parent_state,
-            &subsets,
-            &transitions,
-            &edge_completed,
-        ));
+        if wants_legal_orders {
+            legal_orders = legal_orders.saturating_add(count_paths(
+                *parent_state,
+                &subsets,
+                &transitions,
+                &edge_completed,
+            ));
+        }
         for state in edge_completed {
             if !completed.contains(&state) {
                 completed.push(state);
@@ -315,7 +320,9 @@ pub(super) fn compile_edge<O: CompileObserver>(
             },
         ));
     }
-    observer.legal_orders(legal_orders);
+    if wants_legal_orders {
+        observer.legal_orders(legal_orders);
+    }
     if support_observed {
         observer.support_observed();
     }

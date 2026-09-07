@@ -227,3 +227,132 @@ fn replay_round_stage_timing() {
         millis(recognize_warm) / count
     );
 }
+
+/// Bounded compile/union/alignment discriminator.
+///
+/// Runs a handful of fixture rounds and splits warm recognition into
+/// `shortlist_graph` (union clone only, second call) versus full
+/// `recognize_round` (union + alignment), with per-record cache-miss counts
+/// and merged-graph sizes. Measurement only; asserts nothing about timing.
+#[test]
+#[ignore]
+fn round_stage_split() {
+    use crate::openers::catalogued_match::match_catalogued_boards_with_targets;
+    use crate::openers::guide::{build_guide, select_subject};
+    use crate::openers::phase::assess_opener_phase;
+    use crate::openers::recognition::round::recognize_round;
+    use crate::openers::report::build_opener_report;
+
+    let (_scope, _detached) = install_live_catalog();
+    let installed = installed_opener_catalog().expect("catalog should be installed");
+    let rounds = load_rounds();
+    // Bounded: two large early rounds plus two mid-size ones.
+    let picked = [0usize, 1, 7, 17]
+        .into_iter()
+        .filter(|index| *index < rounds.len())
+        .collect::<Vec<_>>();
+
+    println!("| round | locks | assess | confirm | report | shortlist1 compile+union | misses | states | transitions | shortlist2 union | recognize union+align | align~=rec-s2 | guide | full |");
+    for index in picked {
+        let round = &rounds[index];
+        let started = Instant::now();
+        let assessments = assess_opener_phase(&installed.targets, &round.input.observations);
+        let assess = started.elapsed();
+        let started = Instant::now();
+        let matched = match_catalogued_boards_with_targets(
+            &installed.catalog,
+            &installed.node_boards,
+            &installed.runtime_search_shape_targets,
+            &round.input.observations,
+        );
+        let confirm = started.elapsed();
+        let started = Instant::now();
+        let report = build_opener_report(matched.as_ref());
+        let report_time = started.elapsed();
+
+        // Measurement mirror of `round::shortlist` (ids only, same order/cap).
+        let mut ids = Vec::new();
+        if let Some(matched_ref) = matched.as_ref() {
+            for opener in &matched_ref.matching_openers {
+                if !ids.iter().any(|candidate| candidate == &opener.id) {
+                    ids.push(opener.id.clone());
+                }
+            }
+        }
+        for assessment in assessments.iter().flatten() {
+            if let Some(board_match) = &assessment.r#match {
+                if !ids
+                    .iter()
+                    .any(|candidate| candidate == &board_match.opener_id)
+                {
+                    ids.push(board_match.opener_id.clone());
+                }
+            }
+            for runner_up in &assessment.runners_up {
+                if !ids
+                    .iter()
+                    .any(|candidate| candidate == &runner_up.opener_id)
+                {
+                    ids.push(runner_up.opener_id.clone());
+                }
+            }
+        }
+        ids.truncate(24);
+
+        let before = installed.compiled.len();
+        let started = Instant::now();
+        let first = installed.compiled.shortlist_graph(&installed.catalog, &ids);
+        let shortlist1 = started.elapsed();
+        let misses = installed.compiled.len().saturating_sub(before);
+        let (states, transitions) = first.as_ref().map_or((0, 0), |compiled| {
+            (
+                compiled.graph.states.len(),
+                compiled.graph.out.iter().map(Vec::len).sum::<usize>(),
+            )
+        });
+        let started = Instant::now();
+        let _ = installed.compiled.shortlist_graph(&installed.catalog, &ids);
+        let shortlist2 = started.elapsed();
+        let started = Instant::now();
+        let recognition = recognize_round(
+            Some(&installed.catalog),
+            &installed.compiled,
+            &assessments,
+            matched.as_ref(),
+            &round.input.observations,
+        );
+        let recognize = started.elapsed();
+        let started = Instant::now();
+        let guide = select_subject(&installed.catalog, matched.as_ref(), recognition.as_ref())
+            .and_then(|subject| {
+                build_guide(
+                    &installed.catalog,
+                    &subject,
+                    &round.input.observations,
+                    recognition.as_ref(),
+                )
+            });
+        let guide_time = started.elapsed();
+        let _ = (report, guide);
+        let started = Instant::now();
+        let _ = analyze_opener_round(&round.input).expect("catalog is installed");
+        let full = started.elapsed();
+        println!(
+            "| {} | {} | {:.1} | {:.1} | {:.1} | {:.1} | {} | {} | {} | {:.1} | {:.1} | {:.1} | {:.1} | {:.1} |",
+            index,
+            round.input.observations.len(),
+            millis(assess),
+            millis(confirm),
+            millis(report_time),
+            millis(shortlist1),
+            misses,
+            states,
+            transitions,
+            millis(shortlist2),
+            millis(recognize),
+            (millis(recognize) - millis(shortlist2)).max(0.0),
+            millis(guide_time),
+            millis(full),
+        );
+    }
+}
