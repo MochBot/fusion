@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, HashMap};
 
 #[cfg(test)]
 use super::census::EdgeRef;
-use super::compile::{CompileBudget, CompileError, CompileObserver, PlacementSpec};
+use super::compile::{timed_intern, CompileBudget, CompileError, CompileObserver, PlacementSpec};
 use super::edge::{
     compile_bridge, compile_edge, compile_grey_terminal, BridgeInput, EdgeInput, GreyTerminal,
 };
@@ -38,12 +38,12 @@ pub(super) fn compile_record<O: CompileObserver>(
                 continue;
             };
             if node.grey && node.parent.is_none() {
-                builder.intern(
-                    physical_shadow_of_declared(&board_from_declared_rows(node, mirrored)),
-                    control(record_index, mirrored, node.id, 0),
-                    origin(record, mirrored, node, 0, true),
-                    true,
-                );
+                let board = physical_shadow_of_declared(&board_from_declared_rows(node, mirrored));
+                let intern_control = control(record_index, mirrored, node.id, 0);
+                let intern_origin = origin(record, mirrored, node, 0, true);
+                timed_intern(observer, || {
+                    builder.intern(board, intern_control, intern_origin, true)
+                });
                 completed.insert(node.id, NodeCompletion::default());
                 pending.remove(&node_id);
                 progressed = true;
@@ -61,7 +61,14 @@ pub(super) fn compile_record<O: CompileObserver>(
                     Some(states) => states.states.clone(),
                     None => continue,
                 },
-                None => vec![root_state(builder, record, record_index, mirrored, node)],
+                None => vec![root_state(
+                    builder,
+                    observer,
+                    record,
+                    record_index,
+                    mirrored,
+                    node,
+                )],
             };
             if node.grey {
                 let grey_board = board_from_declared_rows(node, mirrored);
@@ -173,19 +180,20 @@ struct NodeCompletion {
     bridge_exposed: bool,
 }
 
-fn root_state(
+fn root_state<O: CompileObserver>(
     builder: &mut GraphBuilder,
+    observer: &mut O,
     record: &OpenerRecord,
     record_index: u32,
     mirrored: bool,
     node: &OpenerTreeNode,
 ) -> StateId {
-    builder.intern(
-        Board::new(),
-        control(record_index, mirrored, node.id, 0),
-        origin(record, mirrored, node, 0, false),
-        false,
-    )
+    let board = Board::new();
+    let intern_control = control(record_index, mirrored, node.id, 0);
+    let intern_origin = origin(record, mirrored, node, 0, false);
+    timed_intern(observer, || {
+        builder.intern(board, intern_control, intern_origin, false)
+    })
 }
 
 fn board_from_declared_rows(node: &OpenerTreeNode, mirrored: bool) -> Board {

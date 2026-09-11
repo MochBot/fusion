@@ -27,6 +27,8 @@ use crate::openers::catalog::{
     installed_opener_catalog, isolated_catalog_test, set_opener_catalog, CatalogTestScope,
     OpenerCatalog,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use crate::openers::recognition::profile::{CacheRecordOutcome, CacheRecordProfile};
 
 const LIVE_CATALOG: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -228,31 +230,38 @@ fn replay_round_stage_timing() {
     );
 }
 
-/// Bounded compile/union/alignment discriminator.
+/// Bounded first-seen/warm recognition discriminator.
 ///
-/// Runs a handful of fixture rounds and splits warm recognition into
-/// `shortlist_graph` (union clone only, second call) versus full
-/// `recognize_round` (union + alignment), with per-record cache-miss counts
-/// and merged-graph sizes. Measurement only; asserts nothing about timing.
+/// Runs a handful of fixture rounds through the actual recognition path twice
+/// on the shared installed cache: the first-seen call cold-compiles records
+/// this snapshot has not compiled before, the warm call reuses them. Both
+/// calls go through `recognize_round_profiled`, so every stage timing and
+/// per-record outcome below is observed from the real execution: no copied
+/// shortlist, no separate graph preflight, no union/align subtraction.
+/// Measurement only; asserts nothing about timing beyond first-seen/warm
+/// result parity.
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 #[ignore]
 fn round_stage_split() {
     use crate::openers::catalogued_match::match_catalogued_boards_with_targets;
     use crate::openers::guide::{build_guide, select_subject};
     use crate::openers::phase::assess_opener_phase;
-    use crate::openers::recognition::round::recognize_round;
+    use crate::openers::recognition::round::recognize_round_profiled;
     use crate::openers::report::build_opener_report;
 
     let (_scope, _detached) = install_live_catalog();
     let installed = installed_opener_catalog().expect("catalog should be installed");
     let rounds = load_rounds();
-    // Bounded: two large early rounds plus two mid-size ones.
+    // Bounded: two large early rounds plus two mid-size ones. The installed
+    // cache stays shared across picked rows, so only genuinely first-seen
+    // records cold-compile; later rows reuse them.
     let picked = [0usize, 1, 7, 17]
         .into_iter()
         .filter(|index| *index < rounds.len())
         .collect::<Vec<_>>();
 
-    println!("| round | locks | assess | confirm | report | shortlist1 compile+union | misses | states | transitions | shortlist2 union | recognize union+align | align~=rec-s2 | guide | full |");
+    println!("| round | locks | assess | confirm | report | recog first-seen | select | map | cache | cold n | cold ms | union | merged | align | result | states | transitions | recog warm | guide | warm full |");
     for index in picked {
         let round = &rounds[index];
         let started = Instant::now();
@@ -270,89 +279,121 @@ fn round_stage_split() {
         let report = build_opener_report(matched.as_ref());
         let report_time = started.elapsed();
 
-        // Measurement mirror of `round::shortlist` (ids only, same order/cap).
-        let mut ids = Vec::new();
-        if let Some(matched_ref) = matched.as_ref() {
-            for opener in &matched_ref.matching_openers {
-                if !ids.iter().any(|candidate| candidate == &opener.id) {
-                    ids.push(opener.id.clone());
-                }
-            }
-        }
-        for assessment in assessments.iter().flatten() {
-            if let Some(board_match) = &assessment.r#match {
-                if !ids
-                    .iter()
-                    .any(|candidate| candidate == &board_match.opener_id)
-                {
-                    ids.push(board_match.opener_id.clone());
-                }
-            }
-            for runner_up in &assessment.runners_up {
-                if !ids
-                    .iter()
-                    .any(|candidate| candidate == &runner_up.opener_id)
-                {
-                    ids.push(runner_up.opener_id.clone());
-                }
-            }
-        }
-        ids.truncate(24);
-
-        let before = installed.compiled.len();
-        let started = Instant::now();
-        let first = installed.compiled.shortlist_graph(&installed.catalog, &ids);
-        let shortlist1 = started.elapsed();
-        let misses = installed.compiled.len().saturating_sub(before);
-        let (states, transitions) = first.as_ref().map_or((0, 0), |compiled| {
-            (
-                compiled.graph.states.len(),
-                compiled.graph.out.iter().map(Vec::len).sum::<usize>(),
-            )
-        });
-        let started = Instant::now();
-        let _ = installed.compiled.shortlist_graph(&installed.catalog, &ids);
-        let shortlist2 = started.elapsed();
-        let started = Instant::now();
-        let recognition = recognize_round(
+        let (first, first_profile) = recognize_round_profiled(
             Some(&installed.catalog),
             &installed.compiled,
             &assessments,
             matched.as_ref(),
             &round.input.observations,
         );
-        let recognize = started.elapsed();
+        let (second, warm_profile) = recognize_round_profiled(
+            Some(&installed.catalog),
+            &installed.compiled,
+            &assessments,
+            matched.as_ref(),
+            &round.input.observations,
+        );
+        assert_eq!(
+            serde_json::to_vec(&first).expect("recognition should serialize"),
+            serde_json::to_vec(&second).expect("recognition should serialize"),
+            "first-seen and warm recognition must agree on round {index}"
+        );
+        let cold_ms: f64 = first_profile
+            .cache
+            .records
+            .iter()
+            .filter_map(|record| record.compile)
+            .map(millis)
+            .sum();
+        let cold_count = first_profile
+            .cache
+            .records
+            .iter()
+            .filter(|record| record.compile.is_some())
+            .count();
+        let warm_cold_count = warm_profile
+            .cache
+            .records
+            .iter()
+            .filter(|record| record.compile.is_some())
+            .count();
         let started = Instant::now();
-        let guide = select_subject(&installed.catalog, matched.as_ref(), recognition.as_ref())
-            .and_then(|subject| {
+        let guide = select_subject(&installed.catalog, matched.as_ref(), first.as_ref()).and_then(
+            |subject| {
                 build_guide(
                     &installed.catalog,
                     &subject,
                     &round.input.observations,
-                    recognition.as_ref(),
+                    first.as_ref(),
                 )
-            });
+            },
+        );
         let guide_time = started.elapsed();
         let _ = (report, guide);
         let started = Instant::now();
         let _ = analyze_opener_round(&round.input).expect("catalog is installed");
-        let full = started.elapsed();
+        let warm_full = started.elapsed();
         println!(
-            "| {} | {} | {:.1} | {:.1} | {:.1} | {:.1} | {} | {} | {} | {:.1} | {:.1} | {:.1} | {:.1} | {:.1} |",
+            "| {} | {} | {:.1} | {:.1} | {:.1} | {} | {} | {} | {} | {} | {:.1} | {} | {} | {} | {} | {} | {} | {} | {:.1} | {:.1} |",
             index,
             round.input.observations.len(),
             millis(assess),
             millis(confirm),
             millis(report_time),
-            millis(shortlist1),
-            misses,
-            states,
-            transitions,
-            millis(shortlist2),
-            millis(recognize),
-            (millis(recognize) - millis(shortlist2)).max(0.0),
+            profile_millis(first_profile.total_recognition),
+            profile_millis(first_profile.shortlist_selection),
+            profile_millis(first_profile.observation_mapping),
+            profile_millis(first_profile.cache.graph_total),
+            cold_count,
+            cold_ms,
+            profile_millis(first_profile.cache.union_graphs),
+            profile_millis(first_profile.cache.merged_compile),
+            profile_millis(first_profile.align),
+            profile_millis(first_profile.result_mapping),
+            first_profile.cache.graph_states.map_or("-".to_owned(), |states| states.to_string()),
+            first_profile
+                .cache
+                .graph_transitions
+                .map_or("-".to_owned(), |transitions| transitions.to_string()),
+            profile_millis(warm_profile.total_recognition),
             millis(guide_time),
-            millis(full),
+            millis(warm_full),
         );
+        println!(
+            "| | warm cache: {} cold attempts, shortlist {} |",
+            warm_cold_count,
+            warm_profile
+                .shortlist
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .join(","),
+        );
+        for record in &first_profile.cache.records {
+            println!("| | rec {} {} |", record.id, record_evidence(record));
+        }
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn profile_millis(span: Option<Duration>) -> String {
+    span.map_or_else(
+        || "-".to_owned(),
+        |elapsed| format!("{:.1}", millis(elapsed)),
+    )
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn record_evidence(record: &CacheRecordProfile) -> String {
+    let outcome = match record.outcome {
+        CacheRecordOutcome::MissingCatalogRecord => "missing",
+        CacheRecordOutcome::CachedSuccess => "cached-ok",
+        CacheRecordOutcome::CachedFailure => "cached-fail",
+        CacheRecordOutcome::ColdSuccess => "cold-ok",
+        CacheRecordOutcome::ColdFailure => "cold-fail",
+    };
+    record.compile.map_or_else(
+        || outcome.to_owned(),
+        |elapsed| format!("{outcome} {:.1}", millis(elapsed)),
+    )
 }

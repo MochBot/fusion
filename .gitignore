@@ -39,3 +39,4 @@ training/training_data_triangle_v1_supplement*
 training/_archive/
 /evidence-out/
 /fixtures/openers/
+/tests/fixtures/recommend-v1.json

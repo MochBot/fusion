@@ -18,6 +18,7 @@ extern crate self as fusion_engine;
 pub mod pathfinder;
 pub mod perft;
 pub mod policy_value_runtime;
+pub mod recommend;
 pub mod replay_validation;
 pub mod ruleset;
 pub mod search;

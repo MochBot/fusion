@@ -51,6 +51,27 @@ pub(super) trait CompileObserver {
         false
     }
 
+    fn did_exceed_budget(&self) -> bool {
+        false
+    }
+
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    fn wants_stage_profile(&self) -> bool {
+        false
+    }
+
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    fn record_legality(&mut self, _elapsed: std::time::Duration) {}
+
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    fn record_intern(&mut self, _elapsed: std::time::Duration) {}
+
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    fn record_transition(&mut self, _elapsed: std::time::Duration) {}
+
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    fn record_finish(&mut self, _elapsed: std::time::Duration) {}
+
     fn support_observed(&mut self) {}
 
     fn support_without_exact_srs(&mut self) {}
@@ -112,6 +133,52 @@ impl CompileObserver for ProductionObserver {
     ) {
         self.budget_exceeded = true;
     }
+
+    fn did_exceed_budget(&self) -> bool {
+        self.budget_exceeded
+    }
+}
+
+/// Native-test-only stage clocks stay behind `wants_stage_profile`: the
+/// production observer never opts in, so these helpers compile to a direct
+/// call outside `cfg(all(test, not(target_arch = "wasm32")))` profiling.
+pub(super) fn timed_legality<O: CompileObserver, T>(
+    _observer: &mut O,
+    run: impl FnOnce() -> T,
+) -> T {
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    if _observer.wants_stage_profile() {
+        let started = std::time::Instant::now();
+        let value = run();
+        _observer.record_legality(started.elapsed());
+        return value;
+    }
+    run()
+}
+
+pub(super) fn timed_intern<O: CompileObserver, T>(_observer: &mut O, run: impl FnOnce() -> T) -> T {
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    if _observer.wants_stage_profile() {
+        let started = std::time::Instant::now();
+        let value = run();
+        _observer.record_intern(started.elapsed());
+        return value;
+    }
+    run()
+}
+
+pub(super) fn timed_transition<O: CompileObserver, T>(
+    _observer: &mut O,
+    run: impl FnOnce() -> T,
+) -> T {
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    if _observer.wants_stage_profile() {
+        let started = std::time::Instant::now();
+        let value = run();
+        _observer.record_transition(started.elapsed());
+        return value;
+    }
+    run()
 }
 
 pub(crate) struct CompileOutcome {
@@ -187,10 +254,18 @@ pub(crate) fn compile_recognition_subgraph(
     catalog: &OpenerCatalog,
     budget: &CompileBudget,
 ) -> Result<CompileOutcome, CompileError> {
-    let mut builder = GraphBuilder::new();
     let mut observer = ProductionObserver {
         budget_exceeded: false,
     };
+    compile_recognition_subgraph_with_observer(catalog, budget, &mut observer)
+}
+
+pub(super) fn compile_recognition_subgraph_with_observer<O: CompileObserver>(
+    catalog: &OpenerCatalog,
+    budget: &CompileBudget,
+    observer: &mut O,
+) -> Result<CompileOutcome, CompileError> {
+    let mut builder = GraphBuilder::new();
 
     for (record_index, record) in catalog.openers.iter().enumerate() {
         if record.shape_key.starts_with("stub-") || record.tree.is_empty() {
@@ -199,7 +274,7 @@ pub(crate) fn compile_recognition_subgraph(
         for mirrored in [false, true] {
             compile_record(
                 &mut builder,
-                &mut observer,
+                observer,
                 record,
                 u32::try_from(record_index).unwrap_or(u32::MAX),
                 mirrored,
@@ -207,9 +282,19 @@ pub(crate) fn compile_recognition_subgraph(
             )?;
         }
     }
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    let finish_wanted = observer.wants_stage_profile();
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    let finish_started = finish_wanted.then(std::time::Instant::now);
+    let graph = builder.finish();
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    if let Some(started) = finish_started {
+        observer.record_finish(started.elapsed());
+    }
+    let budget_exceeded = observer.did_exceed_budget();
     Ok(CompileOutcome {
-        graph: builder.finish(),
-        budget_exceeded: observer.budget_exceeded,
+        graph,
+        budget_exceeded,
     })
 }
 

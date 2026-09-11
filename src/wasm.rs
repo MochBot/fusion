@@ -533,6 +533,11 @@ pub fn find_best_move_wasm(board: &JsBoard, piece: u8, frame: JsValue) -> JsValu
     caught_to_js(result)
 }
 
+#[wasm_bindgen(js_name = "recommend_position")]
+pub fn recommend_position(request_json: &str) -> String {
+    crate::recommend::recommend_json(request_json)
+}
+
 #[wasm_bindgen(js_name = "get_all_moves")]
 pub fn get_all_moves_wasm(board: &JsBoard, piece: u8) -> JsValue {
     let p = match piece_from_external(piece) {

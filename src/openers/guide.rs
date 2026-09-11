@@ -7,6 +7,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::openers::board::{mirror_letter_row, mirror_piece_letter, strip_garbage_rows};
+use crate::openers::catalog::navigation::{
+    children_of, deepest_by_pieces, first_root, node_by_id, path_to, record_by_id, siblings_of,
+};
 use crate::openers::catalog::{
     OpenerCatalog, OpenerLink, OpenerNodeEst, OpenerRecord, OpenerTreeNode,
 };
@@ -197,11 +200,12 @@ pub(crate) fn select_subject(
 
 fn deepest_candidate(catalog: &OpenerCatalog, record_id: &str, node_ids: &[u32]) -> Option<u32> {
     let record = record_by_id(catalog, record_id)?;
-    node_ids
-        .iter()
-        .filter_map(|node_id| node_by_id(record, *node_id))
-        .max_by_key(|node| (node.pieces, std::cmp::Reverse(node.id)))
-        .map(|node| node.id)
+    deepest_by_pieces(
+        node_ids
+            .iter()
+            .filter_map(|node_id| node_by_id(record, *node_id)),
+    )
+    .map(|node| node.id)
 }
 
 fn tied_hypotheses_share_shape(
@@ -248,17 +252,9 @@ pub(crate) fn build_guide(
     }
     let phases = drop_superseded_phases(phases);
 
-    let children: Vec<&OpenerTreeNode> = record
-        .tree
-        .iter()
-        .filter(|node| node.parent == Some(anchor.id))
-        .collect();
+    let children: Vec<&OpenerTreeNode> = children_of(record, anchor.id).collect();
     let candidates = if children.is_empty() {
-        record
-            .tree
-            .iter()
-            .filter(|node| node.parent == anchor.parent && node.id != anchor.id)
-            .collect()
+        siblings_of(record, anchor).collect()
     } else {
         children
     };
@@ -510,11 +506,7 @@ fn rounded_child_phase(
     }
     let anchor_lock = subject.anchor_lock?;
     let mut best: Option<(&OpenerTreeNode, usize)> = None;
-    for child in record
-        .tree
-        .iter()
-        .filter(|child| child.parent == Some(anchor.id) && !child.grey)
-    {
+    for child in children_of(record, anchor.id).filter(|child| !child.grey) {
         let placements = match &child.placements {
             Some(placements) => Some(
                 placements
@@ -685,46 +677,12 @@ fn nonempty(text: Option<&str>) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
-fn record_by_id<'a>(catalog: &'a OpenerCatalog, id: &str) -> Option<&'a OpenerRecord> {
-    catalog.openers.iter().find(|record| record.id == id)
-}
-
-fn node_by_id(record: &OpenerRecord, node_id: u32) -> Option<&OpenerTreeNode> {
-    record.tree.iter().find(|node| node.id == node_id)
-}
-
 fn deepest_lettered_root_path_node(record: &OpenerRecord) -> Option<&OpenerTreeNode> {
-    let mut best: Option<&OpenerTreeNode> = None;
-    for node in &record.tree {
+    deepest_by_pieces(record.tree.iter().filter(|node| {
         if node.grey {
-            continue;
+            return false;
         }
-        let Some(path) = path_to(record, node) else {
-            continue;
-        };
-        if path.iter().any(|ancestor| ancestor.grey) {
-            continue;
-        }
-        if best.is_none_or(|best| {
-            node.pieces > best.pieces || (node.pieces == best.pieces && node.id < best.id)
-        }) {
-            best = Some(node);
-        }
-    }
-    best.or_else(|| record.tree.iter().find(|node| node.parent.is_none()))
-}
-
-fn path_to<'a>(
-    record: &'a OpenerRecord,
-    node: &'a OpenerTreeNode,
-) -> Option<Vec<&'a OpenerTreeNode>> {
-    let mut path = vec![node];
-    let mut current = node;
-    while let Some(parent_id) = current.parent {
-        let parent = node_by_id(record, parent_id)?;
-        path.push(parent);
-        current = parent;
-    }
-    path.reverse();
-    Some(path)
+        path_to(record, node).is_some_and(|path| !path.iter().any(|ancestor| ancestor.grey))
+    }))
+    .or_else(|| first_root(record))
 }

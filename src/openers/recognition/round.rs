@@ -7,6 +7,8 @@ use super::align::{align_round_exact_retaining_record, AlignBudget, Observation}
 use super::cache::RecordGraphCache;
 use super::cost::{EditCosts, EditOps};
 use super::graph::CanonicalKey;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+use super::profile::RecognitionProfile;
 use crate::openers::board::strip_garbage_rows;
 use crate::openers::catalog::OpenerCatalog;
 use crate::openers::catalogued_match::{MatchingOpener, RoundCataloguedBoardMatch};
@@ -63,32 +65,103 @@ pub(crate) fn recognize_round(
     catalogued_board_match: Option<&RoundCataloguedBoardMatch>,
     observations: &[Option<OpenerObservation>],
 ) -> Option<RoundRecognition> {
+    recognize_round_core(
+        catalog,
+        compiled,
+        assessments,
+        catalogued_board_match,
+        observations,
+        #[cfg(all(test, not(target_arch = "wasm32")))]
+        None,
+    )
+}
+
+/// Native-test-only diagnostic entry sharing the single core below: the
+/// returned recognition is the actual execution's result, plus what it did.
+#[cfg(all(test, not(target_arch = "wasm32")))]
+pub(crate) fn recognize_round_profiled(
+    catalog: Option<&OpenerCatalog>,
+    compiled: &RecordGraphCache,
+    assessments: &[Option<OpenerAssessment>],
+    catalogued_board_match: Option<&RoundCataloguedBoardMatch>,
+    observations: &[Option<OpenerObservation>],
+) -> (Option<RoundRecognition>, RecognitionProfile) {
+    let mut profile = RecognitionProfile::default();
+    let total_started = std::time::Instant::now();
+    let recognition = recognize_round_core(
+        catalog,
+        compiled,
+        assessments,
+        catalogued_board_match,
+        observations,
+        Some(&mut profile),
+    );
+    profile.total_recognition = Some(total_started.elapsed());
+    (recognition, profile)
+}
+
+fn recognize_round_core(
+    catalog: Option<&OpenerCatalog>,
+    compiled: &RecordGraphCache,
+    assessments: &[Option<OpenerAssessment>],
+    catalogued_board_match: Option<&RoundCataloguedBoardMatch>,
+    observations: &[Option<OpenerObservation>],
+    #[cfg(all(test, not(target_arch = "wasm32")))] mut profile: Option<&mut RecognitionProfile>,
+) -> Option<RoundRecognition> {
     let catalog = catalog?;
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    let select_started = std::time::Instant::now();
     let confirmed_id = singleton_confirmed_id(catalogued_board_match);
     let shortlist = shortlist(assessments, catalogued_board_match);
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    if let Some(profile) = profile.as_mut() {
+        profile.shortlist_selection = Some(select_started.elapsed());
+        profile.shortlist = shortlist.ids.clone();
+    }
     if shortlist.ids.is_empty() {
         return None;
     }
 
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    let map_started = std::time::Instant::now();
     let mapped_observations = observations
         .iter()
         .map(|observation| observation.as_ref().and_then(observation_for))
         .collect::<Vec<_>>();
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    if let Some(profile) = profile.as_mut() {
+        profile.observation_mapping = Some(map_started.elapsed());
+    }
     if mapped_observations.iter().all(Option::is_none) {
         return None;
     }
 
-    let compiled = compiled.shortlist_graph(catalog, &shortlist.ids)?;
-    let shortlist_compile_skipped = compiled.compile_skipped;
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    let cache_profile = profile.as_mut().map(|profile| &mut profile.cache);
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    let Some(cached) = compiled.shortlist_graph_core(catalog, &shortlist.ids, cache_profile) else {
+        return None;
+    };
+    #[cfg(not(all(test, not(target_arch = "wasm32"))))]
+    let cached = compiled.shortlist_graph(catalog, &shortlist.ids)?;
+    let shortlist_compile_skipped = cached.compile_skipped;
 
     let edit_costs = EditCosts::default();
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    let align_started = std::time::Instant::now();
     let alignment = align_round_exact_retaining_record(
-        &compiled.graph,
+        &cached.graph,
         &edit_costs,
         &mapped_observations,
         &AlignBudget::default(),
         confirmed_id,
     );
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    if let Some(profile) = profile.as_mut() {
+        profile.align = Some(align_started.elapsed());
+    }
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    let result_started = std::time::Instant::now();
     let per_lock = alignment
         .per_lock
         .iter()
@@ -131,7 +204,7 @@ pub(crate) fn recognize_round(
         })
         .collect();
 
-    Some(RoundRecognition {
+    let recognition = RoundRecognition {
         retrieval_bounded: true,
         shortlist_size: shortlist.ids.len(),
         truncated: shortlist.truncated || alignment.truncated_any,
@@ -143,7 +216,12 @@ pub(crate) fn recognize_round(
             .last()
             .map_or(0, |lock| lock.unknown_cost),
         edit_costs,
-    })
+    };
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    if let Some(profile) = profile.as_mut() {
+        profile.result_mapping = Some(result_started.elapsed());
+    }
+    Some(recognition)
 }
 
 fn singleton_confirmed_id(matched: Option<&RoundCataloguedBoardMatch>) -> Option<&str> {

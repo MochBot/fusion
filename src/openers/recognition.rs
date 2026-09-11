@@ -10,6 +10,10 @@ mod census;
 #[cfg(test)]
 mod collision_evidence;
 mod compile;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+pub(super) mod compile_stages;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod compile_stages_tests;
 mod cost;
 mod edge;
 #[cfg(test)]
@@ -19,6 +23,11 @@ mod graph;
 mod legality;
 #[cfg(test)]
 mod metrics;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+pub(super) mod profile;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "recognition/profile_tests.rs"]
+mod profile_tests;
 mod record;
 mod retrieval;
 pub(super) mod round;

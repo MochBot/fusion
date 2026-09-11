@@ -23,4 +23,10 @@ CLOUD_EXEC_SKIP=1 cargo run --bin policy_value_runtime_smoke -- path/to/model.on
 
 Replay collection scripts live in `training/recovered/replay-collector/`. Canonical corpus: `data/replays-x-xplus/`.
 
+Wave resume reuses the records selection next to the selected manifest:
+the manifest must live in `<out>/_meta` (pass the matching `--out` for
+the manifest, or omit `--manifest` to resume the newest manifest under
+`<out>`). Explicit wave `--existing-root` values replace the
+project-local reuse defaults in discovery, download, and resume.
+
 Note: `training.scripts.*` imports resolve inside the Modal container; local LSP import errors are expected.

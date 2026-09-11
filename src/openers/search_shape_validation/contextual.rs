@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::default_ruleset::ACTIVE_RULES;
 use crate::openers::board::{mirror_letter_row, rows_to_masks_floor_up};
+use crate::openers::catalog::navigation::{node_by_id, path_to, record_by_id};
 use crate::openers::catalog::{parse_catalog, OpenerCatalog, OpenerRecord, OpenerTreeNode};
 use crate::openers::CatalogError;
 
@@ -208,12 +209,7 @@ fn validate_candidate(
     if duplicate || !candidate_is_valid(candidate) {
         return invalid(candidate, "candidate fields must be complete and unique");
     }
-    let Some(record) = context
-        .catalog
-        .openers
-        .iter()
-        .find(|record| record.id == candidate.record_id)
-    else {
+    let Some(record) = record_by_id(context.catalog, &candidate.record_id) else {
         return invalid(candidate, "recordId is absent from the catalog");
     };
     let mut fuel_remaining = context.fuel_limit;
@@ -326,7 +322,7 @@ fn prepare_hint<'a>(
     candidate: &CandidateInput,
     hint: &CatalogHint,
 ) -> Option<PreparedHint<'a>> {
-    let node = record.tree.iter().find(|node| node.id == hint.node_id)?;
+    let node = node_by_id(record, hint.node_id)?;
     if node.pieces != hint.pieces {
         return None;
     }
@@ -348,24 +344,10 @@ fn prepare_hint<'a>(
         return None;
     }
     Some(PreparedHint {
-        nodes: lineage(record, node.id)?,
+        nodes: path_to(record, node)?,
         mirrored,
         target_pre_clear_rows,
     })
-}
-
-fn lineage(record: &OpenerRecord, node_id: u32) -> Option<Vec<&OpenerTreeNode>> {
-    let mut nodes = Vec::new();
-    let mut current = record.tree.iter().find(|node| node.id == node_id)?;
-    loop {
-        nodes.push(current);
-        let Some(parent_id) = current.parent else {
-            break;
-        };
-        current = record.tree.iter().find(|node| node.id == parent_id)?;
-    }
-    nodes.reverse();
-    Some(nodes)
 }
 
 fn same_rows(left: &[String], right: &[String], mirrored: bool) -> bool {

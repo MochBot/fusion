@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 use crate::openers::board::{mirror_mask_10, rows_to_masks_floor_up, strip_garbage_rows};
+use crate::openers::catalog::navigation::record_by_id;
 use crate::openers::catalog::{OpenerCatalog, OpenerRecord};
 use crate::openers::phase::OpenerObservation;
 use crate::openers::route::resolve_report_route;
@@ -265,11 +266,7 @@ fn exact_candidates<'a>(
         if !same_occupancy(&normalized.masks, &target.rows) {
             continue;
         }
-        let Some(record) = catalog
-            .openers
-            .iter()
-            .find(|record| record.id == target.record_id)
-        else {
+        let Some(record) = record_by_id(catalog, &target.record_id) else {
             continue;
         };
         candidates.push(ExactCandidate {

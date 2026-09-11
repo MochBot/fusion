@@ -3,6 +3,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use super::board::rows_to_masks_floor_up;
+use super::catalog::navigation::record_by_id;
 use super::catalog::OpenerCatalog;
 
 const WITNESS_ASSET_VERSION: u32 = 1;
@@ -142,16 +143,14 @@ pub(crate) fn parse_witness_catalog(
     }
     let mut targets = Vec::with_capacity(asset.summary.runtime_targets);
     for witness in &asset.witnesses {
-        let record = catalog
-            .openers
-            .iter()
-            .find(|record| record.id == witness.record_id)
-            .ok_or_else(|| WitnessCatalogError::InvalidAsset {
+        let record = record_by_id(catalog, &witness.record_id).ok_or_else(|| {
+            WitnessCatalogError::InvalidAsset {
                 reason: format!(
                     "record {} is absent from the opener catalog",
                     witness.record_id
                 ),
-            })?;
+            }
+        })?;
         let public_rows = record
             .search_shapes
             .get(witness.search_shape_index)

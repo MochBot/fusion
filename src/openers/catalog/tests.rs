@@ -6,6 +6,9 @@ use super::{
 };
 use crate::openers::WitnessCatalogError;
 
+#[path = "boundary_tests.rs"]
+mod boundary_tests;
+
 fn catalog_json(id: &str, label: &str) -> String {
     format!(
         r#"{{

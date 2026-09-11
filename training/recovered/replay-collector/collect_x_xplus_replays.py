@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["httpx>=0.27"]
+# dependencies = ["httpx>=0.27", "brotli>=1.1", "zstandard>=0.23"]
 # ///
 """
 Collect every available recent league replay for X and X+ ranked players.
@@ -95,9 +95,12 @@ def proxy_config(env: Mapping[str, str] = os.environ) -> tuple[str, str, str]:
 
 def proxy_url(port: int, country: str | None = None) -> str:
     proxy_user, proxy_pass, proxy_host = proxy_config()
-    user = proxy_user
+    # GeoNode rotating-gateway contract (mirrors ip-pool geonode adapter):
+    # the configured value is a bare base login; the wire username must
+    # carry the product-type suffix or the gateway answers HTTP 407.
+    user = proxy_user if "-type-" in proxy_user else f"{proxy_user}-type-residential"
     if country:
-        user = f"{proxy_user}-country-{country.lower()}"
+        user = f"{user}-country-{country.lower()}"
     return f"http://{user}:{proxy_pass}@{proxy_host}:{port}"
 
 
@@ -394,6 +397,12 @@ async def phase_c_attach_ranks(state: State, players: list[Json]) -> dict[str, J
     return existing
 
 
+def negotiated_encodings() -> tuple[str, ...]:
+    from httpx._decoders import SUPPORTED_DECODERS
+
+    return tuple(sorted(SUPPORTED_DECODERS))
+
+
 @dataclass
 class DLOutcome:
     replayid: str
@@ -404,6 +413,9 @@ class DLOutcome:
     via: str
     attempts: int
     elapsed_ms: float
+    bytes_raw: int = 0
+    bytes_decoded: int = 0
+    content_encoding: str | None = None
 
 
 @dataclass
@@ -414,6 +426,8 @@ class CollectorStats:
     failed: int = 0
     skipped: int = 0
     bytes_in: int = 0
+    bytes_raw: int = 0
+    bytes_decoded: int = 0
     err_counter: Counter[str] = field(default_factory=Counter)
     recent_outcomes: deque[int] = field(default_factory=lambda: deque(maxlen=ERROR_WINDOW_SIZE))
     current_concurrency: int = DOWNLOAD_CONCURRENCY_MAX
@@ -423,6 +437,8 @@ class CollectorStats:
     def record(self, outcome: DLOutcome) -> None:
         self.attempted += 1
         self.bytes_in += outcome.bytes_in
+        self.bytes_raw += outcome.bytes_raw
+        self.bytes_decoded += outcome.bytes_decoded
         self.recent_outcomes.append(outcome.status or 0)
         if outcome.status == 200:
             self.success += 1
@@ -453,7 +469,8 @@ class CollectorStats:
         eta_str = "?" if eta_s == float("inf") else (f"{eta_s/60:.0f}m" if eta_s < 7200 else f"{eta_s/3600:.1f}h")
         return (f"attempted={self.attempted}/{total_target} "
                 f"success={self.success} fail={self.failed} skipped={self.skipped} "
-                f"bw={self.bytes_in/1_048_576/elapsed if elapsed>0 else 0:.2f}MiB/s "
+                f"raw={self.bytes_raw/1_048_576/elapsed if elapsed>0 else 0:.2f}MiB "
+                f"decoded={self.bytes_decoded/1_048_576/elapsed if elapsed>0 else 0:.2f}MiB "
                 f"rate={rate:.2f}/s conc={self.current_concurrency} "
                 f"err500_rate={self.error_500_rate()*100:.1f}% eta={eta_str}")
 
@@ -531,6 +548,8 @@ async def download_one(
         last_err: str | None = None
         last_status: int | None = None
         attempts = 0
+        total_raw = 0
+        last_encoding: str | None = None
         port = 0
         via = "direct"
         transports: list[tuple[int, str, httpx.AsyncClient]] = [(0, "direct", direct_client)]
@@ -544,11 +563,15 @@ async def download_one(
                 return DLOutcome(
                     replayid, last_status, 0, "geonode_budget_stop", 0,
                     "geonode:stopped", attempts, (time.perf_counter() - t0) * 1000,
+                    total_raw, 0, last_encoding,
                 )
             url = INOUE_REPLAY.format(replayid=replayid)
             attempts += 1
             try:
                 async with client.stream("GET", url, timeout=DOWNLOAD_TIMEOUT_S) as r:
+                    encoding = r.headers.get("content-encoding")
+                    if encoding is not None:
+                        last_encoding = encoding
                     if r.status_code != 200:
                         last_status = r.status_code
                         body = bytearray()
@@ -556,19 +579,24 @@ async def download_one(
                             body.extend(chunk)
                             if len(body) >= 4096:
                                 break
+                        total_raw += r.num_bytes_downloaded
                         last_err = f"http_{r.status_code}"
                         if r.status_code in RETRYABLE_REPLAY_STATUSES:
                             await asyncio.sleep(2.0 * (attempt + 1))
                             continue
-                        return DLOutcome(replayid, r.status_code, len(body), last_err, port, via, attempts, (time.perf_counter()-t0)*1000)
+                        return DLOutcome(replayid, r.status_code, len(body), last_err, port, via, attempts, (time.perf_counter()-t0)*1000,
+                                         total_raw, len(body), last_encoding)
                     buf = bytearray()
                     async for chunk in r.aiter_bytes():
                         buf.extend(chunk)
                         if len(buf) > MAX_REPLAY_BODY_BYTES:
+                            total_raw += r.num_bytes_downloaded
                             return DLOutcome(
                                 replayid, 413, len(buf), "response_too_large", port, via,
                                 attempts, (time.perf_counter() - t0) * 1000,
+                                total_raw, len(buf), last_encoding,
                             )
+                    total_raw += r.num_bytes_downloaded
                     if not buf or not is_valid_replay_body(buf):
                         last_err = "invalid_body"
                         last_status = None
@@ -577,7 +605,8 @@ async def download_one(
                     tmp = out_path.with_suffix(out_path.suffix + ".tmp")
                     tmp.write_bytes(buf)
                     tmp.replace(out_path)
-                    return DLOutcome(replayid, 200, len(buf), None, port, via, attempts, (time.perf_counter()-t0)*1000)
+                    return DLOutcome(replayid, 200, len(buf), None, port, via, attempts, (time.perf_counter()-t0)*1000,
+                                     total_raw, len(buf), last_encoding)
             except TimeoutError:
                 last_err = "timeout"
                 await asyncio.sleep(1.0)
@@ -590,7 +619,8 @@ async def download_one(
             except Exception as e:
                 last_err = f"{type(e).__name__}"
                 break
-        return DLOutcome(replayid, last_status, 0, last_err or "exhausted", port, via, attempts, (time.perf_counter()-t0)*1000)
+        return DLOutcome(replayid, last_status, 0, last_err or "exhausted", port, via, attempts, (time.perf_counter()-t0)*1000,
+                         total_raw, 0, last_encoding)
 
 
 async def phase_d_download(
@@ -683,6 +713,9 @@ async def phase_d_download(
                 "replayid": outcome.replayid,
                 "status": outcome.status,
                 "bytes": outcome.bytes_in,
+                "bytes_raw": outcome.bytes_raw,
+                "bytes_decoded": outcome.bytes_decoded,
+                "content_encoding": outcome.content_encoding,
                 "err": outcome.err,
                 "port": outcome.port,
                 "via": outcome.via,
@@ -702,6 +735,8 @@ async def phase_d_download(
                     "success": stats.success,
                     "failed": stats.failed,
                     "bytes_in_mib": round(stats.bytes_in / 1_048_576, 1),
+                    "bytes_raw_mib": round(stats.bytes_raw / 1_048_576, 1),
+                    "bytes_decoded_mib": round(stats.bytes_decoded / 1_048_576, 1),
                     "current_concurrency": stats.current_concurrency,
                     "err_counter": dict(stats.err_counter.most_common(10)),
                 }
@@ -733,6 +768,8 @@ async def phase_d_download(
         "success": stats.success,
         "failed": stats.failed,
         "bytes_in_mib": round(stats.bytes_in / 1_048_576, 1),
+        "bytes_raw_mib": round(stats.bytes_raw / 1_048_576, 1),
+        "bytes_decoded_mib": round(stats.bytes_decoded / 1_048_576, 1),
         "err_counter": dict(stats.err_counter.most_common(20)),
         "cooldowns_triggered": stats.cooldowns_triggered,
         "total_seconds": round(time.time() - stats.started_at, 1),

@@ -3,11 +3,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import datetime as dt
+import gzip
 import importlib.util
 import json
 import sys
+import threading
 import types
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import httpx
@@ -619,3 +622,199 @@ def test_incremental_main_polls_only_xplus_and_rejects_invalid_200_body(tmp_path
     assert not (tmp_path / "x+" / "plus" / "fresh.ttrm").exists()
     assert replay_index_path.read_text() == ""
     assert json.loads((meta / "incremental-test.json").read_text())["downloaded_ok"] == 0
+
+
+def compressible_replay_body() -> bytes:
+    side = {"replay": {"events": list(range(3000))}}
+    return json.dumps({"gamemode": "league", "replay": {"rounds": [[side, side]]}}).encode()
+
+
+def local_replay_handler(
+    payload: bytes, encode: Callable[[str, bytes], tuple[bytes, str | None]]
+) -> type[BaseHTTPRequestHandler]:
+    state = {"hits": 0}
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args: object, **kwargs: object) -> None:
+            return None
+
+        def do_GET(self) -> None:
+            if self.path.startswith("/missing/"):
+                data = b"expired"
+                self.send_response(404)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            if self.path.startswith("/flaky/"):
+                state["hits"] += 1
+                if state["hits"] == 1:
+                    data = b"busy"
+                    self.send_response(503)
+                    self.send_header("Content-Length", str(len(data)))
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
+            kind = self.path.split("/")[1]
+            data, encoding = encode(kind, payload)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            if encoding is not None:
+                self.send_header("Content-Encoding", encoding)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+    return Handler
+
+
+def gzip_encode(kind: str, payload: bytes) -> tuple[bytes, str | None]:
+    if kind in ("gzip", "flaky"):
+        return gzip.compress(payload), "gzip"
+    return payload, None
+
+
+@pytest.fixture()
+def make_replay_server():
+    servers: list[tuple[ThreadingHTTPServer, threading.Thread]] = []
+
+    def make(encode: Callable[[str, bytes], tuple[bytes, str | None]]):
+        payload = compressible_replay_body()
+        server = ThreadingHTTPServer(("127.0.0.1", 0), local_replay_handler(payload, encode))
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        servers.append((server, thread))
+        return server, payload
+
+    yield make
+    for server, thread in servers:
+        server.shutdown()
+        thread.join()
+
+
+def run_local_download(xplus, port: int, kind: str, replayid: str, out_path: Path):
+    async def run():
+        async with httpx.AsyncClient(trust_env=False, timeout=10.0) as client:
+            return await xplus.download_one(
+                asyncio.Semaphore(1), client, None, replayid, out_path
+            )
+
+    return asyncio.run(run())
+
+
+def test_download_gzip_reports_raw_wire_bytes_below_decoded(
+    make_replay_server, tmp_path, monkeypatch
+):
+    xplus, _incremental = load_collectors(monkeypatch)
+    server, payload = make_replay_server(gzip_encode)
+    port = server.server_address[1]
+    monkeypatch.setattr(xplus, "INOUE_REPLAY", f"http://127.0.0.1:{port}/gzip/{{replayid}}")
+    out_path = tmp_path / "r1.ttrm"
+
+    outcome = run_local_download(xplus, port, "gzip", "r1", out_path)
+
+    assert outcome.status == 200
+    assert outcome.content_encoding == "gzip"
+    assert outcome.bytes_decoded == len(payload)
+    assert outcome.bytes_in == len(payload)
+    assert 0 < outcome.bytes_raw < outcome.bytes_decoded
+    assert out_path.read_bytes() == payload
+
+
+def test_download_brotli_reports_raw_wire_bytes_below_decoded(
+    make_replay_server, tmp_path, monkeypatch
+):
+    brotli = pytest.importorskip("brotli")
+    xplus, _incremental = load_collectors(monkeypatch)
+
+    def encode(kind: str, payload: bytes) -> tuple[bytes, str | None]:
+        if kind == "br":
+            return brotli.compress(payload), "br"
+        return payload, None
+
+    server, payload = make_replay_server(encode)
+    port = server.server_address[1]
+    monkeypatch.setattr(xplus, "INOUE_REPLAY", f"http://127.0.0.1:{port}/br/{{replayid}}")
+    out_path = tmp_path / "r1.ttrm"
+
+    outcome = run_local_download(xplus, port, "br", "r1", out_path)
+
+    assert outcome.status == 200
+    assert outcome.content_encoding == "br"
+    assert outcome.bytes_decoded == len(payload)
+    assert 0 < outcome.bytes_raw < outcome.bytes_decoded
+    assert out_path.read_bytes() == payload
+
+
+def test_download_zstd_reports_raw_wire_bytes_below_decoded(
+    make_replay_server, tmp_path, monkeypatch
+):
+    zstandard = pytest.importorskip("zstandard")
+    xplus, _incremental = load_collectors(monkeypatch)
+
+    def encode(kind: str, payload: bytes) -> tuple[bytes, str | None]:
+        if kind == "zstd":
+            return zstandard.ZstdCompressor().compress(payload), "zstd"
+        return payload, None
+
+    server, payload = make_replay_server(encode)
+    port = server.server_address[1]
+    monkeypatch.setattr(xplus, "INOUE_REPLAY", f"http://127.0.0.1:{port}/zstd/{{replayid}}")
+    out_path = tmp_path / "r1.ttrm"
+
+    outcome = run_local_download(xplus, port, "zstd", "r1", out_path)
+
+    assert outcome.status == 200
+    assert outcome.content_encoding == "zstd"
+    assert outcome.bytes_decoded == len(payload)
+    assert 0 < outcome.bytes_raw < outcome.bytes_decoded
+    assert out_path.read_bytes() == payload
+
+
+def test_download_failed_status_still_reports_raw_wire_bytes(
+    make_replay_server, tmp_path, monkeypatch
+):
+    xplus, _incremental = load_collectors(monkeypatch)
+    server, _payload = make_replay_server(gzip_encode)
+    port = server.server_address[1]
+    monkeypatch.setattr(xplus, "INOUE_REPLAY", f"http://127.0.0.1:{port}/missing/{{replayid}}")
+    out_path = tmp_path / "gone.ttrm"
+
+    outcome = run_local_download(xplus, port, "missing", "gone", out_path)
+
+    assert outcome.status == 404
+    assert outcome.bytes_raw == len(b"expired")
+    assert outcome.bytes_decoded == len(b"expired")
+    assert outcome.attempts == 1
+    assert not out_path.exists()
+
+
+def test_download_retry_accumulates_failed_attempt_raw_bytes(
+    make_replay_server, tmp_path, monkeypatch
+):
+    xplus, _incremental = load_collectors(monkeypatch)
+    server, payload = make_replay_server(gzip_encode)
+    port = server.server_address[1]
+    monkeypatch.setattr(xplus, "INOUE_REPLAY", f"http://127.0.0.1:{port}/flaky/{{replayid}}")
+    out_path = tmp_path / "r1.ttrm"
+
+    async def no_sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(xplus.asyncio, "sleep", no_sleep)
+
+    async def run():
+        async with httpx.AsyncClient(trust_env=False, timeout=10.0) as direct, httpx.AsyncClient(
+            trust_env=False, timeout=10.0
+        ) as proxy:
+            return await xplus.download_one(
+                asyncio.Semaphore(1), direct, {9000: proxy}, "r1", out_path
+            )
+
+    outcome = asyncio.run(run())
+
+    assert outcome.status == 200
+    assert outcome.attempts == 2
+    assert outcome.bytes_decoded == len(payload)
+    assert outcome.bytes_raw == len(b"busy") + len(gzip.compress(payload))
+    assert out_path.read_bytes() == payload

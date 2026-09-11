@@ -4,6 +4,7 @@ use rayon::prelude::*;
 
 use crate::default_ruleset::ACTIVE_RULES;
 use crate::openers::board::{mirror_letter_row, rows_to_masks_floor_up};
+use crate::openers::catalog::navigation::{node_by_id, path_to, record_by_id};
 use crate::openers::catalog::{parse_catalog, OpenerCatalog, OpenerRecord, OpenerTreeNode};
 
 use super::frames::node_pre_clear_rows;
@@ -84,12 +85,7 @@ fn validate_candidate(
     if duplicate || !candidate_is_valid(candidate) {
         return invalid(candidate, "candidate fields must be complete and unique");
     }
-    let Some(record) = context
-        .catalog
-        .openers
-        .iter()
-        .find(|record| record.id == candidate.record_id)
-    else {
+    let Some(record) = record_by_id(context.catalog, &candidate.record_id) else {
         return invalid(candidate, "recordId is absent from the catalog");
     };
     if !evidence_ordinals_match(record, candidate) {
@@ -181,10 +177,7 @@ fn prepare_evidence<'a>(
     candidate: &CandidateInput,
     evidence: &FrameEvidence,
 ) -> Option<PreparedEvidence<'a>> {
-    let node = record
-        .tree
-        .iter()
-        .find(|node| node.id == evidence.node_id)?;
+    let node = node_by_id(record, evidence.node_id)?;
     let mirrored = match evidence.mirror_relation {
         MirrorRelation::Same => false,
         MirrorRelation::Mirrored => true,
@@ -210,7 +203,7 @@ fn prepare_evidence<'a>(
             (None, None)
         }
     };
-    let nodes = lineage(record, node.id)?;
+    let nodes = path_to(record, node)?;
     Some(PreparedEvidence {
         nodes,
         ordinal: node.pieces,
@@ -238,10 +231,7 @@ fn candidate_is_valid(candidate: &CandidateInput) -> bool {
 
 fn evidence_ordinals_match(record: &OpenerRecord, candidate: &CandidateInput) -> bool {
     candidate.frame_evidence.iter().all(|evidence| {
-        record
-            .tree
-            .iter()
-            .find(|node| node.id == evidence.node_id)
+        node_by_id(record, evidence.node_id)
             .is_some_and(|node| node.pieces == candidate.locked_piece_ordinal)
     })
 }
@@ -253,20 +243,6 @@ fn same_rows(left: &[String], right: &[String], mirrored: bool) -> bool {
         right.to_vec()
     };
     rows_to_masks_floor_up(left) == rows_to_masks_floor_up(&right)
-}
-
-fn lineage(record: &OpenerRecord, node_id: u32) -> Option<Vec<&OpenerTreeNode>> {
-    let mut nodes = Vec::new();
-    let mut current = record.tree.iter().find(|node| node.id == node_id)?;
-    loop {
-        nodes.push(current);
-        let Some(parent_id) = current.parent else {
-            break;
-        };
-        current = record.tree.iter().find(|node| node.id == parent_id)?;
-    }
-    nodes.reverse();
-    Some(nodes)
 }
 
 fn rows_are_valid(rows: &[String]) -> bool {

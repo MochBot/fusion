@@ -1,6 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
-use super::compile::{CompileBudget, CompileError, CompileObserver, PlacementSpec};
+use super::compile::{
+    timed_intern, timed_legality, timed_transition, CompileBudget, CompileError, CompileObserver,
+    PlacementSpec,
+};
 use super::frames::{DeclaredFrame, FrameError};
 #[cfg(test)]
 use super::graph::{cleared_rows, EpsilonReason};
@@ -179,8 +182,9 @@ pub(super) fn compile_edge<O: CompileObserver>(
                         continue;
                     }
                 };
-                let legal =
-                    builder.placement_legality(current.state, placement.letter, &physical.cells);
+                let legal = timed_legality(observer, || {
+                    builder.placement_legality(current.state, placement.letter, &physical.cells)
+                });
                 observer.legality_attempt(legal.support_valid, &legal.verdict);
                 support_observed |= legal.support_valid;
                 let LegalityVerdict::Legal { target, mechanics } = legal.verdict else {
@@ -233,33 +237,36 @@ pub(super) fn compile_edge<O: CompileObserver>(
                 let physical_letters = next_declared.physical_letters();
                 let physical_key =
                     CanonicalKey::from_board_with_letters(&next_board, Some(&physical_letters));
-                let to = builder.intern_with_physical_key(
-                    next_board,
-                    physical_key,
-                    control(record_index, mirrored, node.id, next_subset),
-                    origin(record, mirrored, node, next_subset, complete),
-                    node.grey,
-                );
+                let intern_control = control(record_index, mirrored, node.id, next_subset);
+                let intern_origin = origin(record, mirrored, node, next_subset, complete);
+                let to = timed_intern(observer, || {
+                    builder.intern_with_physical_key(
+                        next_board,
+                        physical_key,
+                        intern_control,
+                        intern_origin,
+                        node.grey,
+                    )
+                });
                 edge_states.insert(to);
                 if u32::try_from(edge_states.len()).unwrap_or(u32::MAX) > budget.max_states_per_edge
                 {
                     budget_reason = Some("interned states exceed budget");
                     break;
                 }
-                builder.add_transition(
-                    current.state,
-                    to,
-                    TransitionLabel::Lock {
-                        #[cfg(test)]
-                        letter: placement.letter,
-                        #[cfg(test)]
-                        cells: physical.cells,
-                        #[cfg(test)]
-                        cleared_rows: cleared_rows(mechanics),
-                        #[cfg(test)]
-                        is_pc: mechanics.is_pc,
-                    },
-                );
+                let label = TransitionLabel::Lock {
+                    #[cfg(test)]
+                    letter: placement.letter,
+                    #[cfg(test)]
+                    cells: physical.cells,
+                    #[cfg(test)]
+                    cleared_rows: cleared_rows(mechanics),
+                    #[cfg(test)]
+                    is_pc: mechanics.is_pc,
+                };
+                timed_transition(observer, || {
+                    builder.add_transition(current.state, to, label)
+                });
                 if wants_legal_orders {
                     transitions.entry(current.state).or_default().push(to);
                     subsets.insert(to, next_subset);
@@ -382,20 +389,17 @@ pub(super) fn compile_grey_terminal<O: CompileObserver>(
     } = input;
     let physical_shadow = physical_shadow_of_declared(grey_board);
     for from in parent_states {
-        let to = builder.intern(
-            physical_shadow.clone(),
-            control(record_index, mirrored, node.id, 0),
-            origin(record, mirrored, node, 0, true),
-            true,
-        );
-        builder.add_transition(
-            *from,
-            to,
-            TransitionLabel::Epsilon {
-                #[cfg(test)]
-                reason: EpsilonReason::BagBoundary,
-            },
-        );
+        let board = physical_shadow.clone();
+        let intern_control = control(record_index, mirrored, node.id, 0);
+        let intern_origin = origin(record, mirrored, node, 0, true);
+        let to = timed_intern(observer, || {
+            builder.intern(board, intern_control, intern_origin, true)
+        });
+        let label = TransitionLabel::Epsilon {
+            #[cfg(test)]
+            reason: EpsilonReason::BagBoundary,
+        };
+        timed_transition(observer, || builder.add_transition(*from, to, label));
         observer.epsilon_transition();
     }
 }
@@ -420,22 +424,19 @@ pub(super) fn compile_bridge<O: CompileObserver>(
         CanonicalKey::from_board_with_letters(&physical_board, Some(&physical_letters));
     let mut completed = Vec::new();
     for from in parent_states {
-        let to = builder.intern_with_physical_key(
-            physical_board.clone(),
-            physical_key.clone(),
-            bridge_control(record_index, mirrored, node.id),
-            origin(record, mirrored, node, 0, true),
-            false,
-        );
+        let board = physical_board.clone();
+        let key = physical_key.clone();
+        let intern_control = bridge_control(record_index, mirrored, node.id);
+        let intern_origin = origin(record, mirrored, node, 0, true);
+        let to = timed_intern(observer, || {
+            builder.intern_with_physical_key(board, key, intern_control, intern_origin, false)
+        });
         builder.mark_bridged(to);
-        builder.add_transition(
-            *from,
-            to,
-            TransitionLabel::Bridge {
-                #[cfg(test)]
-                reason,
-            },
-        );
+        let label = TransitionLabel::Bridge {
+            #[cfg(test)]
+            reason,
+        };
+        timed_transition(observer, || builder.add_transition(*from, to, label));
         if !completed.contains(&to) {
             completed.push(to);
         }
@@ -476,21 +477,24 @@ fn compile_epsilon_edge<O: CompileObserver>(
             continue;
         }
         let physical_letters = declared_start.physical_letters();
-        let to = builder.intern_with_physical_key(
-            builder.board(*from).clone(),
-            CanonicalKey::from_board_with_letters(builder.board(*from), Some(&physical_letters)),
-            control(record_index, mirrored, node.id, 0),
-            origin(record, mirrored, node, 0, true),
-            node.grey,
-        );
-        builder.add_transition(
-            *from,
-            to,
-            TransitionLabel::Epsilon {
-                #[cfg(test)]
-                reason: EpsilonReason::BagBoundary,
-            },
-        );
+        let board = builder.board(*from).clone();
+        let physical_key = CanonicalKey::from_board_with_letters(&board, Some(&physical_letters));
+        let intern_control = control(record_index, mirrored, node.id, 0);
+        let intern_origin = origin(record, mirrored, node, 0, true);
+        let to = timed_intern(observer, || {
+            builder.intern_with_physical_key(
+                board,
+                physical_key,
+                intern_control,
+                intern_origin,
+                node.grey,
+            )
+        });
+        let label = TransitionLabel::Epsilon {
+            #[cfg(test)]
+            reason: EpsilonReason::BagBoundary,
+        };
+        timed_transition(observer, || builder.add_transition(*from, to, label));
         observer.epsilon_transition();
         observer.srs_valid(record, node, mirrored);
         if !completed.contains(&to) {

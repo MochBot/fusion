@@ -17,6 +17,8 @@ use super::target::{build_targets, ShapeTarget};
 
 mod validate;
 
+pub(crate) mod navigation;
+
 const OPENER_ASSET_VERSION: u32 = 2;
 
 static INSTALLED_CATALOG: LazyLock<RwLock<Option<Arc<InstalledCatalog>>>> =
