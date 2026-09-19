@@ -2,43 +2,20 @@ use super::super::cache::RecordGraphCache;
 use super::super::profile::CacheRecordOutcome;
 use super::super::round::recognize_round_profiled;
 use super::{assessment, fixture_catalog, observation, singleton_match};
-
-#[test]
-fn no_catalog_records_total_span_only() {
-    let assessments = vec![Some(assessment("fixture", &[]))];
-    let observations = vec![Some(observation())];
-
-    let (profiled, profile) = recognize_round_profiled(
-        None,
-        &RecordGraphCache::default(),
-        &assessments,
-        None,
-        &observations,
-    );
-
-    assert!(profiled.is_none());
-    assert!(profile.total_recognition.is_some());
-    assert_eq!(profile.shortlist_selection, None);
-    assert_eq!(profile.observation_mapping, None);
-    assert_eq!(profile.cache.graph_total, None);
-    assert_eq!(profile.align, None);
-    assert_eq!(profile.result_mapping, None);
-    assert!(profile.shortlist.is_empty());
-    assert!(profile.cache.records.is_empty());
-}
+use crate::openers::phase::prepare_observations;
 
 #[test]
 fn empty_shortlist_records_selection_only() {
     let catalog = fixture_catalog();
     let assessments = vec![None];
     let observations = vec![Some(observation())];
+    let prepared = prepare_observations(&observations);
 
     let (profiled, profile) = recognize_round_profiled(
-        Some(&catalog),
-        &RecordGraphCache::default(),
+        &RecordGraphCache::for_catalog(catalog.clone()),
         &assessments,
         None,
-        &observations,
+        &prepared,
     );
 
     assert!(profiled.is_none());
@@ -55,13 +32,13 @@ fn unmappable_observations_stop_before_cache() {
     let catalog = fixture_catalog();
     let assessments = vec![Some(assessment("fixture", &[]))];
     let observations = vec![None, None];
+    let prepared = prepare_observations(&observations);
 
     let (profiled, profile) = recognize_round_profiled(
-        Some(&catalog),
-        &RecordGraphCache::default(),
+        &RecordGraphCache::for_catalog(catalog.clone()),
         &assessments,
         None,
-        &observations,
+        &prepared,
     );
 
     assert!(profiled.is_none());
@@ -78,13 +55,13 @@ fn unknown_shortlist_records_missing_without_graph_work() {
     let catalog = fixture_catalog();
     let assessments = vec![Some(assessment("ghost", &[]))];
     let observations = vec![Some(observation())];
+    let prepared = prepare_observations(&observations);
 
     let (profiled, profile) = recognize_round_profiled(
-        Some(&catalog),
-        &RecordGraphCache::default(),
+        &RecordGraphCache::for_catalog(catalog.clone()),
         &assessments,
         Some(&singleton_match("ghost")),
-        &observations,
+        &prepared,
     );
 
     assert!(profiled.is_none());

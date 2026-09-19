@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::openers::board::{cell_count, strip_garbage_rows};
+use crate::openers::board::{cell_count, strip_garbage_rows, NormalizedBoard};
 use crate::openers::matcher::{match_board, BoardMatch};
 use crate::openers::target::ShapeTarget;
 
@@ -18,6 +18,38 @@ pub struct OpenerObservation {
     pub post_letters: Option<Vec<String>>,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct PreparedObservation {
+    pub(crate) normalized: Option<NormalizedBoard>,
+    pub(crate) had_garbage: bool,
+}
+
+pub(crate) fn prepare_observations(
+    observations: &[Option<OpenerObservation>],
+) -> Vec<Option<PreparedObservation>> {
+    observations
+        .iter()
+        .map(|observation| {
+            let observation = observation.as_ref()?;
+            let normalized = observation
+                .post_board
+                .as_deref()
+                .zip(observation.post_gmask.as_deref())
+                .map(|(board, garbage)| {
+                    strip_garbage_rows(board, garbage, observation.post_letters.as_deref())
+                });
+            // Guide indexing distinguishes absent slots from incomplete observations.
+            Some(PreparedObservation {
+                normalized,
+                had_garbage: observation
+                    .post_gmask
+                    .as_deref()
+                    .is_some_and(|garbage| garbage.iter().any(|mask| *mask != 0)),
+            })
+        })
+        .collect()
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenerAssessment {
@@ -29,7 +61,7 @@ pub struct OpenerAssessment {
 
 pub(crate) fn assess_opener_phase(
     targets: &[ShapeTarget],
-    observations: &[Option<OpenerObservation>],
+    observations: &[Option<PreparedObservation>],
 ) -> Vec<Option<OpenerAssessment>> {
     let mut assessments: Vec<Option<OpenerAssessment>> = Vec::with_capacity(observations.len());
     let mut on_script_chain = true;
@@ -40,20 +72,13 @@ pub(crate) fn assess_opener_phase(
             continue;
         }
 
-        let Some(observation) = observation else {
+        let Some(stripped) = observation
+            .as_ref()
+            .and_then(|observation| observation.normalized.as_ref())
+        else {
             assessments.push(None);
             continue;
         };
-        let (Some(post_board), Some(post_gmask)) = (
-            observation.post_board.as_deref(),
-            observation.post_gmask.as_deref(),
-        ) else {
-            assessments.push(None);
-            continue;
-        };
-
-        let stripped =
-            strip_garbage_rows(post_board, post_gmask, observation.post_letters.as_deref());
         let board_cells = cell_count(&stripped.masks);
         if board_cells == 0 {
             assessments.push(Some(OpenerAssessment {

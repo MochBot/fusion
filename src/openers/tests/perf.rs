@@ -8,25 +8,26 @@
 //!     --ignored --exact --test-threads=1 --nocapture
 //! ```
 //!
-//! The captured inputs are the exact `OpenerRoundInput` payloads Mosaic sent
-//! through `analyze_opener_round` for every player-round of the two versus
-//! fixture replays. The corpus digest covers every serialized analysis DTO in
+//! The inputs retain Mosaic's captured observations for every player-round of
+//! the two versus fixture replays; retired dealt-input and tail-queue fields
+//! have been removed. The corpus digest covers every serialized analysis DTO in
 //! order, so any optimization must reproduce it exactly. The installed lane
 //! measures the production path (catalog installed once, rounds analyzed in
 //! replay order, caches warm across rounds); the uncached lane analyzes each
 //! round against a transient identity so no compiled graph is reused.
 
 use std::fmt::Write as _;
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::time::{Duration, Instant};
+
+use sha2::{Digest as ShaDigest, Sha256};
 
 use crate::openers::analyze::{
     analyze_opener_round, analyze_opener_round_with_catalog, OpenerRoundAnalysis, OpenerRoundInput,
 };
 use crate::openers::catalog::{
-    installed_opener_catalog, isolated_catalog_test, set_opener_catalog, CatalogTestScope,
-    OpenerCatalog,
+    installed_opener_catalog, isolated_catalog_test, CatalogTestScope, OpenerCatalog,
 };
+use crate::openers::install_opener_runtime;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::openers::recognition::profile::{CacheRecordOutcome, CacheRecordProfile};
 
@@ -34,6 +35,8 @@ const LIVE_CATALOG: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/fixtures/openers/catalog-full.json"
 );
+const EXPECTED_RECOGNITION_DIGEST: &str =
+    "eed18da10ca9ea166bc5562e151cf48e955cfcf4533adf6e855c7ee13be638d9";
 
 #[derive(serde::Deserialize)]
 pub(crate) struct CapturedRound {
@@ -57,7 +60,7 @@ pub(crate) fn install_live_catalog() -> (CatalogTestScope, OpenerCatalog) {
         std::env::var("OPENER_RECOGNITION_CATALOG").unwrap_or_else(|_| LIVE_CATALOG.to_owned());
     let bytes = std::fs::read(&path).unwrap_or_else(|error| panic!("read {path}: {error}"));
     let scope = isolated_catalog_test();
-    set_opener_catalog(&bytes).expect("live catalog should parse and validate");
+    install_opener_runtime(&bytes, None).expect("live catalog should parse and validate");
     let installed = installed_opener_catalog().expect("catalog should be installed");
     let detached = OpenerCatalog {
         format_version: installed.format_version,
@@ -66,23 +69,24 @@ pub(crate) fn install_live_catalog() -> (CatalogTestScope, OpenerCatalog) {
     (scope, detached)
 }
 
-struct Digest(DefaultHasher);
+struct Digest(Sha256);
 
 impl Digest {
     fn new() -> Self {
-        Self(DefaultHasher::new())
+        Self(Sha256::new())
     }
 
     fn round(&mut self, round: &CapturedRound, analysis: &OpenerRoundAnalysis) {
-        round.replay.hash(&mut self.0);
-        round.round.hash(&mut self.0);
-        serde_json::to_vec(analysis)
-            .expect("analysis should serialize")
-            .hash(&mut self.0);
+        self.0.update(round.replay.as_bytes());
+        self.0.update([0]);
+        self.0.update(round.round.to_le_bytes());
+        self.0.update([0]);
+        let bytes = serde_json::to_vec(analysis).expect("analysis should serialize");
+        self.0.update(bytes);
     }
 
     fn finish(self) -> String {
-        format!("{:016x}", self.0.finish())
+        format!("{:x}", self.0.finalize())
     }
 }
 
@@ -165,6 +169,10 @@ fn replay_round_timing() {
         installed_digest, uncached_digest,
         "cached installed path must reproduce the uncached analysis exactly"
     );
+    assert_eq!(
+        installed_digest, EXPECTED_RECOGNITION_DIGEST,
+        "opener recognition output changed; update the oracle only with reviewed evidence"
+    );
 
     if let Some(out) = std::env::var_os("OPENER_PERF_OUT") {
         let dir = std::path::PathBuf::from(out);
@@ -181,39 +189,47 @@ pub(crate) fn millis(duration: Duration) -> f64 {
 #[ignore]
 fn replay_round_stage_timing() {
     use crate::openers::catalogued_match::match_catalogued_boards_with_targets;
-    use crate::openers::phase::assess_opener_phase;
+    use crate::openers::phase::{assess_opener_phase, prepare_observations};
     use crate::openers::recognition::round::recognize_round;
 
     let (_scope, _detached) = install_live_catalog();
     let installed = installed_opener_catalog().expect("catalog should be installed");
     let rounds = load_rounds();
+    let mut prepare = Duration::ZERO;
     let mut assess = Duration::ZERO;
     let mut confirm = Duration::ZERO;
     let mut recognize_cold = Duration::ZERO;
     let mut recognize_warm = Duration::ZERO;
 
     for round in &rounds {
+        // Normalization is shared by the three stage calls below, so it is timed
+        // once here and excluded from each stage mean: a printed stage number
+        // never contains preparation, and prepare+assess+confirm+recognize
+        // accounts for the whole measured path.
         let started = Instant::now();
-        let assessments = assess_opener_phase(&installed.targets, &round.input.observations);
+        let prepared = prepare_observations(&round.input.observations);
+        prepare += started.elapsed();
+
+        let started = Instant::now();
+        let assessments = assess_opener_phase(&installed.targets, &prepared);
         assess += started.elapsed();
 
         let started = Instant::now();
         let matched = match_catalogued_boards_with_targets(
-            &installed.catalog,
+            installed.catalog(),
             &installed.node_boards,
             &installed.runtime_search_shape_targets,
-            &round.input.observations,
+            &prepared,
         );
         confirm += started.elapsed();
 
         for lane in [&mut recognize_cold, &mut recognize_warm] {
             let started = Instant::now();
             let _ = recognize_round(
-                Some(&installed.catalog),
                 &installed.compiled,
                 &assessments,
                 matched.as_ref(),
-                &round.input.observations,
+                &prepared,
             );
             *lane += started.elapsed();
         }
@@ -221,8 +237,9 @@ fn replay_round_stage_timing() {
 
     let count = rounds.len() as f64;
     println!(
-        "stage means over {} rounds: assess {:.1} ms, confirm {:.1} ms, recognize first-seen {:.1} ms, recognize warm {:.1} ms",
+        "stage means over {} rounds: prepare {:.1} ms, assess {:.1} ms, confirm {:.1} ms, recognize first-seen {:.1} ms, recognize warm {:.1} ms",
         rounds.len(),
+        millis(prepare) / count,
         millis(assess) / count,
         millis(confirm) / count,
         millis(recognize_cold) / count,
@@ -239,14 +256,16 @@ fn replay_round_stage_timing() {
 /// per-record outcome below is observed from the real execution: no copied
 /// shortlist, no separate graph preflight, no union/align subtraction.
 /// Measurement only; asserts nothing about timing beyond first-seen/warm
-/// result parity.
+/// result parity. The `prepare` column is the shared observation
+/// normalization, timed on its own and excluded from the stage columns;
+/// `warm full` stays the whole-call number that includes it.
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 #[ignore]
 fn round_stage_split() {
     use crate::openers::catalogued_match::match_catalogued_boards_with_targets;
     use crate::openers::guide::{build_guide, select_subject};
-    use crate::openers::phase::assess_opener_phase;
+    use crate::openers::phase::{assess_opener_phase, prepare_observations};
     use crate::openers::recognition::round::recognize_round_profiled;
     use crate::openers::report::build_opener_report;
 
@@ -261,18 +280,24 @@ fn round_stage_split() {
         .filter(|index| *index < rounds.len())
         .collect::<Vec<_>>();
 
-    println!("| round | locks | assess | confirm | report | recog first-seen | select | map | cache | cold n | cold ms | union | merged | align | result | states | transitions | recog warm | guide | warm full |");
+    println!("| round | locks | prepare | assess | confirm | report | recog first-seen | select | map | cache | cold n | cold ms | union | merged | align | result | states | transitions | recog warm | guide | warm full |");
     for index in picked {
         let round = &rounds[index];
+        // Normalization is shared by every stage call in this row, so it is
+        // timed on its own (the `prepare` column) and excluded from every other
+        // stage column; `warm full` remains the comparable whole-call number.
         let started = Instant::now();
-        let assessments = assess_opener_phase(&installed.targets, &round.input.observations);
+        let prepared = prepare_observations(&round.input.observations);
+        let prepare = started.elapsed();
+        let started = Instant::now();
+        let assessments = assess_opener_phase(&installed.targets, &prepared);
         let assess = started.elapsed();
         let started = Instant::now();
         let matched = match_catalogued_boards_with_targets(
-            &installed.catalog,
+            installed.catalog(),
             &installed.node_boards,
             &installed.runtime_search_shape_targets,
-            &round.input.observations,
+            &prepared,
         );
         let confirm = started.elapsed();
         let started = Instant::now();
@@ -280,18 +305,16 @@ fn round_stage_split() {
         let report_time = started.elapsed();
 
         let (first, first_profile) = recognize_round_profiled(
-            Some(&installed.catalog),
             &installed.compiled,
             &assessments,
             matched.as_ref(),
-            &round.input.observations,
+            &prepared,
         );
         let (second, warm_profile) = recognize_round_profiled(
-            Some(&installed.catalog),
             &installed.compiled,
             &assessments,
             matched.as_ref(),
-            &round.input.observations,
+            &prepared,
         );
         assert_eq!(
             serde_json::to_vec(&first).expect("recognition should serialize"),
@@ -318,15 +341,8 @@ fn round_stage_split() {
             .filter(|record| record.compile.is_some())
             .count();
         let started = Instant::now();
-        let guide = select_subject(&installed.catalog, matched.as_ref(), first.as_ref()).and_then(
-            |subject| {
-                build_guide(
-                    &installed.catalog,
-                    &subject,
-                    &round.input.observations,
-                    first.as_ref(),
-                )
-            },
+        let guide = select_subject(installed.catalog(), matched.as_ref(), first.as_ref()).and_then(
+            |subject| build_guide(installed.catalog(), &subject, &prepared, first.as_ref()),
         );
         let guide_time = started.elapsed();
         let _ = (report, guide);
@@ -334,9 +350,10 @@ fn round_stage_split() {
         let _ = analyze_opener_round(&round.input).expect("catalog is installed");
         let warm_full = started.elapsed();
         println!(
-            "| {} | {} | {:.1} | {:.1} | {:.1} | {} | {} | {} | {} | {} | {:.1} | {} | {} | {} | {} | {} | {} | {} | {:.1} | {:.1} |",
+            "| {} | {} | {:.1} | {:.1} | {:.1} | {:.1} | {} | {} | {} | {} | {} | {:.1} | {} | {} | {} | {} | {} | {} | {} | {:.1} | {:.1} |",
             index,
             round.input.observations.len(),
+            millis(prepare),
             millis(assess),
             millis(confirm),
             millis(report_time),

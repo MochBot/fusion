@@ -1,8 +1,10 @@
 use super::compile::{
-    compile_recognition_subgraph, compile_recognition_subgraph_with_observer, CompileBudget,
-    CompileObserver,
+    compile_recognition_subgraph, compile_recognition_subgraph_with_metrics, CompileBudget,
+    CompileError, CompileMetricEvent, CompileMetrics, CompileStage,
 };
-use super::compile_stages::{compile_single_record_stages, StageProfilingObserver};
+use super::compile_stages::{
+    compile_single_record_stages, compile_single_record_stages_with_budget, StageProfilingObserver,
+};
 use super::profile_tests::assert_graph_eq;
 use crate::openers::catalog::OpenerCatalog;
 
@@ -48,7 +50,7 @@ fn assert_execution_matches_normal(catalog: &OpenerCatalog, record_id: &str) {
     let normal = compile_recognition_subgraph(&single_catalog, &budget);
     let mut profiler = StageProfilingObserver::new();
     let profiled =
-        compile_recognition_subgraph_with_observer(&single_catalog, &budget, &mut profiler);
+        compile_recognition_subgraph_with_metrics(&single_catalog, &budget, &mut profiler);
     match (normal, profiled) {
         (Ok(normal), Ok(profiled)) => {
             assert_eq!(
@@ -92,50 +94,29 @@ fn profiled_total_state_error_matches_normal() {
     let normal = compile_recognition_subgraph(&single_catalog, &budget);
     let mut profiler = StageProfilingObserver::new();
     let profiled =
-        compile_recognition_subgraph_with_observer(&single_catalog, &budget, &mut profiler);
+        compile_recognition_subgraph_with_metrics(&single_catalog, &budget, &mut profiler);
     let normal_error = normal.err().expect("tiny total-state budget must fail");
     let profiled_error = profiled.err().expect("tiny total-state budget must fail");
     assert_eq!(format!("{normal_error:?}"), format!("{profiled_error:?}"));
 }
 
+#[derive(Default)]
 struct ClockSpy {
     legality: u32,
     intern: u32,
     transition: u32,
     finish: u32,
-    budget_exceeded: bool,
 }
 
-impl CompileObserver for ClockSpy {
-    fn budget_exceeded(
-        &mut self,
-        _record: &crate::openers::catalog::OpenerRecord,
-        _node: &crate::openers::catalog::OpenerTreeNode,
-        _mirrored: bool,
-        _reason: &str,
-        _bridge_exposed: bool,
-    ) {
-        self.budget_exceeded = true;
-    }
-
-    fn did_exceed_budget(&self) -> bool {
-        self.budget_exceeded
-    }
-
-    fn record_legality(&mut self, _elapsed: std::time::Duration) {
-        self.legality = self.legality.saturating_add(1);
-    }
-
-    fn record_intern(&mut self, _elapsed: std::time::Duration) {
-        self.intern = self.intern.saturating_add(1);
-    }
-
-    fn record_transition(&mut self, _elapsed: std::time::Duration) {
-        self.transition = self.transition.saturating_add(1);
-    }
-
-    fn record_finish(&mut self, _elapsed: std::time::Duration) {
-        self.finish = self.finish.saturating_add(1);
+impl CompileMetrics for ClockSpy {
+    fn record_stage(&mut self, stage: CompileStage, _elapsed: std::time::Duration) {
+        let calls = match stage {
+            CompileStage::Legality => &mut self.legality,
+            CompileStage::Intern => &mut self.intern,
+            CompileStage::Transition => &mut self.transition,
+            CompileStage::Finish => &mut self.finish,
+        };
+        *calls = calls.saturating_add(1);
     }
 }
 
@@ -146,15 +127,9 @@ fn default_observer_runs_no_stage_clocks() {
     let single_catalog = single(&catalog, "crowbar-v2");
     let normal = compile_recognition_subgraph(&single_catalog, &budget)
         .expect("fixture record should compile");
-    let mut spy = ClockSpy {
-        legality: 0,
-        intern: 0,
-        transition: 0,
-        finish: 0,
-        budget_exceeded: false,
-    };
+    let mut spy = ClockSpy::default();
     assert!(!spy.wants_stage_profile());
-    let spied = compile_recognition_subgraph_with_observer(&single_catalog, &budget, &mut spy)
+    let spied = compile_recognition_subgraph_with_metrics(&single_catalog, &budget, &mut spy)
         .expect("fixture record should compile");
     assert_eq!(spy.legality, 0, "no legality clock without opt-in");
     assert_eq!(spy.intern, 0, "no intern clock without opt-in");
@@ -228,10 +203,93 @@ fn profiled_missing_record_reports_nothing() {
     assert!(compile_single_record_stages(&catalog, "not-in-catalog").is_none());
 }
 
+/// Node 0 carries two placements against a one-placement cap, so it is
+/// budget-bridged before node 1 compiles a state past the total-state cap.
+fn budget_then_total_state_catalog() -> OpenerCatalog {
+    serde_json::from_str(
+        r#"{"formatVersion":2,"openers":[{"id":"budget-then-total","aliases":{"en":"budget then total"},"shapeKey":"fixture","tree":[
+            {"id":0,"parent":null,"pieces":0,"rows":[],"placements":[
+                {"letter":"O","cells":[[0,0],[1,0],[0,1],[1,1]]},
+                {"letter":"O","cells":[[2,0],[3,0],[2,1],[3,1]]}]},
+            {"id":1,"parent":0,"pieces":1,"rows":["OO________","OO________"],"placements":[
+                {"letter":"O","cells":[[0,0],[1,0],[0,1],[1,1]]}]}
+        ]}]}"#,
+    )
+    .expect("budget-then-total catalog should parse")
+}
+
+fn budget_then_total_state_budget() -> CompileBudget {
+    CompileBudget {
+        max_placements_per_edge: 1,
+        max_total_states: 2,
+        ..CompileBudget::default()
+    }
+}
+
+#[test]
+fn total_state_failure_keeps_the_earlier_edge_budget_verdict() {
+    let catalog = budget_then_total_state_catalog();
+    let budget = budget_then_total_state_budget();
+    let error = compile_recognition_subgraph(&catalog, &budget)
+        .err()
+        .expect("the total-state cap must fail after node 0 was budget-bridged");
+    assert!(
+        matches!(
+            error,
+            CompileError::TotalStateBudgetExceeded {
+                edge_budget_exceeded: true,
+                ..
+            }
+        ),
+        "{error:?}"
+    );
+    assert!(error.edge_budget_exceeded());
+
+    let report = compile_single_record_stages_with_budget(&catalog, "budget-then-total", &budget)
+        .expect("record should be present");
+    assert!(!report.success);
+    assert!(
+        report.budget_exceeded,
+        "the stage report must keep the edge-budget verdict on the error path"
+    );
+    assert!(report.error.is_some());
+}
+
+#[test]
+fn budget_verdict_is_independent_of_observer_callbacks() {
+    /// Receives every metric event and keeps none of them.
+    #[derive(Default)]
+    struct EventSink {
+        events: u32,
+    }
+
+    impl CompileMetrics for EventSink {
+        fn record(&mut self, _event: CompileMetricEvent<'_>) {
+            self.events = self.events.saturating_add(1);
+        }
+    }
+
+    let catalog = over_budget_catalog();
+    let budget = CompileBudget::default();
+    let single_catalog = single(&catalog, "over-budget");
+    let mut sink = EventSink::default();
+    let observed = compile_recognition_subgraph_with_metrics(&single_catalog, &budget, &mut sink)
+        .expect("budget bridging keeps the compile successful");
+    assert!(sink.events > 0, "the sink must have received metric events");
+    assert!(
+        observed.budget_exceeded,
+        "the budget verdict lives in the compile, not in observer callbacks"
+    );
+    let production = compile_recognition_subgraph(&single_catalog, &budget)
+        .expect("production compile should agree");
+    assert_eq!(production.budget_exceeded, observed.budget_exceeded);
+    assert_graph_eq(&production.graph, &observed.graph);
+}
+
 #[test]
 fn stage_observer_keeps_production_observer_contracts() {
     struct DefaultObserver;
-    impl CompileObserver for DefaultObserver {}
+    impl CompileMetrics for DefaultObserver {}
 
     assert!(
         !DefaultObserver.wants_legal_orders(),

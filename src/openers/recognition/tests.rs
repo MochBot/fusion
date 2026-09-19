@@ -1,6 +1,6 @@
 use super::align::{align_round_exact, AlignBudget, Observation};
 use super::census::{CompileCensus, EdgeRef};
-use super::compile::{CompileBudget, PlacementSpec};
+use super::compile::{CompileBudget, CompileBudgetState, PlacementSpec};
 use super::cost::EditCosts;
 use super::evidence::write_census;
 use super::frames::DeclaredFrame;
@@ -436,6 +436,7 @@ fn declared_frame_compiles_real_deferred_clear_regressions() {
             false,
         );
         let mut census = CompileCensus::new(512, 32, 20_000, 4_000_000);
+        let mut budget_state = CompileBudgetState::default();
 
         let completed = super::edge::compile_edge(
             &mut builder,
@@ -449,6 +450,7 @@ fn declared_frame_compiles_real_deferred_clear_regressions() {
                 parent_states: &[parent_state],
                 placements: &placements,
                 budget: &CompileBudget::default(),
+                budget_state: &mut budget_state,
                 bridge_exposed: false,
             },
         )
@@ -665,6 +667,7 @@ fn compile_catalog_edge(
         false,
     );
     let mut census = CompileCensus::new(512, 32, 20_000, 4_000_000);
+    let mut budget_state = CompileBudgetState::default();
     let completed = super::edge::compile_edge(
         &mut builder,
         &mut census,
@@ -677,6 +680,7 @@ fn compile_catalog_edge(
             parent_states: &[parent_state],
             placements: &placements,
             budget: &budget,
+            budget_state: &mut budget_state,
             bridge_exposed: false,
         },
     )
@@ -743,10 +747,10 @@ fn kick_only_t_placement_is_accepted_with_lock_mechanics() {
 
 #[test]
 fn legal_order_counting_is_opt_in_for_census_only() {
-    use super::compile::CompileObserver;
+    use super::compile::CompileMetrics;
 
     struct DefaultObserver;
-    impl CompileObserver for DefaultObserver {}
+    impl CompileMetrics for DefaultObserver {}
 
     assert!(
         !DefaultObserver.wants_legal_orders(),
@@ -785,14 +789,16 @@ fn production_compile_matches_census_graph_while_census_keeps_legal_orders() {
 
 #[test]
 fn skipping_observer_reports_no_legal_orders_without_changing_completed_states() {
-    use super::compile::CompileObserver;
+    use super::compile::CompileMetrics;
 
     struct SkippingSpy {
         reports: u32,
     }
-    impl CompileObserver for SkippingSpy {
-        fn legal_orders(&mut self, _count: u64) {
-            self.reports = self.reports.saturating_add(1);
+    impl CompileMetrics for SkippingSpy {
+        fn record(&mut self, event: super::compile::CompileMetricEvent<'_>) {
+            if matches!(event, super::compile::CompileMetricEvent::LegalOrders(_)) {
+                self.reports = self.reports.saturating_add(1);
+            }
         }
     }
 
@@ -830,7 +836,7 @@ fn two_o_orders_catalog() -> OpenerCatalog {
     )
 }
 
-fn compile_child_edge<O: super::compile::CompileObserver>(
+fn compile_child_edge<O: super::compile::CompileMetrics>(
     builder: &mut super::graph::GraphBuilder,
     observer: &mut O,
     catalog: &OpenerCatalog,
@@ -847,6 +853,7 @@ fn compile_child_edge<O: super::compile::CompileObserver>(
         super::record::origin(record, false, parent, 0, true),
         false,
     );
+    let mut budget_state = CompileBudgetState::default();
     super::edge::compile_edge(
         builder,
         observer,
@@ -859,6 +866,7 @@ fn compile_child_edge<O: super::compile::CompileObserver>(
             parent_states: &[parent_state],
             placements: &placements,
             budget,
+            budget_state: &mut budget_state,
             bridge_exposed: false,
         },
     )

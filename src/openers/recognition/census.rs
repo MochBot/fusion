@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::compile::CompileObserver;
+use super::compile::{CompileMetricEvent, CompileMetrics};
 use super::graph::BridgeReason;
 use super::legality::LegalityVerdict;
 use crate::openers::recognition::record::edge_ref;
@@ -325,188 +325,167 @@ impl CompileCensus {
     }
 }
 
-impl CompileObserver for CompileCensus {
-    fn budget_exceeded(
-        &mut self,
-        record: &crate::openers::catalog::OpenerRecord,
-        node: &crate::openers::catalog::OpenerTreeNode,
-        mirrored: bool,
-        reason: &str,
-        bridge_exposed: bool,
-    ) {
-        let edge = edge_ref(record, node, mirrored, reason);
-        if bridge_exposed {
-            self.bridge_exposed_budget_edges.push(edge);
-        } else {
-            self.budget_exceeded_edges.push(edge);
-        }
-    }
-
-    fn blocked_descendant(
-        &mut self,
-        record: &crate::openers::catalog::OpenerRecord,
-        node: &crate::openers::catalog::OpenerTreeNode,
-        mirrored: bool,
-    ) {
-        self.blocked_descendants.push(edge_ref(
-            record,
-            node,
-            mirrored,
-            "parent has no compiled endpoint",
-        ));
-    }
-
-    fn direct_impossible(
-        &mut self,
-        record: &crate::openers::catalog::OpenerRecord,
-        node: &crate::openers::catalog::OpenerTreeNode,
-        mirrored: bool,
-        reason: &str,
-        bridge_exposed: bool,
-    ) {
-        let edge = edge_ref(record, node, mirrored, reason);
-        if bridge_exposed {
-            self.bridge_exposed_impossible_edges.push(edge);
-        } else {
-            self.direct_impossible_edges.push(edge);
-        }
-    }
-
-    fn legality_attempt(&mut self, support_valid: bool, verdict: &LegalityVerdict) {
-        self.legality_attempts = self.legality_attempts.saturating_add(1);
-        if support_valid {
-            self.support_valid_attempts = self.support_valid_attempts.saturating_add(1);
-        }
-        match verdict {
-            LegalityVerdict::Legal { .. } => {
-                self.srs_legal_attempts = self.srs_legal_attempts.saturating_add(1);
+impl CompileMetrics for CompileCensus {
+    fn record(&mut self, event: CompileMetricEvent<'_>) {
+        match event {
+            CompileMetricEvent::BudgetExceeded {
+                record,
+                node,
+                mirrored,
+                reason,
+                bridge_exposed,
+            } => {
+                let edge = edge_ref(record, node, mirrored, reason);
+                if bridge_exposed {
+                    self.bridge_exposed_budget_edges.push(edge);
+                } else {
+                    self.budget_exceeded_edges.push(edge);
+                }
             }
-            LegalityVerdict::UnreachableFromSpawn => {
-                self.srs_rejected_attempts = self.srs_rejected_attempts.saturating_add(1);
-                self.unreachable_from_spawn_attempts =
-                    self.unreachable_from_spawn_attempts.saturating_add(1);
+            CompileMetricEvent::BlockedDescendant {
+                record,
+                node,
+                mirrored,
+            } => {
+                self.blocked_descendants.push(edge_ref(
+                    record,
+                    node,
+                    mirrored,
+                    "parent has no compiled endpoint",
+                ));
             }
-            LegalityVerdict::Unsupported => {
-                self.srs_rejected_attempts = self.srs_rejected_attempts.saturating_add(1);
-                self.unsupported_attempts = self.unsupported_attempts.saturating_add(1);
+            CompileMetricEvent::DirectImpossible {
+                record,
+                node,
+                mirrored,
+                reason,
+                bridge_exposed,
+            } => {
+                let edge = edge_ref(record, node, mirrored, reason);
+                if bridge_exposed {
+                    self.bridge_exposed_impossible_edges.push(edge);
+                } else {
+                    self.direct_impossible_edges.push(edge);
+                }
             }
-            LegalityVerdict::NotAPlacement => {
-                self.srs_rejected_attempts = self.srs_rejected_attempts.saturating_add(1);
-                self.not_a_placement_attempts = self.not_a_placement_attempts.saturating_add(1);
+            CompileMetricEvent::LegalityAttempt {
+                support_valid,
+                verdict,
+            } => {
+                self.legality_attempts = self.legality_attempts.saturating_add(1);
+                if support_valid {
+                    self.support_valid_attempts = self.support_valid_attempts.saturating_add(1);
+                }
+                match verdict {
+                    LegalityVerdict::Legal { .. } => {
+                        self.srs_legal_attempts = self.srs_legal_attempts.saturating_add(1);
+                    }
+                    LegalityVerdict::UnreachableFromSpawn => {
+                        self.srs_rejected_attempts = self.srs_rejected_attempts.saturating_add(1);
+                        self.unreachable_from_spawn_attempts =
+                            self.unreachable_from_spawn_attempts.saturating_add(1);
+                    }
+                    LegalityVerdict::Unsupported => {
+                        self.srs_rejected_attempts = self.srs_rejected_attempts.saturating_add(1);
+                        self.unsupported_attempts = self.unsupported_attempts.saturating_add(1);
+                    }
+                    LegalityVerdict::NotAPlacement => {
+                        self.srs_rejected_attempts = self.srs_rejected_attempts.saturating_add(1);
+                        self.not_a_placement_attempts =
+                            self.not_a_placement_attempts.saturating_add(1);
+                    }
+                }
+            }
+            CompileMetricEvent::LetteredEdge { bridge_exposed } => {
+                if !bridge_exposed {
+                    self.lettered_edges = self.lettered_edges.saturating_add(1);
+                }
+            }
+            CompileMetricEvent::EdgeStateCount(count) => {
+                self.observed_max_states_per_edge = self.observed_max_states_per_edge.max(count);
+            }
+            CompileMetricEvent::DfsVisits(visits) => {
+                self.record_dfs_visits(visits);
+            }
+            CompileMetricEvent::LegalOrders(count) => {
+                self.legal_order_count = self.legal_order_count.saturating_add(count);
+            }
+            CompileMetricEvent::SupportObserved => {
+                self.support_observed_edges = self.support_observed_edges.saturating_add(1);
+            }
+            CompileMetricEvent::SupportWithoutExactSrs => {
+                self.support_observed_without_exact_srs_edges = self
+                    .support_observed_without_exact_srs_edges
+                    .saturating_add(1);
+            }
+            CompileMetricEvent::SrsValid {
+                record,
+                node,
+                mirrored,
+            } => {
+                self.srs_valid_edges = self.srs_valid_edges.saturating_add(1);
+                self.mark_compiled(record, node, mirrored);
+            }
+            CompileMetricEvent::ShiftedCompiled {
+                record,
+                node,
+                mirrored,
+            } => {
+                self.shifted_compiled_edges.push(edge_ref(
+                    record,
+                    node,
+                    mirrored,
+                    "physical cell shift required",
+                ));
+            }
+            CompileMetricEvent::DfsCompiledLarge {
+                record,
+                node,
+                mirrored,
+            } => {
+                self.dfs_compiled_large_edges.push(edge_ref(
+                    record,
+                    node,
+                    mirrored,
+                    "compiled with DFS beyond Path A cap",
+                ));
+            }
+            CompileMetricEvent::EpsilonTransition => {
+                self.epsilon_transitions = self.epsilon_transitions.saturating_add(1);
+            }
+            CompileMetricEvent::FrameInconsistent {
+                record,
+                node,
+                mirrored,
+                reason,
+                bridge_exposed,
+            } => {
+                let edge = edge_ref(record, node, mirrored, reason);
+                let edges = if bridge_exposed {
+                    &mut self.bridge_exposed_frame_inconsistent_edges
+                } else {
+                    &mut self.frame_inconsistent_edges
+                };
+                if !edges.iter().any(|candidate| {
+                    candidate.record == edge.record
+                        && candidate.node_id == edge.node_id
+                        && candidate.mirrored == edge.mirrored
+                }) {
+                    edges.push(edge);
+                }
+            }
+            CompileMetricEvent::BridgedEdge(reason) => {
+                self.bridged_edges.record(reason);
+            }
+            CompileMetricEvent::BridgeRescuedDescendants(state_count) => {
+                self.bridge_rescued_descendants =
+                    self.bridge_rescued_descendants.saturating_add(state_count);
             }
         }
-    }
-
-    fn lettered_edge(&mut self, bridge_exposed: bool) {
-        if !bridge_exposed {
-            self.lettered_edges = self.lettered_edges.saturating_add(1);
-        }
-    }
-
-    fn edge_state_count(&mut self, count: u32) {
-        self.observed_max_states_per_edge = self.observed_max_states_per_edge.max(count);
-    }
-
-    fn dfs_visits(&mut self, visits: u32) {
-        self.record_dfs_visits(visits);
-    }
-
-    fn legal_orders(&mut self, count: u64) {
-        self.legal_order_count = self.legal_order_count.saturating_add(count);
     }
 
     fn wants_legal_orders(&self) -> bool {
         true
-    }
-
-    fn support_observed(&mut self) {
-        self.support_observed_edges = self.support_observed_edges.saturating_add(1);
-    }
-
-    fn support_without_exact_srs(&mut self) {
-        self.support_observed_without_exact_srs_edges = self
-            .support_observed_without_exact_srs_edges
-            .saturating_add(1);
-    }
-
-    fn srs_valid(
-        &mut self,
-        record: &crate::openers::catalog::OpenerRecord,
-        node: &crate::openers::catalog::OpenerTreeNode,
-        mirrored: bool,
-    ) {
-        self.srs_valid_edges = self.srs_valid_edges.saturating_add(1);
-        self.mark_compiled(record, node, mirrored);
-    }
-
-    fn shifted_compiled(
-        &mut self,
-        record: &crate::openers::catalog::OpenerRecord,
-        node: &crate::openers::catalog::OpenerTreeNode,
-        mirrored: bool,
-    ) {
-        self.shifted_compiled_edges.push(edge_ref(
-            record,
-            node,
-            mirrored,
-            "physical cell shift required",
-        ));
-    }
-
-    fn dfs_compiled_large(
-        &mut self,
-        record: &crate::openers::catalog::OpenerRecord,
-        node: &crate::openers::catalog::OpenerTreeNode,
-        mirrored: bool,
-    ) {
-        self.dfs_compiled_large_edges.push(edge_ref(
-            record,
-            node,
-            mirrored,
-            "compiled with DFS beyond Path A cap",
-        ));
-    }
-
-    fn epsilon_transition(&mut self) {
-        self.epsilon_transitions = self.epsilon_transitions.saturating_add(1);
-    }
-
-    fn frame_inconsistent(
-        &mut self,
-        record: &crate::openers::catalog::OpenerRecord,
-        node: &crate::openers::catalog::OpenerTreeNode,
-        mirrored: bool,
-        reason: &str,
-        bridge_exposed: bool,
-    ) {
-        let edge = edge_ref(record, node, mirrored, reason);
-        let edges = if bridge_exposed {
-            &mut self.bridge_exposed_frame_inconsistent_edges
-        } else {
-            &mut self.frame_inconsistent_edges
-        };
-        if !edges.iter().any(|candidate| {
-            candidate.record == edge.record
-                && candidate.node_id == edge.node_id
-                && candidate.mirrored == edge.mirrored
-        }) {
-            edges.push(edge);
-        }
-    }
-
-    fn bridged_edge(
-        &mut self,
-        _record: &crate::openers::catalog::OpenerRecord,
-        _node: &crate::openers::catalog::OpenerTreeNode,
-        _mirrored: bool,
-        reason: BridgeReason,
-    ) {
-        self.bridged_edges.record(reason);
-    }
-
-    fn bridge_rescued_descendants(&mut self, state_count: u32) {
-        self.bridge_rescued_descendants =
-            self.bridge_rescued_descendants.saturating_add(state_count);
     }
 }
 

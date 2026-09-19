@@ -245,7 +245,8 @@ pub fn evaluate_position_wasm(
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let p = piece_from_external(piece)?;
         let frame_context = from_js::<ReplayFrameContextJson>(frame);
-        let state = game_state_from_external_context(pre_board_clone, p, frame_context.as_ref());
+        let context = frame_context.as_ref();
+        let state = game_state_from_external_context(pre_board_clone, p, context);
 
         let weights = EvalWeights::default();
         let mut config = SearchConfig {
@@ -266,27 +267,12 @@ pub fn evaluate_position_wasm(
         let post_spawn_blocked = GameState::spawn_envelope_blocked(&post_board_clone);
         let coaching_after = coaching_before.transition(TransitionObservation {
             resulting_height: post_height,
-            resulting_b2b: frame_context.as_ref().and_then(|ctx| ctx.b2b).unwrap_or(0) as u8,
-            resulting_combo: frame_context
-                .as_ref()
-                .and_then(|ctx| ctx.combo)
-                .unwrap_or(0) as u32,
-            lines_cleared: frame_context
-                .as_ref()
-                .and_then(|ctx| ctx.lines_cleared)
-                .unwrap_or(0),
-            hold_used: frame_context
-                .as_ref()
-                .and_then(|ctx| ctx.hold_used)
-                .unwrap_or(false),
-            pending_garbage: frame_context
-                .as_ref()
-                .and_then(|ctx| ctx.pending_garbage)
-                .unwrap_or(0) as u8,
-            imminent_garbage: frame_context
-                .as_ref()
-                .and_then(|ctx| ctx.imminent_garbage)
-                .unwrap_or(0) as u8,
+            resulting_b2b: context.and_then(|ctx| ctx.b2b).unwrap_or(0) as u8,
+            resulting_combo: context.and_then(|ctx| ctx.combo).unwrap_or(0) as u32,
+            lines_cleared: context.and_then(|ctx| ctx.lines_cleared).unwrap_or(0),
+            hold_used: context.and_then(|ctx| ctx.hold_used).unwrap_or(false),
+            pending_garbage: context.and_then(|ctx| ctx.pending_garbage).unwrap_or(0) as u8,
+            imminent_garbage: context.and_then(|ctx| ctx.imminent_garbage).unwrap_or(0) as u8,
             spawn_envelope_blocked: post_spawn_blocked,
         });
 
@@ -372,19 +358,17 @@ pub fn evaluate_position_wasm(
                     let dp_mul = coaching_dp_multiplier(&coaching_after);
                     let amplified_actual = best_search_score - raw_loss * dp_mul;
 
+                    let defaults = analysis::PlayerSkill::default();
                     let skill = analysis::PlayerSkill {
-                        pps: frame_context
-                            .as_ref()
+                        pps: context
                             .and_then(|ctx| ctx.player_pps)
-                            .unwrap_or(1.57),
-                        app: frame_context
-                            .as_ref()
+                            .unwrap_or(defaults.pps),
+                        app: context
                             .and_then(|ctx| ctx.player_app)
-                            .unwrap_or(0.48),
-                        dsp: frame_context
-                            .as_ref()
+                            .unwrap_or(defaults.app),
+                        dsp: context
                             .and_then(|ctx| ctx.player_dsp)
-                            .unwrap_or(0.20),
+                            .unwrap_or(defaults.dsp),
                     };
                     let sigmoid_c = analysis::compute_sigmoid_c(&skill);
                     let sev = analysis::classify_win_prob_drop(
@@ -432,18 +416,9 @@ pub fn evaluate_position_wasm(
 
         let meter_value = analysis::normalize_meter(eval_after);
 
-        let combo_after = frame_context
-            .as_ref()
-            .and_then(|ctx| ctx.combo)
-            .unwrap_or(0) as u32;
-        let combo_before = frame_context
-            .as_ref()
-            .and_then(|ctx| ctx.combo_before)
-            .unwrap_or(0) as u32;
-        let lines_cleared_val = frame_context
-            .as_ref()
-            .and_then(|ctx| ctx.lines_cleared)
-            .unwrap_or(0);
+        let combo_after = context.and_then(|ctx| ctx.combo).unwrap_or(0) as u32;
+        let combo_before = context.and_then(|ctx| ctx.combo_before).unwrap_or(0) as u32;
+        let lines_cleared_val = context.and_then(|ctx| ctx.lines_cleared).unwrap_or(0);
         let insight_input = analysis::InsightDetectorInput {
             best_attack_score: path_attack,
             best_chain_score: path_chain,
@@ -531,11 +506,6 @@ pub fn find_best_move_wasm(board: &JsBoard, piece: u8, frame: JsValue) -> JsValu
     }));
 
     caught_to_js(result)
-}
-
-#[wasm_bindgen(js_name = "recommend_position")]
-pub fn recommend_position(request_json: &str) -> String {
-    crate::recommend::recommend_json(request_json)
 }
 
 #[wasm_bindgen(js_name = "get_all_moves")]
@@ -793,23 +763,6 @@ pub fn expand_ply_batch_wasm(
     out
 }
 
-#[allow(dead_code)]
-fn compact_garbage_rows(garbage_rows: &[u64; 40], cleared: u64) -> [u64; 40] {
-    if cleared == 0 {
-        return *garbage_rows;
-    }
-
-    let mut compacted = [0u64; 40];
-    let mut write = 0usize;
-    for (read, &row) in garbage_rows.iter().enumerate() {
-        if cleared & (1u64 << read) == 0 {
-            compacted[write] = row;
-            write += 1;
-        }
-    }
-    compacted
-}
-
 // Beam kernels in crate::coach_beam; this module has JS marshaling only.
 
 #[inline]
@@ -1052,28 +1005,6 @@ fn line_step_json(s: crate::coach_beam::CoachLineStep) -> LineStepJson {
     }
 }
 
-/// Insert garbage rows at the bottom of a row/gmask pair, shifting the
-/// stack up. Cells pushed above row 39 are dropped. Returns the new
-/// (rows, gmask). Inserted rows are fully flagged as garbage.
-#[allow(dead_code)]
-fn apply_garbage_insert(
-    rows: &[u64; 40],
-    gm: &[u64; 40],
-    garbage: &[u64],
-) -> ([u64; 40], [u64; 40]) {
-    let n = garbage.len().min(40);
-    let mut nr = [0u64; 40];
-    let mut ng = [0u64; 40];
-    nr[n..40].copy_from_slice(&rows[..(40 - n)]);
-    ng[n..40].copy_from_slice(&gm[..(40 - n)]);
-    for (y, &g) in garbage.iter().take(n).enumerate() {
-        let r = g & (crate::board::FULL_ROW as u64);
-        nr[y] = r;
-        ng[y] = r;
-    }
-    (nr, ng)
-}
-
 /// Garbage-injecting variant of `beam_best_gm`. Inserts garbage rows
 /// into every child board BEFORE the keep comparison so the player's
 /// real (garbage-laden) line stays reachable.
@@ -1309,6 +1240,9 @@ mod tests {
             recognition["hypotheses"][0],
             json!({
                 "record": "crowbar-v2",
+                "nodeId": 0,
+                "routeName": null,
+                "mirrored": false,
                 "totalCost": 10,
                 "margin": 7,
                 "ops": {
@@ -1366,12 +1300,20 @@ mod tests {
             OpenerWasmPayload::Ok { .. }
         ));
 
-        let invalid: Value = match serde_json::from_slice(&opener_round_payload_bytes(b"!")) {
-            Ok(value) => value,
-            Err(error) => panic!("bytes payload should be JSON: {error}"),
-        };
-        assert_eq!(invalid["status"], json!("error"));
-        assert_eq!(invalid["error"]["code"], json!("invalidInput"));
+        for input in [
+            &b"!"[..],
+            br#"{"observations":[],"dealtInputs":[]}"#,
+            br#"{"observations":[],"tailQueue":[]}"#,
+            br#"{"observations":[],"dealtInputs":[{"spawnPiece":2,"hold":null,"queueHead":4}]}"#,
+            br#"{"observations":[],"tailQueue":[0,6]}"#,
+        ] {
+            let invalid: Value = match serde_json::from_slice(&opener_round_payload_bytes(input)) {
+                Ok(value) => value,
+                Err(error) => panic!("bytes payload should be JSON: {error}"),
+            };
+            assert_eq!(invalid["status"], json!("error"));
+            assert_eq!(invalid["error"]["code"], json!("invalidInput"));
+        }
 
         let fixture: Value = match serde_json::from_slice(include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -1950,19 +1892,6 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_garbage_insert_shifts_up() {
-        let mut rows = [0u64; 40];
-        rows[0] = 0x0FF;
-        let gm = [0u64; 40];
-        let garbage = [0x3FBu64];
-        let (nr, ng) = apply_garbage_insert(&rows, &gm, &garbage);
-        assert_eq!(nr[0], 0x3FB, "inserted garbage row sits at the bottom");
-        assert_eq!(nr[1], 0x0FF, "original bottom row shifted up by one");
-        assert_eq!(ng[0], 0x3FB, "inserted row flagged as garbage");
-        assert_eq!(ng[1], 0, "shifted original row is not garbage");
-    }
-
-    #[test]
     fn test_beam_best_gm_gi_parity_no_garbage() {
         let mut rows = [0u64; 40];
         for y in 0..4 {
@@ -2025,20 +1954,6 @@ mod tests {
             acc > 0.0,
             "injecting 4 garbage rows then clearing them should yield positive attack, got {acc}"
         );
-    }
-
-    #[test]
-    fn test_compact_garbage_rows_matches_line_clear_compaction() {
-        let mut gm = [0u64; 40];
-        gm[0] = 0x03FF;
-        gm[1] = 0x0200;
-        gm[2] = 0x0100;
-
-        let compacted = compact_garbage_rows(&gm, 1u64 << 0);
-
-        assert_eq!(compacted[0], 0x0200);
-        assert_eq!(compacted[1], 0x0100);
-        assert_eq!(compacted[2], 0);
     }
 }
 

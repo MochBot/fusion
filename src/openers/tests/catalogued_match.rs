@@ -1,6 +1,5 @@
 use crate::openers::{
-    analyze_opener_round, set_opener_catalog, set_search_shape_witnesses, OpenerObservation,
-    OpenerRoundInput,
+    analyze_opener_round, install_opener_runtime, OpenerObservation, OpenerRoundInput,
 };
 use sha2::{Digest, Sha256};
 
@@ -205,7 +204,7 @@ fn observation(mask: u16, letters: &str) -> OpenerObservation {
 }
 
 fn install_catalog(catalog: &[u8]) {
-    if let Err(error) = set_opener_catalog(catalog) {
+    if let Err(error) = install_opener_runtime(catalog, None) {
         panic!("test catalog should install: {error}");
     }
 }
@@ -238,8 +237,8 @@ fn install_witnesses(catalog: &[u8], rows: &str, ordinal: u32) {
         }}"#,
         hash = "a".repeat(64)
     );
-    if let Err(error) = set_search_shape_witnesses(witnesses.as_bytes()) {
-        panic!("test witness companion should install: {error}");
+    if let Err(error) = install_opener_runtime(catalog, Some(witnesses.as_bytes())) {
+        panic!("test catalog and witness companion should install: {error}");
     }
 }
 

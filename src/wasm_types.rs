@@ -40,20 +40,13 @@ pub(crate) fn hold_from_external(hold: Option<u8>) -> Option<Piece> {
 }
 
 pub(crate) fn board_from_external_rows(rows: Option<&[u16]>) -> Board {
-    let mut board = Board::new();
+    let mut out = [0u16; crate::board::BOARD_HEIGHT];
     if let Some(rows) = rows {
         for (y, row) in rows.iter().take(crate::board::BOARD_HEIGHT).enumerate() {
-            let row = *row & ((1u16 << COL_NB) - 1);
-            board.rows[y] = row;
-            let mut bits = row as u64;
-            while bits != 0 {
-                let x = bits.trailing_zeros() as usize;
-                board.cols[x] |= 1u64 << y;
-                bits &= bits - 1;
-            }
+            out[y] = *row & ((1u16 << COL_NB) - 1);
         }
     }
-    board
+    Board::from_rows(out)
 }
 
 pub(crate) fn game_state_from_external_context(
@@ -303,6 +296,26 @@ mod tests {
             .find_map(|line| line.split_once('=').filter(|(k, _)| *k == key))
             .map(|(_, values)| values.split(',').map(|value| value.to_string()).collect())
             .unwrap_or_else(|| panic!("missing fixture key: {key}"))
+    }
+
+    #[test]
+    fn external_rows_preserve_mask_padding_and_height_limit() {
+        for count in [0, 1, 39, 40, 41] {
+            let short = vec![u16::MAX; count];
+            let wide = vec![u64::MAX; count];
+            for board in [
+                board_from_external_rows(Some(&short)),
+                crate::wasm_board::board_from_row_bitmasks(&wide),
+            ] {
+                let expected =
+                    std::array::from_fn(|y| if y < count { crate::board::FULL_ROW } else { 0 });
+                assert_eq!(board.rows, expected);
+                assert_eq!(board.cols, [(1u64 << count.min(40)) - 1; COL_NB]);
+            }
+        }
+        let absent = board_from_external_rows(None);
+        assert_eq!(absent.rows, [0; crate::board::BOARD_HEIGHT]);
+        assert_eq!(absent.cols, [0; COL_NB]);
     }
 
     #[test]

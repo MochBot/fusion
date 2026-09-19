@@ -1,5 +1,5 @@
 use crate::openers::{
-    analyze_opener_round, set_opener_catalog, OpenerObservation, OpenerRoundInput,
+    analyze_opener_round, install_opener_runtime, OpenerObservation, OpenerRoundInput,
 };
 
 #[test]
@@ -122,7 +122,7 @@ fn observation(mask: u16) -> OpenerObservation {
 }
 
 fn install(catalog: &[u8]) {
-    if let Err(error) = set_opener_catalog(catalog) {
+    if let Err(error) = install_opener_runtime(catalog, None) {
         panic!("test catalog should install: {error}");
     }
 }

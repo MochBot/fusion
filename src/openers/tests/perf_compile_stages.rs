@@ -29,7 +29,7 @@ use std::time::Duration;
 use super::perf::{install_live_catalog, load_rounds, millis};
 use crate::openers::catalog::installed_opener_catalog;
 use crate::openers::catalogued_match::match_catalogued_boards_with_targets;
-use crate::openers::phase::assess_opener_phase;
+use crate::openers::phase::{assess_opener_phase, prepare_observations};
 use crate::openers::recognition::compile_stages::compile_single_record_stages;
 use crate::openers::recognition::profile::CacheRecordOutcome;
 use crate::openers::recognition::round::recognize_round_profiled;
@@ -53,19 +53,19 @@ fn cold_record_ranking_with_stage_breakdown() {
 
     let mut cold: HashMap<String, ColdEntry> = HashMap::new();
     for (round_index, round) in rounds.iter().enumerate() {
-        let assessments = assess_opener_phase(&installed.targets, &round.input.observations);
+        let prepared = prepare_observations(&round.input.observations);
+        let assessments = assess_opener_phase(&installed.targets, &prepared);
         let matched = match_catalogued_boards_with_targets(
-            &installed.catalog,
+            installed.catalog(),
             &installed.node_boards,
             &installed.runtime_search_shape_targets,
-            &round.input.observations,
+            &prepared,
         );
         let (_recognition, profile) = recognize_round_profiled(
-            Some(&installed.catalog),
             &installed.compiled,
             &assessments,
             matched.as_ref(),
-            &round.input.observations,
+            &prepared,
         );
         for record in &profile.cache.records {
             if let Some(compile) = record.compile {
@@ -135,7 +135,7 @@ fn cold_record_ranking_with_stage_breakdown() {
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |"
     );
     for (id, entry) in ranked.iter().take(TOP_N) {
-        let report = compile_single_record_stages(&installed.catalog, id)
+        let report = compile_single_record_stages(installed.catalog(), id)
             .expect("cold record should still be in the catalog");
         assert_eq!(
             report.success,

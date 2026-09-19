@@ -5,7 +5,7 @@ use super::{
     assessment, fixture_catalog, legal_observations, mini_catalog, observation, singleton_match,
 };
 use crate::openers::catalogued_match::match_catalogued_boards;
-use crate::openers::phase::assess_opener_phase;
+use crate::openers::phase::{assess_opener_phase, prepare_observations};
 use crate::openers::target::build_targets;
 
 #[test]
@@ -13,23 +13,13 @@ fn profiled_recognition_matches_normal_on_fresh_and_warm_caches() {
     let catalog = fixture_catalog();
     let assessments = vec![Some(assessment("fixture", &[]))];
     let observations = vec![Some(observation())];
-    let normal_cache = RecordGraphCache::default();
-    let profiled_cache = RecordGraphCache::default();
+    let prepared = prepare_observations(&observations);
+    let normal_cache = RecordGraphCache::for_catalog(catalog.clone());
+    let profiled_cache = RecordGraphCache::for_catalog(catalog.clone());
 
-    let normal = recognize_round(
-        Some(&catalog),
-        &normal_cache,
-        &assessments,
-        None,
-        &observations,
-    );
-    let (profiled, profile) = recognize_round_profiled(
-        Some(&catalog),
-        &profiled_cache,
-        &assessments,
-        None,
-        &observations,
-    );
+    let normal = recognize_round(&normal_cache, &assessments, None, &prepared);
+    let (profiled, profile) =
+        recognize_round_profiled(&profiled_cache, &assessments, None, &prepared);
 
     assert!(normal.is_some());
     assert_eq!(
@@ -50,20 +40,9 @@ fn profiled_recognition_matches_normal_on_fresh_and_warm_caches() {
     assert!(profile.align.is_some());
     assert!(profile.result_mapping.is_some());
 
-    let warm_normal = recognize_round(
-        Some(&catalog),
-        &normal_cache,
-        &assessments,
-        None,
-        &observations,
-    );
-    let (warm_profiled, warm_profile) = recognize_round_profiled(
-        Some(&catalog),
-        &profiled_cache,
-        &assessments,
-        None,
-        &observations,
-    );
+    let warm_normal = recognize_round(&normal_cache, &assessments, None, &prepared);
+    let (warm_profiled, warm_profile) =
+        recognize_round_profiled(&profiled_cache, &assessments, None, &prepared);
 
     assert_eq!(
         serde_json::to_vec(&warm_normal).expect("recognition should serialize"),
@@ -83,21 +62,20 @@ fn profiled_shortlist_preserves_dedup_cap_and_order() {
     let mut assessments = vec![Some(assessment("fixture", &["runner", "fixture"]))];
     assessments.extend((2..25).map(|index| Some(assessment(&format!("record-{index}"), &[]))));
     let observations = vec![Some(observation())];
+    let prepared = prepare_observations(&observations);
     let matched = singleton_match("fixture");
 
     let normal = recognize_round(
-        Some(&catalog),
-        &RecordGraphCache::default(),
+        &RecordGraphCache::for_catalog(catalog.clone()),
         &assessments,
         Some(&matched),
-        &observations,
+        &prepared,
     );
     let (profiled, profile) = recognize_round_profiled(
-        Some(&catalog),
-        &RecordGraphCache::default(),
+        &RecordGraphCache::for_catalog(catalog.clone()),
         &assessments,
         Some(&matched),
-        &observations,
+        &prepared,
     );
 
     assert_eq!(
@@ -117,14 +95,14 @@ fn profiled_singleton_confirmed_identity_leads_shortlist() {
     let catalog = fixture_catalog();
     let assessments = vec![Some(assessment("other", &[]))];
     let observations = vec![Some(observation())];
+    let prepared = prepare_observations(&observations);
     let matched = singleton_match("fixture");
 
     let (profiled, profile) = recognize_round_profiled(
-        Some(&catalog),
-        &RecordGraphCache::default(),
+        &RecordGraphCache::for_catalog(catalog.clone()),
         &assessments,
         Some(&matched),
-        &observations,
+        &prepared,
     );
 
     assert!(profiled.is_some());
@@ -143,20 +121,19 @@ fn profiled_null_slots_match_normal() {
         Some(assessment("fixture", &[])),
     ];
     let observations = vec![Some(observation()), None, Some(observation())];
+    let prepared = prepare_observations(&observations);
 
     let normal = recognize_round(
-        Some(&catalog),
-        &RecordGraphCache::default(),
+        &RecordGraphCache::for_catalog(catalog.clone()),
         &assessments,
         None,
-        &observations,
+        &prepared,
     );
     let (profiled, _) = recognize_round_profiled(
-        Some(&catalog),
-        &RecordGraphCache::default(),
+        &RecordGraphCache::for_catalog(catalog.clone()),
         &assessments,
         None,
-        &observations,
+        &prepared,
     );
 
     assert_eq!(
@@ -182,24 +159,19 @@ fn profiled_legal_walk_matches_normal_with_all_spans() {
         .expect("catalog fixture should contain crowbar")
         .clone();
     let observations = legal_observations(&record);
-    let assessments = assess_opener_phase(&build_targets(&catalog), &observations);
+    let prepared = prepare_observations(&observations);
+    let assessments = assess_opener_phase(&build_targets(&catalog), &prepared);
     let matched = match_catalogued_boards(&catalog, &observations);
 
     let normal = recognize_round(
-        Some(&catalog),
-        &RecordGraphCache::default(),
+        &RecordGraphCache::for_catalog(catalog.clone()),
         &assessments,
         matched.as_ref(),
-        &observations,
+        &prepared,
     );
-    let profiled_cache = RecordGraphCache::default();
-    let (profiled, profile) = recognize_round_profiled(
-        Some(&catalog),
-        &profiled_cache,
-        &assessments,
-        matched.as_ref(),
-        &observations,
-    );
+    let profiled_cache = RecordGraphCache::for_catalog(catalog.clone());
+    let (profiled, profile) =
+        recognize_round_profiled(&profiled_cache, &assessments, matched.as_ref(), &prepared);
 
     assert!(normal.is_some());
     assert_eq!(
@@ -219,13 +191,8 @@ fn profiled_legal_walk_matches_normal_with_all_spans() {
         .iter()
         .all(|record| record.outcome == CacheRecordOutcome::ColdSuccess));
 
-    let (warm, warm_profile) = recognize_round_profiled(
-        Some(&catalog),
-        &profiled_cache,
-        &assessments,
-        matched.as_ref(),
-        &observations,
-    );
+    let (warm, warm_profile) =
+        recognize_round_profiled(&profiled_cache, &assessments, matched.as_ref(), &prepared);
     assert_eq!(
         serde_json::to_vec(&profiled).expect("recognition should serialize"),
         serde_json::to_vec(&warm).expect("recognition should serialize")

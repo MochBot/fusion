@@ -1,7 +1,7 @@
 //! Native-test-only single-record compile stage diagnostics.
 //!
 //! `compile_single_record_stages` recompiles one catalog record through the
-//! shared `compile_recognition_subgraph_with_observer` control flow with a
+//! shared `compile_recognition_subgraph_with_metrics` control flow with a
 //! profiling observer, so the measured work is the actual compiler, not a copy.
 //!
 //! Overlap model: `legality`, `intern`, `transition`, and `finish` are
@@ -18,7 +18,9 @@
 
 use std::time::Duration;
 
-use super::compile::{compile_recognition_subgraph_with_observer, CompileBudget, CompileObserver};
+use super::compile::{
+    compile_recognition_subgraph_with_metrics, CompileBudget, CompileMetrics, CompileStage,
+};
 use crate::openers::catalog::OpenerCatalog;
 
 #[derive(Clone, Debug, Default)]
@@ -39,56 +41,38 @@ impl StageTotals {
 }
 
 pub(crate) struct StageProfilingObserver {
-    pub budget_exceeded: bool,
     pub stages: StageTotals,
 }
 
 impl StageProfilingObserver {
     pub(crate) fn new() -> Self {
         Self {
-            budget_exceeded: false,
             stages: StageTotals::default(),
         }
     }
 }
 
-impl CompileObserver for StageProfilingObserver {
-    fn budget_exceeded(
-        &mut self,
-        _record: &crate::openers::catalog::OpenerRecord,
-        _node: &crate::openers::catalog::OpenerTreeNode,
-        _mirrored: bool,
-        _reason: &str,
-        _bridge_exposed: bool,
-    ) {
-        self.budget_exceeded = true;
-    }
-
-    fn did_exceed_budget(&self) -> bool {
-        self.budget_exceeded
-    }
-
+impl CompileMetrics for StageProfilingObserver {
     fn wants_stage_profile(&self) -> bool {
         true
     }
 
-    fn record_legality(&mut self, elapsed: Duration) {
-        self.stages.legality += elapsed;
-        self.stages.legality_calls = self.stages.legality_calls.saturating_add(1);
-    }
-
-    fn record_intern(&mut self, elapsed: Duration) {
-        self.stages.intern += elapsed;
-        self.stages.intern_calls = self.stages.intern_calls.saturating_add(1);
-    }
-
-    fn record_transition(&mut self, elapsed: Duration) {
-        self.stages.transition += elapsed;
-        self.stages.transition_calls = self.stages.transition_calls.saturating_add(1);
-    }
-
-    fn record_finish(&mut self, elapsed: Duration) {
-        self.stages.finish += elapsed;
+    fn record_stage(&mut self, stage: CompileStage, elapsed: Duration) {
+        match stage {
+            CompileStage::Legality => {
+                self.stages.legality += elapsed;
+                self.stages.legality_calls = self.stages.legality_calls.saturating_add(1);
+            }
+            CompileStage::Intern => {
+                self.stages.intern += elapsed;
+                self.stages.intern_calls = self.stages.intern_calls.saturating_add(1);
+            }
+            CompileStage::Transition => {
+                self.stages.transition += elapsed;
+                self.stages.transition_calls = self.stages.transition_calls.saturating_add(1);
+            }
+            CompileStage::Finish => self.stages.finish += elapsed,
+        }
     }
 }
 
@@ -117,6 +101,16 @@ pub(crate) fn compile_single_record_stages(
     catalog: &OpenerCatalog,
     record_id: &str,
 ) -> Option<SingleRecordStageReport> {
+    compile_single_record_stages_with_budget(catalog, record_id, &CompileBudget::default())
+}
+
+/// `compile_single_record_stages` under an explicit budget: the regression
+/// coverage for budget failures needs to provoke one.
+pub(super) fn compile_single_record_stages_with_budget(
+    catalog: &OpenerCatalog,
+    record_id: &str,
+    budget: &CompileBudget,
+) -> Option<SingleRecordStageReport> {
     let record = catalog
         .openers
         .iter()
@@ -126,10 +120,9 @@ pub(crate) fn compile_single_record_stages(
         format_version: catalog.format_version,
         openers: vec![record],
     };
-    let budget = CompileBudget::default();
     let mut observer = StageProfilingObserver::new();
     let total_started = std::time::Instant::now();
-    let outcome = compile_recognition_subgraph_with_observer(&single, &budget, &mut observer);
+    let outcome = compile_recognition_subgraph_with_metrics(&single, budget, &mut observer);
     let total_wall = total_started.elapsed();
     let leaves = observer.stages.leaves_sum();
     let other_residual = total_wall.checked_sub(leaves).expect(
@@ -151,7 +144,7 @@ pub(crate) fn compile_single_record_stages(
         Err(error) => Some(SingleRecordStageReport {
             record_id: record_id.to_owned(),
             success: false,
-            budget_exceeded: observer.budget_exceeded,
+            budget_exceeded: error.edge_budget_exceeded(),
             error: Some(error.to_string()),
             graph_states: 0,
             graph_transitions: 0,

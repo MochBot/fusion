@@ -3,7 +3,7 @@ mod openers {
         use fusion_engine::openers::catalog::OpenerCatalog;
         use fusion_engine::openers::matcher::BoardMatch;
         use fusion_engine::openers::phase::{
-            assess_opener_phase, OpenerAssessment, OpenerObservation,
+            assess_opener_phase, prepare_observations, OpenerAssessment, OpenerObservation,
         };
         use fusion_engine::openers::target::build_targets;
         use serde::Deserialize;
@@ -22,7 +22,10 @@ mod openers {
                 post_letters: Some(vec!["ZZZZ______".to_owned()]),
             })];
 
-            let assessments = assess_opener_phase(&build_targets(&catalog), &observations);
+            let assessments = assess_opener_phase(
+                &build_targets(&catalog),
+                &prepare_observations(&observations),
+            );
 
             assert!(assessments[0]
                 .as_ref()
@@ -50,7 +53,10 @@ mod openers {
                 }),
             ];
 
-            let assessments = assess_opener_phase(&build_targets(&catalog), &observations);
+            let assessments = assess_opener_phase(
+                &build_targets(&catalog),
+                &prepare_observations(&observations),
+            );
 
             assert!(assessments[0]
                 .as_ref()
@@ -76,7 +82,7 @@ mod openers {
                 }),
             ];
 
-            let assessments = assess_opener_phase(&[], &observations);
+            let assessments = assess_opener_phase(&[], &prepare_observations(&observations));
 
             assert_eq!(assessments, vec![None, None, None]);
         }
@@ -104,7 +110,8 @@ mod openers {
                 if uses_search_shape(&round.expected.assessments) {
                     continue;
                 }
-                let actual = assess_opener_phase(&targets, &round.input.observations);
+                let actual =
+                    assess_opener_phase(&targets, &prepare_observations(&round.input.observations));
 
                 assert_assessments(&actual, &round.expected.assessments, &round.input.name);
                 checked += 1;

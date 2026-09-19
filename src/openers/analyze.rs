@@ -7,20 +7,17 @@ use crate::openers::catalogued_match::{
     match_catalogued_boards_with_targets, RoundCataloguedBoardMatch,
 };
 use crate::openers::guide::{build_guide, select_subject, OpenerGuide};
-use crate::openers::phase::{assess_opener_phase, OpenerAssessment, OpenerObservation};
+use crate::openers::phase::{
+    assess_opener_phase, prepare_observations, OpenerAssessment, OpenerObservation,
+};
 use crate::openers::recognition::round::{recognize_round, RoundRecognition};
 use crate::openers::report::{build_opener_report, OpenerPhaseReport};
-use crate::openers::showcase::{ExternalPiece, ShowcaseDealtInput};
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OpenerRoundInput {
     #[serde(default)]
     pub observations: Vec<Option<OpenerObservation>>,
-    #[serde(default)]
-    pub dealt_inputs: Vec<Option<ShowcaseDealtInput>>,
-    #[serde(default)]
-    pub tail_queue: Vec<ExternalPiece>,
     #[serde(default)]
     pub relax_depth: Option<usize>,
 }
@@ -74,13 +71,14 @@ pub(crate) fn analyze_round(
     installed: &InstalledCatalog,
     input: &OpenerRoundInput,
 ) -> OpenerRoundAnalysis {
-    let catalog = &installed.catalog;
-    let assessments = assess_opener_phase(&installed.targets, &input.observations);
+    let catalog = installed.catalog();
+    let observations = prepare_observations(&input.observations);
+    let assessments = assess_opener_phase(&installed.targets, &observations);
     let catalogued_board_match = match_catalogued_boards_with_targets(
         catalog,
         &installed.node_boards,
         &installed.runtime_search_shape_targets,
-        &input.observations,
+        &observations,
     );
     let report = build_opener_report(catalogued_board_match.as_ref());
     let policies = assessments
@@ -89,18 +87,17 @@ pub(crate) fn analyze_round(
         .map(|(index, assessment)| lock_policy(assessment.as_ref(), index, input.relax_depth))
         .collect();
     let recognition = recognize_round(
-        Some(catalog),
         &installed.compiled,
         &assessments,
         catalogued_board_match.as_ref(),
-        &input.observations,
+        &observations,
     );
     let guide = select_subject(
         catalog,
         catalogued_board_match.as_ref(),
         recognition.as_ref(),
     )
-    .and_then(|subject| build_guide(catalog, &subject, &input.observations, recognition.as_ref()));
+    .and_then(|subject| build_guide(catalog, &subject, &observations, recognition.as_ref()));
 
     OpenerRoundAnalysis {
         assessments,

@@ -125,16 +125,11 @@ pub(crate) fn placement_is_srs_legal(
 }
 
 pub(crate) fn engine_board_from_masks(masks: &[u16]) -> Board {
-    let mut board = Board::new();
+    let mut rows = [0u16; BOARD_HEIGHT];
     for (y, mask) in masks.iter().copied().enumerate().take(BOARD_HEIGHT) {
-        board.rows[y] = mask & FULL_ROW;
-        for x in 0..10 {
-            if board.rows[y] & (1 << x) != 0 {
-                board.cols[x] |= 1u64 << y;
-            }
-        }
+        rows[y] = mask & FULL_ROW;
     }
-    board
+    Board::from_rows(rows)
 }
 
 pub(super) fn placement_cells(target: Move) -> Option<[[u8; 2]; 4]> {

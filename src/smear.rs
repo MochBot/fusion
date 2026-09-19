@@ -1550,12 +1550,20 @@ fn kick_step180_lab<const P: usize, const R: usize, const I: usize, const N: usi
 
 /// Generate all reachable lock positions for piece `P` on an `N`-word band.
 /// y is the stack height (max_y), force extends the spawn scan upward.
+///
+/// This racer-kernel wrapper is retained for the in-crate perft/parity tests;
+/// production callers use the `*_rules` variants below.
+#[cfg(test)]
 pub fn generate<const P: usize, const N: usize>(b: &SBoard<N>, y: i32, force: i32) -> SMoves<N> {
     gen_impl::<P, N, true, false>(b, y, force).0
 }
 
 /// Count reachable lock positions without materializing move boards.
 /// Same closure as generate; keeps four fewer boards live across the BFS.
+///
+/// This racer-kernel wrapper is retained for the in-crate perft/parity tests;
+/// production callers use the `*_rules` variants below.
+#[cfg(test)]
 pub fn count_locks<const P: usize, const N: usize>(b: &SBoard<N>, y: i32, force: i32) -> u32 {
     gen_impl::<P, N, false, false>(b, y, force).1
 }
@@ -2665,7 +2673,7 @@ fn gen_impl_with_usable<const P: usize, const N: usize, const EMIT: bool, const 
     finish!();
 }
 
-// Perft driver with band routing.
+// Shared band routing for production kernels and the test-only perft driver.
 
 pub const fn band_words(h: i32) -> usize {
     if h < 6 {
@@ -2681,11 +2689,13 @@ pub const fn band_words(h: i32) -> usize {
     }
 }
 
+#[cfg(test)]
 fn leaf<const P: usize, const N: usize>(b: &SBoard<8>, h: i32) -> u64 {
     let b1: SBoard<N> = b.cast();
     count_locks::<P, N>(&b1, h, 0) as u64
 }
 
+#[cfg(test)]
 fn step_cast<const P: usize, const N: usize, const M: usize>(
     b1: &SBoard<N>,
     rc: usize,
@@ -2717,6 +2727,7 @@ fn step_cast<const P: usize, const N: usize, const M: usize>(
 // Fused final level: children are leaves, so skip full-board
 // normalize and max_y rescan. Child height is exact: clear-free
 // placements top out at y + top_extent; clearing ones rescan.
+#[cfg(test)]
 fn last_level<const P2: usize, const N: usize, const M: usize>(
     b1: &SBoard<N>,
     ml: &SMoves<N>,
@@ -2757,6 +2768,7 @@ fn last_level<const P2: usize, const N: usize, const M: usize>(
     nodes
 }
 
+#[cfg(test)]
 #[inline(always)]
 fn last_dispatch<const N: usize, const M: usize>(
     b1: &SBoard<N>,
@@ -2776,6 +2788,7 @@ fn last_dispatch<const N: usize, const M: usize>(
     }
 }
 
+#[cfg(test)]
 fn inner<const P: usize, const N: usize>(b: &SBoard<8>, q: &[usize], depth: usize, h: i32) -> u64 {
     let b1: SBoard<N> = b.cast();
     let ml = generate::<P, N>(&b1, h, 0);
@@ -2815,6 +2828,7 @@ fn inner<const P: usize, const N: usize>(b: &SBoard<8>, q: &[usize], depth: usiz
     nodes
 }
 
+#[cfg(test)]
 fn with_piece<const P: usize>(b: &SBoard<8>, q: &[usize], depth: usize, h: i32) -> u64 {
     debug_assert_eq!(h, b.max_y());
     let h1w = band_words(h + h_gen(P));
@@ -2836,6 +2850,7 @@ fn with_piece<const P: usize>(b: &SBoard<8>, q: &[usize], depth: usize, h: i32) 
     }
 }
 
+#[cfg(test)]
 fn perft_rec(b: &SBoard<8>, q: &[usize], depth: usize, h: i32) -> u64 {
     match q[0] {
         0 => with_piece::<0>(b, q, depth, h),
@@ -2849,6 +2864,7 @@ fn perft_rec(b: &SBoard<8>, q: &[usize], depth: usize, h: i32) -> u64 {
 }
 
 /// Perft from an empty board over the given piece queue.
+#[cfg(test)]
 pub fn perft(queue: &[usize]) -> u64 {
     assert!(!queue.is_empty() && queue.iter().all(|&p| p < 7));
     let b = SBoard::<8>::EMPTY;
@@ -2856,6 +2872,7 @@ pub fn perft(queue: &[usize]) -> u64 {
 }
 
 /// Parse an upstream-style queue string such as "IOLJSZT".
+#[cfg(test)]
 pub fn parse_queue(s: &str) -> Option<Vec<usize>> {
     s.chars()
         .map(|c| match c {
@@ -2873,7 +2890,7 @@ pub fn parse_queue(s: &str) -> Option<Vec<usize>> {
 
 /// Multithreaded perft: first plies are split sequentially, then subtrees
 /// are fanned out across a rayon pool. Results are order-independent.
-#[cfg(feature = "rayon")]
+#[cfg(all(test, feature = "rayon"))]
 pub fn perft_mt(queue: &[usize]) -> u64 {
     use rayon::prelude::*;
     assert!(!queue.is_empty() && queue.iter().all(|&p| p < 7));
@@ -2898,7 +2915,7 @@ pub fn perft_mt(queue: &[usize]) -> u64 {
 }
 
 /// Enumerate child boards of b for piece p with exact heights.
-#[cfg(feature = "rayon")]
+#[cfg(all(test, feature = "rayon"))]
 fn collect_children(b: &SBoard<8>, h: i32, p: usize, out: &mut Vec<(SBoard<8>, i32)>) {
     fn go<const P: usize>(b: &SBoard<8>, h: i32, out: &mut Vec<(SBoard<8>, i32)>) {
         let ml = generate::<P, 8>(b, h, 0);

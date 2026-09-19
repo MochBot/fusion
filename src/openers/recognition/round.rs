@@ -9,10 +9,8 @@ use super::cost::{EditCosts, EditOps};
 use super::graph::CanonicalKey;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 use super::profile::RecognitionProfile;
-use crate::openers::board::strip_garbage_rows;
-use crate::openers::catalog::OpenerCatalog;
 use crate::openers::catalogued_match::{MatchingOpener, RoundCataloguedBoardMatch};
-use crate::openers::phase::{OpenerAssessment, OpenerObservation};
+use crate::openers::phase::{OpenerAssessment, PreparedObservation};
 
 const MAX_SHORTLIST: usize = 24;
 
@@ -57,16 +55,16 @@ pub(crate) struct RoundHypothesis {
 }
 
 /// `catalogued_board_match` must be the whole-round confirmation computed for
-/// these same observations; recognition's candidate set derives from it.
+/// these same observations; recognition's candidate set derives from it. The
+/// snapshot's cache carries its own catalog, so ids resolve against exactly the
+/// catalog the compiled graphs came from.
 pub(crate) fn recognize_round(
-    catalog: Option<&OpenerCatalog>,
     compiled: &RecordGraphCache,
     assessments: &[Option<OpenerAssessment>],
     catalogued_board_match: Option<&RoundCataloguedBoardMatch>,
-    observations: &[Option<OpenerObservation>],
+    observations: &[Option<PreparedObservation>],
 ) -> Option<RoundRecognition> {
     recognize_round_core(
-        catalog,
         compiled,
         assessments,
         catalogued_board_match,
@@ -80,16 +78,14 @@ pub(crate) fn recognize_round(
 /// returned recognition is the actual execution's result, plus what it did.
 #[cfg(all(test, not(target_arch = "wasm32")))]
 pub(crate) fn recognize_round_profiled(
-    catalog: Option<&OpenerCatalog>,
     compiled: &RecordGraphCache,
     assessments: &[Option<OpenerAssessment>],
     catalogued_board_match: Option<&RoundCataloguedBoardMatch>,
-    observations: &[Option<OpenerObservation>],
+    observations: &[Option<PreparedObservation>],
 ) -> (Option<RoundRecognition>, RecognitionProfile) {
     let mut profile = RecognitionProfile::default();
     let total_started = std::time::Instant::now();
     let recognition = recognize_round_core(
-        catalog,
         compiled,
         assessments,
         catalogued_board_match,
@@ -101,14 +97,12 @@ pub(crate) fn recognize_round_profiled(
 }
 
 fn recognize_round_core(
-    catalog: Option<&OpenerCatalog>,
     compiled: &RecordGraphCache,
     assessments: &[Option<OpenerAssessment>],
     catalogued_board_match: Option<&RoundCataloguedBoardMatch>,
-    observations: &[Option<OpenerObservation>],
+    observations: &[Option<PreparedObservation>],
     #[cfg(all(test, not(target_arch = "wasm32")))] mut profile: Option<&mut RecognitionProfile>,
 ) -> Option<RoundRecognition> {
-    let catalog = catalog?;
     #[cfg(all(test, not(target_arch = "wasm32")))]
     let select_started = std::time::Instant::now();
     let confirmed_id = singleton_confirmed_id(catalogued_board_match);
@@ -139,11 +133,11 @@ fn recognize_round_core(
     #[cfg(all(test, not(target_arch = "wasm32")))]
     let cache_profile = profile.as_mut().map(|profile| &mut profile.cache);
     #[cfg(all(test, not(target_arch = "wasm32")))]
-    let Some(cached) = compiled.shortlist_graph_core(catalog, &shortlist.ids, cache_profile) else {
+    let Some(cached) = compiled.shortlist_graph_core(&shortlist.ids, cache_profile) else {
         return None;
     };
     #[cfg(not(all(test, not(target_arch = "wasm32"))))]
-    let cached = compiled.shortlist_graph(catalog, &shortlist.ids)?;
+    let cached = compiled.shortlist_graph(&shortlist.ids)?;
     let shortlist_compile_skipped = cached.compile_skipped;
 
     let edit_costs = EditCosts::default();
@@ -231,13 +225,11 @@ fn singleton_confirmed_id(matched: Option<&RoundCataloguedBoardMatch>) -> Option
     Some(id)
 }
 
-fn observation_for(observation: &OpenerObservation) -> Option<Observation> {
-    let board = observation.post_board.as_deref()?;
-    let garbage_mask = observation.post_gmask.as_deref()?;
-    let normalized = strip_garbage_rows(board, garbage_mask, observation.post_letters.as_deref());
+fn observation_for(observation: &PreparedObservation) -> Option<Observation> {
+    let normalized = observation.normalized.as_ref()?;
     Some(Observation {
         key: CanonicalKey::from_normalized_rows(&normalized.masks, normalized.letters.as_deref()),
-        had_garbage: garbage_mask.iter().any(|mask| *mask != 0),
+        had_garbage: observation.had_garbage,
     })
 }
 

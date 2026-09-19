@@ -39,8 +39,6 @@ pub(crate) struct OpenerCatalog {
 /// every round analyzed against it, including compiled record graphs, which
 /// are compiled lazily and retained inside the snapshot.
 pub(crate) struct InstalledCatalog {
-    pub catalog: OpenerCatalog,
-    pub asset_sha256: String,
     pub targets: Vec<ShapeTarget>,
     pub node_boards: NodeBoards,
     pub runtime_search_shape_targets: Vec<RuntimeSearchShapeTarget>,
@@ -50,26 +48,28 @@ pub(crate) struct InstalledCatalog {
 impl InstalledCatalog {
     fn new(
         catalog: OpenerCatalog,
-        asset_sha256: String,
         runtime_search_shape_targets: Vec<RuntimeSearchShapeTarget>,
     ) -> Self {
         let targets = build_targets(&catalog);
         let node_boards = NodeBoards::build(&catalog);
+        let compiled = RecordGraphCache::for_catalog(catalog);
         Self {
-            catalog,
-            asset_sha256,
             targets,
             node_boards,
             runtime_search_shape_targets,
-            compiled: RecordGraphCache::default(),
+            compiled,
         }
+    }
+
+    pub(crate) fn catalog(&self) -> &OpenerCatalog {
+        self.compiled.catalog()
     }
 
     /// A snapshot over a catalog that is not the installed one; derived data is
     /// built the same way so both paths share one analysis implementation.
     #[cfg(test)]
     pub(crate) fn detached(catalog: OpenerCatalog) -> Self {
-        Self::new(catalog, String::new(), Vec::new())
+        Self::new(catalog, Vec::new())
     }
 }
 
@@ -77,7 +77,7 @@ impl std::ops::Deref for InstalledCatalog {
     type Target = OpenerCatalog;
 
     fn deref(&self) -> &Self::Target {
-        &self.catalog
+        self.catalog()
     }
 }
 
@@ -270,61 +270,12 @@ pub fn install_opener_runtime(
         catalog: CatalogStats::from_catalog(&catalog),
         witnesses,
     };
-    let installed_catalog = InstalledCatalog::new(catalog, asset_sha256, targets);
+    let installed_catalog = InstalledCatalog::new(catalog, targets);
     let mut installed = match INSTALLED_CATALOG.write() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
     };
     *installed = Some(Arc::new(installed_catalog));
-    Ok(stats)
-}
-
-pub fn set_opener_catalog(catalog_json_bytes: &[u8]) -> Result<CatalogStats, CatalogError> {
-    match install_opener_runtime(catalog_json_bytes, None) {
-        Ok(stats) => Ok(stats.catalog),
-        Err(OpenerInstallError::Catalog(error)) => Err(error),
-        Err(OpenerInstallError::Witnesses(_)) => {
-            unreachable!("installing without a companion cannot fail witness validation")
-        }
-    }
-}
-
-pub fn set_search_shape_witnesses(
-    witness_json_bytes: &[u8],
-) -> Result<WitnessCatalogStats, WitnessCatalogError> {
-    let mut installed = match INSTALLED_CATALOG.write() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    };
-    let previous = installed.take().ok_or(WitnessCatalogError::NoCatalog)?;
-    let (targets, stats) = match parse_witness_catalog(
-        witness_json_bytes,
-        &previous.catalog,
-        &previous.asset_sha256,
-    ) {
-        Ok(parsed) => parsed,
-        Err(error) => {
-            *installed = Some(previous);
-            return Err(error);
-        }
-    };
-    // Only the witness targets change; every other derived structure is a pure
-    // function of the unchanged catalog, so it is moved rather than rebuilt.
-    let updated = match Arc::try_unwrap(previous) {
-        Ok(mut owned) => {
-            owned.runtime_search_shape_targets = targets;
-            owned
-        }
-        Err(shared) => InstalledCatalog {
-            catalog: shared.catalog.clone(),
-            asset_sha256: shared.asset_sha256.clone(),
-            targets: shared.targets.clone(),
-            node_boards: shared.node_boards.clone(),
-            runtime_search_shape_targets: targets,
-            compiled: RecordGraphCache::default(),
-        },
-    };
-    *installed = Some(Arc::new(updated));
     Ok(stats)
 }
 

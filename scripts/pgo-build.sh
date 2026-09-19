@@ -57,17 +57,18 @@ echo "merged profile: $(wc -c < "$PGO_DIR/merged.profdata") bytes"
 echo ""
 echo "=== Step 3: PGO-optimized build ==="
 RUSTFLAGS="-Cprofile-use=$PGO_DIR/merged.profdata -Cllvm-args=-pgo-warn-missing-function" \
-    cargo build --release --bin bench_perft --bin perft_cli 2>&1
+    cargo build --release --bin perft_cli 2>&1
 
 echo ""
 echo "=== Benchmark ==="
+# Run the binary Step 3 just built with profile data; a cargo invocation here
+# would rebuild it without RUSTFLAGS and silently drop the PGO profile.
 if [[ "${1:-}" == "--d7" ]]; then
     echo "running D7 benchmark with PGO..."
-    cargo run --release --bin bench_perft 2>&1
+    "$PROJECT_ROOT/target/release/perft_cli" 7 2>&1
 else
     echo "running D5 benchmark with PGO..."
-    # just run D5 via the test suite for quick comparison
-    cargo test --release -- test_d5_accuracy --nocapture 2>&1
+    "$PROJECT_ROOT/target/release/perft_cli" 5 2>&1
 fi
 
 echo ""

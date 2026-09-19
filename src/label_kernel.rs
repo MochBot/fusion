@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use crate::attack::calculate_attack_s2_tl_with_multiplier;
-use crate::board::{Board, FULL_ROW};
+use crate::board::Board;
 use crate::header::Piece;
 use crate::move_buffer::MoveBuffer;
 use crate::movegen::generate_playable;
@@ -243,104 +243,18 @@ fn piece_from_external_i8(v: i8) -> Option<Piece> {
 }
 
 pub fn board_from_rows(rows: &[u16; 40]) -> Board {
-    let mut board = Board::new();
-    board.rows = *rows;
-    board.cols = [0; 10];
-    for (y, row) in board.rows.iter().enumerate() {
-        let mut bits = *row as u64;
-        while bits != 0 {
-            let x = bits.trailing_zeros() as usize;
-            board.cols[x] |= 1u64 << y;
-            bits &= bits - 1;
-        }
-    }
-    board
+    Board::from_rows(*rows)
 }
 
-pub fn place_rows(rows: &mut [u16; 40], m: &crate::header::Move) {
-    let x = m.x();
-    let y = m.y();
-    let xu = x as usize;
-    let yu = y as usize;
-    if xu < 10 && yu < 40 {
-        rows[yu] |= 1u16 << x;
-    }
-    let pc = m.cells();
-    for i in 0..3 {
-        let cx = (pc[i].x as i32 + x) as usize;
-        let cy = (pc[i].y as i32 + y) as usize;
-        if cx < 10 && cy < 40 {
-            rows[cy] |= 1u16 << cx;
-        }
-    }
-}
-
-pub fn clear_rows(rows: &mut [u16; 40], cleared: u64) {
-    if cleared == 0 {
-        return;
-    }
-    let mut write = 0usize;
-    for read in 0..40 {
-        if cleared & (1u64 << read) == 0 {
-            rows[write] = rows[read];
-            write += 1;
-        }
-    }
-    for row in rows.iter_mut().take(40).skip(write) {
-        *row = 0;
-    }
-}
-
-pub fn line_clears(rows: &[u16; 40]) -> u64 {
-    let mut cleared = 0u64;
-    for (y, row) in rows.iter().enumerate() {
-        if *row == FULL_ROW {
-            cleared |= 1u64 << y;
-        }
-    }
-    cleared
-}
+/// Placement, clearing and garbage-bit helpers shared with the rows-only beam
+/// kernels; the canonical implementations live in `crate::board`.
+pub use crate::board::{
+    clear_rows, compact_gm_bits as compact_bits, line_clears, place_rows,
+    rows_nonempty_mask as gm_bits, rows_nonempty_mask as nonempty_bits,
+};
 
 pub fn is_empty(rows: &[u16; 40]) -> bool {
     rows.iter().all(|&row| row == 0)
-}
-
-pub fn gm_bits(gmask: &[u16; 40]) -> u64 {
-    let mut bits = 0u64;
-    for (y, row) in gmask.iter().enumerate() {
-        if *row != 0 {
-            bits |= 1u64 << y;
-        }
-    }
-    bits
-}
-
-pub fn compact_bits(gm: u64, cleared: u64) -> u64 {
-    if cleared == 0 {
-        return gm;
-    }
-    let mut out = 0u64;
-    let mut write = 0u32;
-    let mut keep = !cleared;
-    while keep != 0 {
-        let y = keep.trailing_zeros();
-        if gm & (1u64 << y) != 0 {
-            out |= 1u64 << write;
-        }
-        write += 1;
-        keep &= keep - 1;
-    }
-    out
-}
-
-pub fn nonempty_bits(rows: &[u16; 40]) -> u64 {
-    let mut bits = 0u64;
-    for (y, row) in rows.iter().enumerate() {
-        if *row != 0 {
-            bits |= 1u64 << y;
-        }
-    }
-    bits
 }
 
 pub fn expand_raw(s: &FrameRec, piece: i8) -> Vec<ExpandRec> {

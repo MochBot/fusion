@@ -7,6 +7,96 @@ use std::fmt;
 pub const BOARD_HEIGHT: usize = 40;
 pub const FULL_ROW: u16 = (1 << COL_NB) - 1; // 0x3FF
 
+// Row-array arithmetic without a cols cache. These are the canonical
+// implementations: `Board::place` / `Board::line_clears` / `Board::clear_lines`
+// are the same steps against `self.rows` plus cols maintenance, and the
+// rows-only beam kernels plus the label-kernel row path both use these. Keep
+// them bit-for-bit with those methods -- beam dedup keys are raw row arrays.
+
+/// Bitmask of rows that contain at least one cell.
+#[inline]
+pub fn rows_nonempty_mask(rows: &[u16; BOARD_HEIGHT]) -> u64 {
+    let mut ne = 0u64;
+    for (y, &row) in rows.iter().enumerate() {
+        if row != 0 {
+            ne |= 1u64 << y;
+        }
+    }
+    ne
+}
+
+/// Bitmask of rows filled to `FULL_ROW`.
+#[inline]
+pub fn line_clears(rows: &[u16; BOARD_HEIGHT]) -> u64 {
+    let mut cleared = 0u64;
+    for (y, &row) in rows.iter().enumerate() {
+        if row == FULL_ROW {
+            cleared |= 1u64 << y;
+        }
+    }
+    cleared
+}
+
+/// Mirrors `Board::place` exactly, including the `as usize` wrap that skips
+/// negative coordinates -- placed cells drive dedup keys, so any bounds
+/// deviation changes beam outputs.
+#[inline]
+pub fn place_rows(rows: &mut [u16; BOARD_HEIGHT], m: &Move) {
+    let pc = m.cells();
+    let x = m.x();
+    let y = m.y();
+
+    let xu = x as usize;
+    let yu = y as usize;
+    if xu < COL_NB && yu < BOARD_HEIGHT {
+        rows[yu] |= 1 << x;
+    }
+
+    for i in 0..3 {
+        let cx = (pc[i].x as i32 + x) as usize;
+        let cy = (pc[i].y as i32 + y) as usize;
+        if cx < COL_NB && cy < BOARD_HEIGHT {
+            rows[cy] |= 1 << cx;
+        }
+    }
+}
+
+/// Mirrors `Board::clear_lines` row compaction (no cols cache to maintain).
+#[inline]
+pub fn clear_rows(rows: &mut [u16; BOARD_HEIGHT], cleared: u64) {
+    let mut write = 0usize;
+    for read in 0..BOARD_HEIGHT {
+        if cleared & (1u64 << read) == 0 {
+            rows[write] = rows[read];
+            write += 1;
+        }
+    }
+    for row in rows.iter_mut().skip(write) {
+        *row = 0;
+    }
+}
+
+/// Drop the bits of `gm` at cleared row positions and shift higher bits down,
+/// matching how `clear_lines` compacts the board (software pext on a single u64).
+#[inline]
+pub fn compact_gm_bits(gm: u64, cleared: u64) -> u64 {
+    if cleared == 0 {
+        return gm;
+    }
+    let mut out = 0u64;
+    let mut w = 0u32;
+    let mut k = !cleared;
+    while k != 0 {
+        let y = k.trailing_zeros();
+        if gm & (1u64 << y) != 0 {
+            out |= 1u64 << w;
+        }
+        w += 1;
+        k &= k - 1;
+    }
+    out
+}
+
 pub struct Board {
     pub rows: [u16; BOARD_HEIGHT],
     pub cols: [Bitboard; COL_NB],
@@ -18,6 +108,17 @@ impl Board {
             rows: [0; BOARD_HEIGHT],
             cols: [0; COL_NB],
         }
+    }
+
+    /// Build synchronized rows and columns; callers must mask external inputs.
+    /// Panics if a row has set bits outside the board width.
+    pub fn from_rows(rows: [u16; BOARD_HEIGHT]) -> Self {
+        let mut board = Self {
+            rows,
+            cols: [0; COL_NB],
+        };
+        board.rebuild_cols();
+        board
     }
 
     pub fn occupied(&self, x: i32, y: i32) -> bool {
@@ -315,6 +416,7 @@ impl fmt::Display for Board {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::move_buffer::MoveBuffer;
 
     #[test]
     fn test_empty_board() {
@@ -465,8 +567,31 @@ mod tests {
     }
 
     #[test]
+    fn from_rows_rebuilds_cols_matching_independent_col() {
+        let cases = [
+            [0; BOARD_HEIGHT],
+            [FULL_ROW; BOARD_HEIGHT],
+            std::array::from_fn(|y| (y as u16 * 73 + 17) & FULL_ROW),
+        ];
+
+        for rows in cases {
+            let board = Board::from_rows(rows);
+            assert_eq!(board.rows, rows);
+            let oracle: [Bitboard; COL_NB] = std::array::from_fn(|x| board.col(x));
+            assert_eq!(board.cols, oracle, "rows={rows:?}");
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn from_rows_takes_wide_rows_verbatim() {
+        let mut rows = [0u16; BOARD_HEIGHT];
+        rows[0] = 1u16 << COL_NB;
+        Board::from_rows(rows);
+    }
+
+    #[test]
     fn do_move_clears_match_full_scan_on_seeded_placements() {
-        use crate::move_buffer::MoveBuffer;
         let mut state = 0xD0_30FE_2026_0611u64;
         let mut xs = || {
             state ^= state << 13;
@@ -529,5 +654,42 @@ mod tests {
             clearing > 200,
             "want real clearing coverage, got {clearing}"
         );
+    } // The garbage-row bitmask rides the same row permutation that clear_rows
+      // applies to the row array; the two must stay in lockstep at the edges
+      // (all clear, no clear, top row, bits above row 39).
+    #[test]
+    fn gm_bit_compaction_matches_row_compaction() {
+        let all = (1u64 << BOARD_HEIGHT) - 1;
+        assert_eq!(compact_gm_bits(all, all), 0);
+        assert_eq!(compact_gm_bits(all, 0), all);
+        assert_eq!(compact_gm_bits(1, 1), 0);
+        assert_eq!(compact_gm_bits(1u64 << 39, 0), 1u64 << 39);
+        assert_eq!(compact_gm_bits(1u64 << 63, 0), 1u64 << 63);
+        let mut rows = [FULL_ROW; BOARD_HEIGHT];
+        assert_eq!(line_clears(&rows), all);
+        clear_rows(&mut rows, all);
+        assert_eq!(rows, [0u16; BOARD_HEIGHT]);
+
+        let mut state = 0xC0FF_EE17_2026_0917u64;
+        for case in 0..4000 {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            let cleared = (state ^ (state >> 17)) & all & !(state & 1);
+            let gm = (state ^ (state >> 29)) & all;
+            // Independent reference: walk the kept rows in ascending order.
+            let (mut want, mut w) = (0u64, 0u32);
+            for y in 0..BOARD_HEIGHT {
+                if cleared & (1u64 << y) == 0 {
+                    want |= (gm >> y & 1) << w;
+                    w += 1;
+                }
+            }
+            assert_eq!(
+                compact_gm_bits(gm, cleared),
+                want,
+                "case={case} gm={gm:#x} cleared={cleared:#x}"
+            );
+        }
     }
 }

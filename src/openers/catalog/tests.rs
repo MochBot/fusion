@@ -1,13 +1,24 @@
 use sha2::{Digest, Sha256};
 
 use super::{
-    install_opener_runtime, installed_opener_catalog, isolated_catalog_test, set_opener_catalog,
-    CatalogError, OpenerInstallError,
+    install_opener_runtime, installed_opener_catalog, isolated_catalog_test, CatalogError,
+    CatalogStats, OpenerInstallError,
 };
 use crate::openers::WitnessCatalogError;
 
 #[path = "boundary_tests.rs"]
 mod boundary_tests;
+
+fn install_catalog(bytes: &[u8]) -> Result<CatalogStats, CatalogError> {
+    install_opener_runtime(bytes, None)
+        .map(|stats| stats.catalog)
+        .map_err(|error| match error {
+            OpenerInstallError::Catalog(error) => error,
+            OpenerInstallError::Witnesses(_) => {
+                unreachable!("installing without a companion cannot fail witness validation")
+            }
+        })
+}
 
 fn catalog_json(id: &str, label: &str) -> String {
     format!(
@@ -38,7 +49,7 @@ fn catalog_json(id: &str, label: &str) -> String {
 fn installs_v2_catalog_and_replaces_prior_catalog_deterministically() {
     let _scope = isolated_catalog_test();
     let first = catalog_json("first", "First");
-    let first_stats = match set_opener_catalog(first.as_bytes()) {
+    let first_stats = match install_catalog(first.as_bytes()) {
         Ok(stats) => stats,
         Err(error) => panic!("first catalog should install: {error}"),
     };
@@ -48,7 +59,7 @@ fn installs_v2_catalog_and_replaces_prior_catalog_deterministically() {
     assert_eq!(first_stats.search_shape_count, 1);
 
     let second = catalog_json("second", "Second");
-    let second_stats = match set_opener_catalog(second.as_bytes()) {
+    let second_stats = match install_catalog(second.as_bytes()) {
         Ok(stats) => stats,
         Err(error) => panic!("replacement catalog should install: {error}"),
     };
@@ -71,14 +82,14 @@ fn installs_v2_catalog_and_replaces_prior_catalog_deterministically() {
 #[test]
 fn rejects_malformed_catalog_json_with_typed_error() {
     let _scope = isolated_catalog_test();
-    let result = set_opener_catalog(br#"{"formatVersion": 2, "openers": [}"#);
+    let result = install_catalog(br#"{"formatVersion": 2, "openers": [}"#);
     assert!(matches!(result, Err(CatalogError::MalformedJson { .. })));
 }
 
 #[test]
 fn rejects_unsupported_catalog_version_with_typed_error() {
     let _scope = isolated_catalog_test();
-    let result = set_opener_catalog(br#"{"formatVersion": 1, "openers": []}"#);
+    let result = install_catalog(br#"{"formatVersion": 1, "openers": []}"#);
     assert!(matches!(
         result,
         Err(CatalogError::UnsupportedFormatVersion { found: 1 })
@@ -89,13 +100,13 @@ fn rejects_unsupported_catalog_version_with_typed_error() {
 fn rejects_invalid_catalogs_without_replacing_the_installed_snapshot() {
     let _scope = isolated_catalog_test();
     let valid = catalog_json("valid", "Valid");
-    if let Err(error) = set_opener_catalog(valid.as_bytes()) {
+    if let Err(error) = install_catalog(valid.as_bytes()) {
         panic!("valid catalog should install: {error}");
     }
     let invalid = valid.replace("IIII______", "IIII_____Q");
 
     assert!(matches!(
-        set_opener_catalog(invalid.as_bytes()),
+        install_catalog(invalid.as_bytes()),
         Err(CatalogError::InvalidCatalog { .. })
     ));
     let Some(installed) = installed_opener_catalog() else {
@@ -112,7 +123,7 @@ fn rejects_catalog_boards_taller_than_forty_rows() {
         .replace(r#"["__________", "IIII______"]"#, &format!("[{rows}]"));
 
     assert!(matches!(
-        set_opener_catalog(invalid.as_bytes()),
+        install_catalog(invalid.as_bytes()),
         Err(CatalogError::InvalidCatalog { reason })
             if reason == "catalog boards must fit within 40 rows"
     ));

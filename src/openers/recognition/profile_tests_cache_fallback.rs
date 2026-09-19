@@ -28,10 +28,9 @@ fn union_failure_falls_back_to_merged_compile() {
     let catalog = epsilon_catalog();
     let budget = total_states_budget(1);
     let shortlist = ids(&["eps-a", "eps-b"]);
-    let cache = RecordGraphCache::default();
+    let cache = RecordGraphCache::for_catalog(catalog.clone());
 
-    let (graph, profile) =
-        cache.shortlist_graph_profiled_with_budget(&catalog, &shortlist, &budget);
+    let (graph, profile) = cache.shortlist_graph_profiled_with_budget(&shortlist, &budget);
 
     let cached = graph.expect("epsilon merged fallback should succeed past the union limit");
     assert!(cached.graph.states.len() > budget.max_total_states as usize);
@@ -65,12 +64,11 @@ fn warm_union_failure_reuses_records_and_reruns_merged_compile() {
     let catalog = epsilon_catalog();
     let budget = total_states_budget(1);
     let shortlist = ids(&["eps-a", "eps-b"]);
-    let cache = RecordGraphCache::default();
+    let cache = RecordGraphCache::for_catalog(catalog.clone());
 
-    let (cold, _) = cache.shortlist_graph_profiled_with_budget(&catalog, &shortlist, &budget);
+    let (cold, _) = cache.shortlist_graph_profiled_with_budget(&shortlist, &budget);
     let cold = cold.expect("cold merged fallback should succeed");
-    let (warm, warm_profile) =
-        cache.shortlist_graph_profiled_with_budget(&catalog, &shortlist, &budget);
+    let (warm, warm_profile) = cache.shortlist_graph_profiled_with_budget(&shortlist, &budget);
 
     let warm = warm.expect("warm merged fallback should succeed");
     assert!(warm_profile
@@ -93,10 +91,9 @@ fn union_failure_with_rejected_merged_compile_reports_spans_without_dimensions()
     let catalog = mini_catalog();
     let budget = total_states_budget(16);
     let shortlist = ids(&["crowbar-v2"]);
-    let cache = RecordGraphCache::default();
+    let cache = RecordGraphCache::for_catalog(catalog.clone());
 
-    let (graph, profile) =
-        cache.shortlist_graph_profiled_with_budget(&catalog, &shortlist, &budget);
+    let (graph, profile) = cache.shortlist_graph_profiled_with_budget(&shortlist, &budget);
 
     assert!(graph.is_none());
     assert_eq!(profile.records.len(), 1);
@@ -110,7 +107,7 @@ fn union_failure_with_rejected_merged_compile_reports_spans_without_dimensions()
     assert!(uncached_shortlist_graph_with_budget(&catalog, &shortlist, &budget).is_none());
 
     let (warm_graph, warm_profile) =
-        cache.shortlist_graph_profiled_with_budget(&catalog, &shortlist, &budget);
+        cache.shortlist_graph_profiled_with_budget(&shortlist, &budget);
     assert!(warm_graph.is_none());
     assert_eq!(
         warm_profile.records[0].outcome,

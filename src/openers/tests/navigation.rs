@@ -3,7 +3,7 @@ use crate::openers::catalog::navigation::{
 };
 use crate::openers::catalog::{OpenerCatalog, OpenerRecord, OpenerTreeNode};
 use crate::openers::{
-    analyze_opener_round, set_opener_catalog, OpenerObservation, OpenerRoundInput,
+    analyze_opener_round, install_opener_runtime, OpenerObservation, OpenerRoundInput,
     GUIDE_VARIATION_LIMIT,
 };
 
@@ -190,7 +190,7 @@ fn observation(mask: u16, letters: &str) -> OpenerObservation {
 #[test]
 fn guide_variations_keep_authored_order_within_the_six_item_limit() {
     let _scope = crate::openers::isolated_catalog_test();
-    if let Err(error) = set_opener_catalog(ORDERED_VARIATIONS_CATALOG.as_bytes()) {
+    if let Err(error) = install_opener_runtime(ORDERED_VARIATIONS_CATALOG.as_bytes(), None) {
         panic!("ordered catalog should install: {error}");
     }
     let analysis = match analyze_opener_round(&OpenerRoundInput {

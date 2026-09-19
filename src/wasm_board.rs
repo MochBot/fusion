@@ -1,35 +1,20 @@
 use wasm_bindgen::prelude::*;
 
 use crate::board::Board;
-use crate::header::COL_NB;
 
 // Board row ↔ column conversion
 // Board.rows[y] (u16): bit x set if cell (x,y) is filled
 // WASM rows[y] (u64): bit x set if cell (x,y) is filled (same semantics, wider type)
 
 pub(crate) fn board_from_row_bitmasks(rows: &[u64]) -> Board {
-    let mut board = Board::new();
+    let mut out = [0u16; 40];
     for (y, &row) in rows.iter().enumerate() {
         if y >= 40 {
             break;
         }
-        board.rows[y] = (row & 0x3FF) as u16;
+        out[y] = (row & 0x3FF) as u16;
     }
-    // Rebuild cols cache from rows
-    board.cols = [0; COL_NB];
-    for y in 0..40 {
-        let row = board.rows[y];
-        if row == 0 {
-            continue;
-        }
-        let mut bits = row as u64;
-        while bits != 0 {
-            let x = bits.trailing_zeros() as usize;
-            board.cols[x] |= 1u64 << y;
-            bits &= bits - 1;
-        }
-    }
-    board
+    Board::from_rows(out)
 }
 
 fn board_to_row_bitmasks(board: &Board) -> Vec<u64> {

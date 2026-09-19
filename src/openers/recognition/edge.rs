@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use super::compile::{
-    timed_intern, timed_legality, timed_transition, CompileBudget, CompileError, CompileObserver,
-    PlacementSpec,
+    mark_budget_exceeded, timed_stage, CompileBudget, CompileBudgetState, CompileError,
+    CompileMetricEvent, CompileMetrics, CompileStage, PlacementSpec,
 };
 use super::frames::{DeclaredFrame, FrameError};
 #[cfg(test)]
@@ -14,7 +14,7 @@ use super::legality::LegalityVerdict;
 use super::record::{bridge_control, control, origin};
 use crate::openers::catalog::{OpenerRecord, OpenerTreeNode};
 
-pub(super) fn compile_edge<O: CompileObserver>(
+pub(super) fn compile_edge<O: CompileMetrics>(
     builder: &mut GraphBuilder,
     observer: &mut O,
     input: EdgeInput<'_>,
@@ -28,12 +28,15 @@ pub(super) fn compile_edge<O: CompileObserver>(
         parent_states,
         placements,
         budget,
+        budget_state,
         bridge_exposed,
     } = input;
     let placement_count = match u8::try_from(placements.len()) {
         Ok(count) => count,
         Err(_) => {
-            observer.budget_exceeded(
+            mark_budget_exceeded(
+                budget_state,
+                observer,
                 record,
                 node,
                 mirrored,
@@ -55,7 +58,9 @@ pub(super) fn compile_edge<O: CompileObserver>(
         }
     };
     if placement_count > budget.max_placements_per_edge {
-        observer.budget_exceeded(
+        mark_budget_exceeded(
+            budget_state,
+            observer,
             record,
             node,
             mirrored,
@@ -182,10 +187,13 @@ pub(super) fn compile_edge<O: CompileObserver>(
                         continue;
                     }
                 };
-                let legal = timed_legality(observer, || {
+                let legal = timed_stage(observer, CompileStage::Legality, || {
                     builder.placement_legality(current.state, placement.letter, &physical.cells)
                 });
-                observer.legality_attempt(legal.support_valid, &legal.verdict);
+                observer.record(CompileMetricEvent::LegalityAttempt {
+                    support_valid: legal.support_valid,
+                    verdict: &legal.verdict,
+                });
                 support_observed |= legal.support_valid;
                 let LegalityVerdict::Legal { target, mechanics } = legal.verdict else {
                     continue;
@@ -239,7 +247,7 @@ pub(super) fn compile_edge<O: CompileObserver>(
                     CanonicalKey::from_board_with_letters(&next_board, Some(&physical_letters));
                 let intern_control = control(record_index, mirrored, node.id, next_subset);
                 let intern_origin = origin(record, mirrored, node, next_subset, complete);
-                let to = timed_intern(observer, || {
+                let to = timed_stage(observer, CompileStage::Intern, || {
                     builder.intern_with_physical_key(
                         next_board,
                         physical_key,
@@ -264,7 +272,7 @@ pub(super) fn compile_edge<O: CompileObserver>(
                     #[cfg(test)]
                     is_pc: mechanics.is_pc,
                 };
-                timed_transition(observer, || {
+                timed_stage(observer, CompileStage::Transition, || {
                     builder.add_transition(current.state, to, label)
                 });
                 if wants_legal_orders {
@@ -286,14 +294,20 @@ pub(super) fn compile_edge<O: CompileObserver>(
                 }
                 let states = u32::try_from(builder.state_count()).unwrap_or(u32::MAX);
                 if states > budget.max_total_states {
-                    return Err(CompileError::TotalStateBudgetExceeded { states });
+                    return Err(CompileError::TotalStateBudgetExceeded {
+                        states,
+                        #[cfg(test)]
+                        edge_budget_exceeded: budget_state.was_exceeded(),
+                    });
                 }
             }
             if budget_reason.is_some() {
                 break;
             }
         }
-        observer.edge_state_count(u32::try_from(edge_states.len()).unwrap_or(u32::MAX));
+        observer.record(CompileMetricEvent::EdgeStateCount(
+            u32::try_from(edge_states.len()).unwrap_or(u32::MAX),
+        ));
         if budget_reason.is_some() {
             break;
         }
@@ -311,9 +325,17 @@ pub(super) fn compile_edge<O: CompileObserver>(
             }
         }
     }
-    observer.dfs_visits(visits);
+    observer.record(CompileMetricEvent::DfsVisits(visits));
     if let Some(reason) = budget_reason {
-        observer.budget_exceeded(record, node, mirrored, reason, bridge_exposed);
+        mark_budget_exceeded(
+            budget_state,
+            observer,
+            record,
+            node,
+            mirrored,
+            reason,
+            bridge_exposed,
+        );
         return Ok(compile_bridge(
             builder,
             observer,
@@ -328,23 +350,23 @@ pub(super) fn compile_edge<O: CompileObserver>(
         ));
     }
     if wants_legal_orders {
-        observer.legal_orders(legal_orders);
+        observer.record(CompileMetricEvent::LegalOrders(legal_orders));
     }
     if support_observed {
-        observer.support_observed();
+        observer.record(CompileMetricEvent::SupportObserved);
     }
     if completed.is_empty() {
         if support_observed {
-            observer.support_without_exact_srs();
+            observer.record(CompileMetricEvent::SupportWithoutExactSrs);
         }
         if !frame_inconsistent {
-            observer.direct_impossible(
+            observer.record(CompileMetricEvent::DirectImpossible {
                 record,
                 node,
                 mirrored,
-                "no SRS-valid order",
+                reason: "no SRS-valid order",
                 bridge_exposed,
-            );
+            });
         }
         return Ok(compile_bridge(
             builder,
@@ -363,18 +385,30 @@ pub(super) fn compile_edge<O: CompileObserver>(
             },
         ));
     } else {
-        observer.srs_valid(record, node, mirrored);
+        observer.record(CompileMetricEvent::SrsValid {
+            record,
+            node,
+            mirrored,
+        });
         if frame_shift_rescued {
-            observer.shifted_compiled(record, node, mirrored);
+            observer.record(CompileMetricEvent::ShiftedCompiled {
+                record,
+                node,
+                mirrored,
+            });
         }
         if placements.len() > 8 {
-            observer.dfs_compiled_large(record, node, mirrored);
+            observer.record(CompileMetricEvent::DfsCompiledLarge {
+                record,
+                node,
+                mirrored,
+            });
         }
     }
     Ok(completed)
 }
 
-pub(super) fn compile_grey_terminal<O: CompileObserver>(
+pub(super) fn compile_grey_terminal<O: CompileMetrics>(
     builder: &mut GraphBuilder,
     observer: &mut O,
     input: GreyTerminal<'_>,
@@ -392,19 +426,21 @@ pub(super) fn compile_grey_terminal<O: CompileObserver>(
         let board = physical_shadow.clone();
         let intern_control = control(record_index, mirrored, node.id, 0);
         let intern_origin = origin(record, mirrored, node, 0, true);
-        let to = timed_intern(observer, || {
+        let to = timed_stage(observer, CompileStage::Intern, || {
             builder.intern(board, intern_control, intern_origin, true)
         });
         let label = TransitionLabel::Epsilon {
             #[cfg(test)]
             reason: EpsilonReason::BagBoundary,
         };
-        timed_transition(observer, || builder.add_transition(*from, to, label));
-        observer.epsilon_transition();
+        timed_stage(observer, CompileStage::Transition, || {
+            builder.add_transition(*from, to, label)
+        });
+        observer.record(CompileMetricEvent::EpsilonTransition);
     }
 }
 
-pub(super) fn compile_bridge<O: CompileObserver>(
+pub(super) fn compile_bridge<O: CompileMetrics>(
     builder: &mut GraphBuilder,
     observer: &mut O,
     input: BridgeInput<'_>,
@@ -428,7 +464,7 @@ pub(super) fn compile_bridge<O: CompileObserver>(
         let key = physical_key.clone();
         let intern_control = bridge_control(record_index, mirrored, node.id);
         let intern_origin = origin(record, mirrored, node, 0, true);
-        let to = timed_intern(observer, || {
+        let to = timed_stage(observer, CompileStage::Intern, || {
             builder.intern_with_physical_key(board, key, intern_control, intern_origin, false)
         });
         builder.mark_bridged(to);
@@ -436,16 +472,18 @@ pub(super) fn compile_bridge<O: CompileObserver>(
             #[cfg(test)]
             reason,
         };
-        timed_transition(observer, || builder.add_transition(*from, to, label));
+        timed_stage(observer, CompileStage::Transition, || {
+            builder.add_transition(*from, to, label)
+        });
         if !completed.contains(&to) {
             completed.push(to);
         }
     }
-    observer.bridged_edge(record, node, mirrored, reason);
+    observer.record(CompileMetricEvent::BridgedEdge(reason));
     completed
 }
 
-fn compile_epsilon_edge<O: CompileObserver>(
+fn compile_epsilon_edge<O: CompileMetrics>(
     builder: &mut GraphBuilder,
     observer: &mut O,
     input: EpsilonEdge<'_>,
@@ -470,7 +508,11 @@ fn compile_epsilon_edge<O: CompileObserver>(
             continue;
         }
         if node.parent.is_none() {
-            observer.srs_valid(record, node, mirrored);
+            observer.record(CompileMetricEvent::SrsValid {
+                record,
+                node,
+                mirrored,
+            });
             if !completed.contains(from) {
                 completed.push(*from);
             }
@@ -481,7 +523,7 @@ fn compile_epsilon_edge<O: CompileObserver>(
         let physical_key = CanonicalKey::from_board_with_letters(&board, Some(&physical_letters));
         let intern_control = control(record_index, mirrored, node.id, 0);
         let intern_origin = origin(record, mirrored, node, 0, true);
-        let to = timed_intern(observer, || {
+        let to = timed_stage(observer, CompileStage::Intern, || {
             builder.intern_with_physical_key(
                 board,
                 physical_key,
@@ -494,9 +536,15 @@ fn compile_epsilon_edge<O: CompileObserver>(
             #[cfg(test)]
             reason: EpsilonReason::BagBoundary,
         };
-        timed_transition(observer, || builder.add_transition(*from, to, label));
-        observer.epsilon_transition();
-        observer.srs_valid(record, node, mirrored);
+        timed_stage(observer, CompileStage::Transition, || {
+            builder.add_transition(*from, to, label)
+        });
+        observer.record(CompileMetricEvent::EpsilonTransition);
+        observer.record(CompileMetricEvent::SrsValid {
+            record,
+            node,
+            mirrored,
+        });
         if !completed.contains(&to) {
             completed.push(to);
         }
@@ -520,6 +568,7 @@ pub(super) struct EdgeInput<'a> {
     pub(super) parent_states: &'a [StateId],
     pub(super) placements: &'a [PlacementSpec],
     pub(super) budget: &'a CompileBudget,
+    pub(super) budget_state: &'a mut CompileBudgetState,
     pub(super) bridge_exposed: bool,
 }
 
@@ -583,7 +632,7 @@ fn count_paths(
     })
 }
 
-fn record_frame_inconsistency<O: CompileObserver>(
+fn record_frame_inconsistency<O: CompileMetrics>(
     observer: &mut O,
     record: &OpenerRecord,
     node: &OpenerTreeNode,
@@ -591,5 +640,11 @@ fn record_frame_inconsistency<O: CompileObserver>(
     error: FrameError,
     bridge_exposed: bool,
 ) {
-    observer.frame_inconsistent(record, node, mirrored, error.reason(), bridge_exposed);
+    observer.record(CompileMetricEvent::FrameInconsistent {
+        record,
+        node,
+        mirrored,
+        reason: error.reason(),
+        bridge_exposed,
+    });
 }

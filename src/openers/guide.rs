@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::openers::board::{mirror_letter_row, mirror_piece_letter, strip_garbage_rows};
+use crate::openers::board::{mirror_letter_row, mirror_piece_letter};
 use crate::openers::catalog::navigation::{
     children_of, deepest_by_pieces, first_root, node_by_id, path_to, record_by_id, siblings_of,
 };
@@ -14,7 +14,7 @@ use crate::openers::catalog::{
     OpenerCatalog, OpenerLink, OpenerNodeEst, OpenerRecord, OpenerTreeNode,
 };
 use crate::openers::catalogued_match::RoundCataloguedBoardMatch;
-use crate::openers::phase::OpenerObservation;
+use crate::openers::phase::PreparedObservation;
 use crate::openers::recognition::round::{RoundHypothesis, RoundRecognition};
 use crate::openers::segments::{derive_placements, floor_up_letters, ShowcasePlacement};
 
@@ -231,7 +231,7 @@ fn tied_hypotheses_share_shape(
 pub(crate) fn build_guide(
     catalog: &OpenerCatalog,
     subject: &GuideSubject,
-    observations: &[Option<OpenerObservation>],
+    observations: &[Option<PreparedObservation>],
     recognition: Option<&RoundRecognition>,
 ) -> Option<OpenerGuide> {
     let record = record_by_id(catalog, &subject.record_id)?;
@@ -373,7 +373,7 @@ fn deviation(
     anchor: &OpenerTreeNode,
     basis: GuideBasis,
     mirrored: bool,
-    observations: &[Option<OpenerObservation>],
+    observations: &[Option<PreparedObservation>],
     recognition: Option<&RoundRecognition>,
     anchor_lock: Option<usize>,
 ) -> Option<GuideDeviation> {
@@ -420,13 +420,9 @@ fn deviation(
         let Some(Some(observation)) = observations.get(lock_index) else {
             continue;
         };
-        let (Some(board), Some(garbage_mask)) = (
-            observation.post_board.as_deref(),
-            observation.post_gmask.as_deref(),
-        ) else {
+        let Some(stripped) = observation.normalized.as_ref() else {
             continue;
         };
-        let stripped = strip_garbage_rows(board, garbage_mask, observation.post_letters.as_deref());
         let player_rows = letter_rows(&stripped.masks, stripped.letters.as_deref());
         let target_rows = floor_up_letters(
             node.pre_clear_rows.as_deref().unwrap_or(&node.rows),
@@ -499,7 +495,7 @@ fn rounded_child_phase(
     record: &OpenerRecord,
     anchor: &OpenerTreeNode,
     subject: &GuideSubject,
-    observations: &[Option<OpenerObservation>],
+    observations: &[Option<PreparedObservation>],
 ) -> Option<GuidePhase> {
     if subject.basis != GuideBasis::Confirmed {
         return None;
@@ -536,10 +532,7 @@ fn rounded_child_phase(
             })
             .filter_map(|(_, observation)| {
                 let observation = observation.as_ref()?;
-                let board = observation.post_board.as_deref()?;
-                let garbage_mask = observation.post_gmask.as_deref()?;
-                let stripped =
-                    strip_garbage_rows(board, garbage_mask, observation.post_letters.as_deref());
+                let stripped = observation.normalized.as_ref()?;
                 Some(letter_rows(&stripped.masks, stripped.letters.as_deref()))
             })
             .collect::<Vec<_>>();

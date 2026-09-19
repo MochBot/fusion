@@ -2,7 +2,10 @@ use std::collections::{BTreeSet, HashMap};
 
 #[cfg(test)]
 use super::census::EdgeRef;
-use super::compile::{timed_intern, CompileBudget, CompileError, CompileObserver, PlacementSpec};
+use super::compile::{
+    timed_stage, CompileBudget, CompileBudgetState, CompileError, CompileMetricEvent,
+    CompileMetrics, CompileStage, PlacementSpec,
+};
 use super::edge::{
     compile_bridge, compile_edge, compile_grey_terminal, BridgeInput, EdgeInput, GreyTerminal,
 };
@@ -15,9 +18,10 @@ use crate::openers::board::{mirror_mask_10, rows_to_masks_floor_up};
 use crate::openers::catalog::{OpenerRecord, OpenerTreeNode};
 use crate::openers::segments::{derive_placements, ShowcasePlacement};
 
-pub(super) fn compile_record<O: CompileObserver>(
+pub(super) fn compile_record<O: CompileMetrics>(
     builder: &mut GraphBuilder,
     observer: &mut O,
+    budget_state: &mut CompileBudgetState,
     record: &OpenerRecord,
     record_index: u32,
     mirrored: bool,
@@ -41,7 +45,7 @@ pub(super) fn compile_record<O: CompileObserver>(
                 let board = physical_shadow_of_declared(&board_from_declared_rows(node, mirrored));
                 let intern_control = control(record_index, mirrored, node.id, 0);
                 let intern_origin = origin(record, mirrored, node, 0, true);
-                timed_intern(observer, || {
+                timed_stage(observer, CompileStage::Intern, || {
                     builder.intern(board, intern_control, intern_origin, true)
                 });
                 completed.insert(node.id, NodeCompletion::default());
@@ -52,7 +56,11 @@ pub(super) fn compile_record<O: CompileObserver>(
             let parent_states = match node.parent {
                 Some(parent_id) => match completed.get(&parent_id) {
                     Some(states) if states.states.is_empty() => {
-                        observer.blocked_descendant(record, node, mirrored);
+                        observer.record(CompileMetricEvent::BlockedDescendant {
+                            record,
+                            node,
+                            mirrored,
+                        });
                         completed.insert(node.id, NodeCompletion::default());
                         pending.remove(&node_id);
                         progressed = true;
@@ -101,13 +109,13 @@ pub(super) fn compile_record<O: CompileObserver>(
                     .is_some_and(|states| states.bridge_exposed)
             });
             let Some(placements) = placements_for(parent, node, mirrored) else {
-                observer.direct_impossible(
+                observer.record(CompileMetricEvent::DirectImpossible {
                     record,
                     node,
                     mirrored,
-                    "placements unavailable",
+                    reason: "placements unavailable",
                     bridge_exposed,
-                );
+                });
                 let states = compile_bridge(
                     builder,
                     observer,
@@ -133,7 +141,7 @@ pub(super) fn compile_record<O: CompileObserver>(
                 continue;
             };
             if !placements.is_empty() {
-                observer.lettered_edge(bridge_exposed);
+                observer.record(CompileMetricEvent::LetteredEdge { bridge_exposed });
             }
             let states = compile_edge(
                 builder,
@@ -147,13 +155,15 @@ pub(super) fn compile_record<O: CompileObserver>(
                     parent_states: &parent_states,
                     placements: &placements,
                     budget,
+                    budget_state,
                     bridge_exposed,
                 },
             )?;
             let bridged = states.iter().all(|state| builder.is_bridged(*state));
             if parent_bridged && !bridged {
-                observer
-                    .bridge_rescued_descendants(u32::try_from(states.len()).unwrap_or(u32::MAX));
+                observer.record(CompileMetricEvent::BridgeRescuedDescendants(
+                    u32::try_from(states.len()).unwrap_or(u32::MAX),
+                ));
             }
             completed.insert(
                 node.id,
@@ -180,7 +190,7 @@ struct NodeCompletion {
     bridge_exposed: bool,
 }
 
-fn root_state<O: CompileObserver>(
+fn root_state<O: CompileMetrics>(
     builder: &mut GraphBuilder,
     observer: &mut O,
     record: &OpenerRecord,
@@ -191,7 +201,7 @@ fn root_state<O: CompileObserver>(
     let board = Board::new();
     let intern_control = control(record_index, mirrored, node.id, 0);
     let intern_origin = origin(record, mirrored, node, 0, false);
-    timed_intern(observer, || {
+    timed_stage(observer, CompileStage::Intern, || {
         builder.intern(board, intern_control, intern_origin, false)
     })
 }

@@ -1,7 +1,5 @@
-use super::super::{
-    installed_opener_catalog, isolated_catalog_test, set_opener_catalog, CatalogError,
-};
 use super::catalog_json;
+use super::{install_catalog, installed_opener_catalog, isolated_catalog_test, CatalogError};
 
 fn tree_node_json(id: u32, parent: Option<u32>, pieces: u32) -> String {
     let parent = match parent {
@@ -28,7 +26,7 @@ fn rejects_duplicate_tree_node_ids_within_one_record() {
     let catalog = catalog_with_openers(&record_with_tree("dup", "Dup", &nodes));
 
     assert!(matches!(
-        set_opener_catalog(catalog.as_bytes()),
+        install_catalog(catalog.as_bytes()),
         Err(CatalogError::InvalidCatalog { reason })
             if reason == "tree node IDs must be unique per opener"
     ));
@@ -44,7 +42,7 @@ fn allows_the_same_node_id_in_different_records() {
     .join(",");
     let catalog = catalog_with_openers(&openers);
 
-    let stats = match set_opener_catalog(catalog.as_bytes()) {
+    let stats = match install_catalog(catalog.as_bytes()) {
         Ok(stats) => stats,
         Err(error) => panic!("per-record node IDs should install: {error}"),
     };
@@ -64,7 +62,7 @@ fn rejects_parent_cycles() {
     let catalog = catalog_with_openers(&record_with_tree("cycle", "Cycle", &nodes));
 
     assert!(matches!(
-        set_opener_catalog(catalog.as_bytes()),
+        install_catalog(catalog.as_bytes()),
         Err(CatalogError::InvalidCatalog { reason })
             if reason == "tree parent chains must not contain cycles"
     ));
@@ -73,7 +71,7 @@ fn rejects_parent_cycles() {
     let catalog = catalog_with_openers(&record_with_tree("self-cycle", "Self Cycle", &nodes));
 
     assert!(matches!(
-        set_opener_catalog(catalog.as_bytes()),
+        install_catalog(catalog.as_bytes()),
         Err(CatalogError::InvalidCatalog { reason })
             if reason == "tree parent chains must not contain cycles"
     ));
@@ -86,7 +84,7 @@ fn rejects_missing_parents() {
     let catalog = catalog_with_openers(&record_with_tree("orphan", "Orphan", &nodes));
 
     assert!(matches!(
-        set_opener_catalog(catalog.as_bytes()),
+        install_catalog(catalog.as_bytes()),
         Err(CatalogError::InvalidCatalog { reason })
             if reason == "tree parents must refer to an existing node"
     ));
@@ -103,7 +101,7 @@ fn accepts_forward_parents_sparse_ids_multiple_roots_and_non_monotonic_pieces() 
     .join(",");
     let catalog = catalog_with_openers(&record_with_tree("sparse", "Sparse", &nodes));
 
-    let stats = match set_opener_catalog(catalog.as_bytes()) {
+    let stats = match install_catalog(catalog.as_bytes()) {
         Ok(stats) => stats,
         Err(error) => panic!("forward sparse trees should install: {error}"),
     };
@@ -115,14 +113,14 @@ fn accepts_forward_parents_sparse_ids_multiple_roots_and_non_monotonic_pieces() 
 fn rejected_tree_shape_leaves_the_previous_snapshot_installed() {
     let _scope = isolated_catalog_test();
     let valid = catalog_json("valid", "Valid");
-    if let Err(error) = set_opener_catalog(valid.as_bytes()) {
+    if let Err(error) = install_catalog(valid.as_bytes()) {
         panic!("valid catalog should install: {error}");
     }
     let nodes = [tree_node_json(1, Some(2), 2), tree_node_json(2, Some(1), 3)].join(",");
     let cyclic = catalog_with_openers(&record_with_tree("cycle", "Cycle", &nodes));
 
     assert!(matches!(
-        set_opener_catalog(cyclic.as_bytes()),
+        install_catalog(cyclic.as_bytes()),
         Err(CatalogError::InvalidCatalog { .. })
     ));
     let Some(installed) = installed_opener_catalog() else {

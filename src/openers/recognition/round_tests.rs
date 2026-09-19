@@ -5,7 +5,9 @@ use crate::openers::catalogued_match::{
 };
 use crate::openers::guide::{select_subject, GuideBasis};
 use crate::openers::matcher::BoardMatch;
-use crate::openers::phase::{assess_opener_phase, OpenerAssessment, OpenerObservation};
+use crate::openers::phase::{
+    assess_opener_phase, prepare_observations, OpenerAssessment, OpenerObservation,
+};
 use crate::openers::target::build_targets;
 
 use super::super::align::{align_round_exact, AlignBudget, Observation};
@@ -174,48 +176,24 @@ fn singleton_confirmation_does_not_override_lower_cost_recognition() {
 }
 
 #[test]
-fn recognize_round_returns_none_without_catalog_as_an_internal_guard() {
-    let assessments = vec![Some(assessment("fixture", &[]))];
-    let observations = vec![Some(observation())];
-
-    assert!(recognize_round(
-        None,
-        &RecordGraphCache::default(),
-        &assessments,
-        None,
-        &observations
-    )
-    .is_none());
-    assert!(recognize_round(
-        Some(&catalog()),
-        &RecordGraphCache::default(),
-        &assessments,
-        None,
-        &[]
-    )
-    .is_none());
-}
-
-#[test]
 fn recognition_returns_a_deterministic_exact_hypothesis_for_v1_evidence() {
     let catalog = catalog();
     let assessments = vec![Some(assessment("fixture", &[]))];
     let observations = vec![Some(observation())];
+    let prepared = prepare_observations(&observations);
 
     let first = recognize_round(
-        Some(&catalog),
-        &RecordGraphCache::default(),
+        &RecordGraphCache::for_catalog(catalog.clone()),
         &assessments,
         match_catalogued_boards(&catalog, &observations).as_ref(),
-        &observations,
+        &prepared,
     )
     .expect("v1 evidence should produce recognition");
     let second = recognize_round(
-        Some(&catalog),
-        &RecordGraphCache::default(),
+        &RecordGraphCache::for_catalog(catalog.clone()),
         &assessments,
         match_catalogued_boards(&catalog, &observations).as_ref(),
-        &observations,
+        &prepared,
     )
     .expect("v1 evidence should produce recognition");
 
@@ -291,16 +269,19 @@ fn recognition_scans_through_the_final_observation_slot() {
         .find(|record| record.id == "crowbar-v2")
         .expect("catalog fixture should contain crowbar");
     let mut observations = legal_observations(record);
-    let mut assessments = assess_opener_phase(&build_targets(&catalog), &observations);
+    let mut assessments = assess_opener_phase(
+        &build_targets(&catalog),
+        &prepare_observations(&observations),
+    );
     observations.extend_from_within(..4);
     assessments.extend((0..4).map(|_| Some(assessment("crowbar-v2", &[]))));
+    let prepared = prepare_observations(&observations);
 
     let recognition = recognize_round(
-        Some(&catalog),
-        &RecordGraphCache::default(),
+        &RecordGraphCache::for_catalog(catalog.clone()),
         &assessments,
         match_catalogued_boards(&catalog, &observations).as_ref(),
-        &observations,
+        &prepared,
     )
     .expect("extended on-script walk should produce recognition");
 
@@ -320,13 +301,13 @@ fn recognition_includes_unassessed_later_observations() {
         .find(|record| record.id == "crowbar-v2")
         .expect("catalog fixture should contain crowbar");
     let observations = legal_observations(record);
-    let assessments = assess_opener_phase(&build_targets(&catalog), &observations);
+    let prepared = prepare_observations(&observations);
+    let assessments = assess_opener_phase(&build_targets(&catalog), &prepared);
     let window_only = recognize_round(
-        Some(&catalog),
-        &RecordGraphCache::default(),
+        &RecordGraphCache::for_catalog(catalog.clone()),
         &assessments,
         match_catalogued_boards(&catalog, &observations).as_ref(),
-        &observations,
+        &prepared,
     )
     .expect("on-script walk should produce recognition");
 
@@ -340,12 +321,12 @@ fn recognition_includes_unassessed_later_observations() {
     }));
     let mut extended_assessments = assessments;
     extended_assessments.extend((0..6).map(|_| None));
+    let extended_prepared = prepare_observations(&extended_observations);
     let extended = recognize_round(
-        Some(&catalog),
-        &RecordGraphCache::default(),
+        &RecordGraphCache::for_catalog(catalog.clone()),
         &extended_assessments,
         match_catalogued_boards(&catalog, &extended_observations).as_ref(),
-        &extended_observations,
+        &extended_prepared,
     )
     .expect("v1-assessed opener window should produce recognition");
 
@@ -360,13 +341,13 @@ fn recognition_includes_unassessed_later_observations() {
 fn recognition_returns_none_when_v1_assessed_no_locks() {
     let assessments = vec![None];
     let observations = vec![Some(observation())];
+    let prepared = prepare_observations(&observations);
 
     assert!(recognize_round(
-        Some(&catalog()),
-        &RecordGraphCache::default(),
+        &RecordGraphCache::for_catalog(catalog()),
         &assessments,
         match_catalogued_boards(&catalog(), &observations).as_ref(),
-        &observations
+        &prepared
     )
     .is_none());
 }
@@ -497,7 +478,8 @@ fn shortlist_recognition_matches_full_alignment_for_v1_matched_legal_walks() {
             .iter()
             .map(|observation| observation.as_ref().map(observation_from_alignment))
             .collect::<Vec<_>>();
-        let assessments = assess_opener_phase(&targets, &observations);
+        let prepared = prepare_observations(&observations);
+        let assessments = assess_opener_phase(&targets, &prepared);
         if !assessments
             .iter()
             .flatten()
@@ -507,11 +489,10 @@ fn shortlist_recognition_matches_full_alignment_for_v1_matched_legal_walks() {
             continue;
         }
         let recognized = recognize_round(
-            Some(&catalog),
-            &RecordGraphCache::default(),
+            &RecordGraphCache::for_catalog(catalog.clone()),
             &assessments,
             match_catalogued_boards(&catalog, &observations).as_ref(),
-            &observations,
+            &prepared,
         )
         .expect("v1-matched legal walk should produce recognition");
         let full = align_round_exact(

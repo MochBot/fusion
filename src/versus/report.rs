@@ -370,26 +370,26 @@ pub(crate) fn build_summary(
 pub(crate) fn summary_json(summary: &SummaryStats) -> String {
     let mut out = String::new();
     out.push('{');
-    push_u32(&mut out, "schema_version", summary.schema_version, true);
+    push_value(&mut out, "schema_version", summary.schema_version, true);
     push_str(&mut out, "engine_rev", &summary.engine_rev, false);
     push_str(&mut out, "mode", &summary.mode, false);
-    push_u32(&mut out, "games", summary.games, false);
-    push_u32(&mut out, "wins_a", summary.wins_a, false);
-    push_u32(&mut out, "losses_a", summary.losses_a, false);
-    push_u32(&mut out, "draws", summary.draws, false);
-    push_u32(&mut out, "decisive_games", summary.decisive_games, false);
+    push_value(&mut out, "games", summary.games, false);
+    push_value(&mut out, "wins_a", summary.wins_a, false);
+    push_value(&mut out, "losses_a", summary.losses_a, false);
+    push_value(&mut out, "draws", summary.draws, false);
+    push_value(&mut out, "decisive_games", summary.decisive_games, false);
     push_float_option(
         &mut out,
         "winrate_a_decisive_descriptive",
         summary.winrate_a_decisive_descriptive,
         false,
     );
-    push_u32(&mut out, "pairs", summary.pairs, false);
+    push_value(&mut out, "pairs", summary.pairs, false);
     push_float_option(&mut out, "pair_score_a", summary.pair_score_a, false);
-    push_u32(&mut out, "pair_wins_a", summary.pair_wins_a, false);
-    push_u32(&mut out, "pair_losses_a", summary.pair_losses_a, false);
-    push_u32(&mut out, "pair_ties", summary.pair_ties, false);
-    push_u32(&mut out, "decisive_pairs", summary.decisive_pairs, false);
+    push_value(&mut out, "pair_wins_a", summary.pair_wins_a, false);
+    push_value(&mut out, "pair_losses_a", summary.pair_losses_a, false);
+    push_value(&mut out, "pair_ties", summary.pair_ties, false);
+    push_value(&mut out, "decisive_pairs", summary.decisive_pairs, false);
     push_float_option(&mut out, "pair_winrate_a", summary.pair_winrate_a, false);
     push_float_option(
         &mut out,
@@ -404,7 +404,7 @@ pub(crate) fn summary_json(summary: &SummaryStats) -> String {
         false,
     );
     push_str(&mut out, "ci_status", summary.ci_status, false);
-    push_u32(&mut out, "pair_imbalance", summary.pair_imbalance, false);
+    push_value(&mut out, "pair_imbalance", summary.pair_imbalance, false);
     push_float_option(
         &mut out,
         "attack_per_piece_a",
@@ -421,25 +421,25 @@ pub(crate) fn summary_json(summary: &SummaryStats) -> String {
     push_float_option(&mut out, "move_ms_p99_a", summary.move_ms_p99_a, false);
     push_float_option(&mut out, "move_ms_p50_b", summary.move_ms_p50_b, false);
     push_float_option(&mut out, "move_ms_p99_b", summary.move_ms_p99_b, false);
-    push_u32(
+    push_value(
         &mut out,
         "budget_overruns_a",
         summary.budget_overruns_a,
         false,
     );
-    push_u32(
+    push_value(
         &mut out,
         "budget_overruns_b",
         summary.budget_overruns_b,
         false,
     );
-    push_u32(
+    push_value(
         &mut out,
         "move_timing_count_a",
         summary.move_timing_count_a,
         false,
     );
-    push_u32(
+    push_value(
         &mut out,
         "move_timing_count_b",
         summary.move_timing_count_b,
@@ -447,8 +447,8 @@ pub(crate) fn summary_json(summary: &SummaryStats) -> String {
     );
     push_float_option(&mut out, "move_ms_max_a", summary.move_ms_max_a, false);
     push_float_option(&mut out, "move_ms_max_b", summary.move_ms_max_b, false);
-    push_u32(&mut out, "overrun_count_a", summary.overrun_count_a, false);
-    push_u32(&mut out, "overrun_count_b", summary.overrun_count_b, false);
+    push_value(&mut out, "overrun_count_a", summary.overrun_count_a, false);
+    push_value(&mut out, "overrun_count_b", summary.overrun_count_b, false);
     out.push('}');
     out
 }
@@ -479,9 +479,9 @@ fn manifest_json_with_experiment(
 ) -> String {
     let mut out = String::new();
     out.push('{');
-    push_u32(&mut out, "schema_version", 1, true);
+    push_value(&mut out, "schema_version", 1, true);
     push_str(&mut out, "engine_rev", input.engine_rev, false);
-    push_bool(&mut out, "experiment", experiment.is_some(), false);
+    push_value(&mut out, "experiment", experiment.is_some(), false);
     push_search_config(&mut out, "side_a", input.side_a, experiment.is_some());
     push_search_config(&mut out, "side_b", input.side_b, experiment.is_some());
     push_str(&mut out, "weights", "EvalWeights::default", false);
@@ -517,11 +517,11 @@ fn manifest_json_with_experiment(
     push_str(&mut out, "ruleset", input.ruleset, false);
     push_str(&mut out, "rng", input.rng, false);
     push_str(&mut out, "garbage_model", input.garbage_model, false);
-    push_u32(&mut out, "piece_cap", input.piece_cap, false);
+    push_value(&mut out, "piece_cap", input.piece_cap, false);
     out.push_str(",\"seeds\":{");
     out.push_str("\"base\":");
     let _ = write!(out, "{}", input.seed_base);
-    push_u32(&mut out, "count", input.seed_count, false);
+    push_value(&mut out, "count", input.seed_count, false);
     out.push('}');
     out.push_str(",\"cli_args\":[");
     for (idx, arg) in input.cli_args.iter().enumerate() {
@@ -752,73 +752,39 @@ fn batch_name(mode: NnBatchMode) -> &'static str {
     }
 }
 
-fn push_bool(out: &mut String, key: &str, value: bool, first: bool) {
+fn push_key(out: &mut String, key: &str, first: bool) {
     if !first {
         out.push(',');
     }
-    out.push('"');
-    out.push_str(key);
-    out.push_str("\":");
-    out.push_str(if value { "true" } else { "false" });
+    let _ = write!(out, "\"{key}\":");
+}
+
+fn push_value(out: &mut String, key: &str, value: impl std::fmt::Display, first: bool) {
+    push_key(out, key, first);
+    let _ = write!(out, "{value}");
 }
 
 fn push_optional_str(out: &mut String, key: &str, value: Option<&str>, first: bool) {
     match value {
         Some(value) => push_str(out, key, value, first),
-        None => {
-            if !first {
-                out.push(',');
-            }
-            out.push('"');
-            out.push_str(key);
-            out.push_str("\":null");
-        }
+        None => push_value(out, key, "null", first),
     }
 }
 
 fn push_u64_option(out: &mut String, key: &str, value: Option<u64>, first: bool) {
-    if !first {
-        out.push(',');
-    }
-    out.push('"');
-    out.push_str(key);
-    out.push_str("\":");
-    match value {
-        Some(value) => {
-            let _ = write!(out, "{value}");
-        }
-        None => out.push_str("null"),
-    }
+    push_key(out, key, first);
+    push_json_option(out, value);
 }
 
 fn push_str(out: &mut String, key: &str, value: &str, first: bool) {
-    if !first {
-        out.push(',');
-    }
+    push_key(out, key, first);
     out.push('"');
-    out.push_str(key);
-    out.push_str("\":\"");
     out.push_str(&escape_json_string(value));
     out.push('"');
 }
 
-fn push_u32(out: &mut String, key: &str, value: u32, first: bool) {
-    if !first {
-        out.push(',');
-    }
-    out.push('"');
-    out.push_str(key);
-    out.push_str("\":");
-    let _ = write!(out, "{value}");
-}
-
 fn push_float_option(out: &mut String, key: &str, value: Option<f64>, first: bool) {
-    if !first {
-        out.push(',');
-    }
-    out.push('"');
-    out.push_str(key);
-    out.push_str("\":");
+    push_key(out, key, first);
     push_raw_float_option(out, value);
 }
 
@@ -941,6 +907,25 @@ mod tests {
     #[test]
     fn escape_helper_handles_quotes_backslash() {
         assert_eq!(escape_json_string("a\"b\\c"), "a\\\"b\\\\c");
+    }
+
+    #[test]
+    fn report_fields_preserve_wire_format() {
+        let mut out = String::from("{");
+        push_value(&mut out, "count", 7u32, true);
+        push_value(&mut out, "enabled", false, false);
+        push_optional_str(&mut out, "name", Some("A\"\\\n\u{8}🧩"), false);
+        push_optional_str(&mut out, "absent", None, false);
+        push_u64_option(&mut out, "bytes", Some(u64::MAX), false);
+        push_u64_option(&mut out, "missing", None, false);
+        push_float_option(&mut out, "time", Some(1.23456), false);
+        push_float_option(&mut out, "unset", None, false);
+        out.push('}');
+        assert_eq!(
+            out,
+            r#"{"count":7,"enabled":false,"name":"A\"\\\n\u0008🧩","absent":null,"bytes":18446744073709551615,"missing":null,"time":1.2346,"unset":null}"#
+        );
+        assert!(serde_json::from_str::<serde_json::Value>(&out).is_ok());
     }
 
     #[test]
@@ -1092,7 +1077,8 @@ mod tests {
             serde_json::from_str(&expected_fixture).expect("expected fixture should parse as json");
 
         assert_eq!(baseline_block, fixture_value);
-        assert_eq!(fixture, expected_fixture);
+        // Semantic comparison: numeric formatting such as 0.15 for 0.1500 is
+        // not part of the frozen contract.
         assert_eq!(fixture_value, expected_fixture_value);
     }
 

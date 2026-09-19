@@ -7,16 +7,8 @@ edition = "2021"
 crate-type = ["cdylib", "rlib"]
 
 [[bin]]
-name = "bench_beam"
-path = "src/bin/bench_beam.rs"
-
-[[bin]]
 name = "perft_cli"
 path = "src/bin/perft_cli.rs"
-
-[[bin]]
-name = "bench_perft"
-path = "src/bin/bench_perft.rs"
 
 [[bin]]
 name = "generate_policy_value_labels"
@@ -25,10 +17,6 @@ path = "src/bin/generate_policy_value_labels.rs"
 [[bin]]
 name = "policy_value_runtime_parity_fixture"
 path = "src/bin/policy_value_runtime_parity_fixture.rs"
-
-[[bin]]
-name = "bench_smear"
-path = "src/bin/bench_smear.rs"
 
 [[bin]]
 name = "bot_arena"
@@ -71,9 +59,3 @@ codegen-units = 1
 # throws "attempted to take ownership of Rust value while it was borrowed".
 panic = "unwind"
 strip = "symbols"
-
-# Native bench profile on equal footing with the C++ reference's -fno-exceptions;
-# never used for wasm artifacts, which require unwind (see above).
-[profile.bench-native]
-inherits = "release"
-panic = "abort"

@@ -1,6 +1,8 @@
 use fusion_engine::openers::catalog::OpenerCatalog;
 use fusion_engine::openers::guide::{GuideBasis, GUIDE_VARIATION_LIMIT};
-use fusion_engine::openers::{analyze_opener_round, OpenerObservation, OpenerRoundInput};
+use fusion_engine::openers::{
+    analyze_opener_round, install_opener_runtime, OpenerObservation, OpenerRoundInput,
+};
 
 use super::perf::{install_live_catalog, load_rounds};
 
@@ -93,7 +95,7 @@ const PARTIAL_PHASE_CATALOG: &str = r#"{
 }"#;
 
 fn install(catalog: &str) {
-    if let Err(error) = fusion_engine::openers::set_opener_catalog(catalog.as_bytes()) {
+    if let Err(error) = install_opener_runtime(catalog.as_bytes(), None) {
         panic!("guide catalog should install: {error}");
     }
 }
@@ -135,6 +137,102 @@ fn analyze(
         Ok(analysis) => analysis,
         Err(error) => panic!("catalog is installed: {error}"),
     }
+}
+
+#[test]
+fn sparse_round_observations_keep_absolute_ordinals_and_optional_letters() {
+    let _scope = crate::openers::isolated_catalog_test();
+    install(GUIDE_CATALOG);
+
+    for missing in [
+        None,
+        Some(OpenerObservation {
+            post_board: Some(vec![0b1100001111]),
+            post_gmask: None,
+            post_letters: None,
+        }),
+        Some(OpenerObservation {
+            post_board: None,
+            post_gmask: Some(vec![0]),
+            post_letters: None,
+        }),
+    ] {
+        let analysis = analyze(vec![
+            Some(observation(0b0000001111, "LLLL______")),
+            missing,
+            Some(OpenerObservation {
+                post_board: Some(vec![0b1111101111]),
+                post_gmask: Some(vec![0]),
+                post_letters: None,
+            }),
+        ]);
+
+        assert_eq!(analysis.assessments.len(), 3);
+        assert!(analysis.assessments[1].is_none());
+        assert_eq!(analysis.policies.len(), 3);
+        assert!(!analysis.policies[1].attack_gap_exempt);
+        let matched = analysis
+            .catalogued_board_match
+            .expect("third lock confirms");
+        assert_eq!((matched.first_match_index, matched.anchor_index), (0, 2));
+        assert_eq!(matched.matching_openers.len(), 1);
+        assert_eq!(matched.matching_openers[0].id, "alpha");
+        assert_eq!(matched.matching_openers[0].deepest_pieces, 3);
+        assert_eq!(matched.matching_openers[0].candidate_node_ids, [3]);
+        let recognition = analysis.recognition.expect("usable slots are recognized");
+        assert_eq!(recognition.per_lock.len(), 2);
+        let guide = analysis.guide.expect("confirmed third-lock guide");
+        assert_eq!(guide.record_id, "alpha");
+        assert_eq!(guide.phases.last().map(|phase| phase.node_id), Some(3));
+    }
+}
+
+#[test]
+fn round_observation_garbage_rows_keep_guide_letters_aligned() {
+    let _scope = crate::openers::isolated_catalog_test();
+    install(GUIDE_CATALOG);
+
+    let analysis = analyze(vec![
+        Some(observation(0b0000001111, "LLLL______")),
+        Some(observation(0b1100001111, "LLLL____ZZ")),
+        Some(OpenerObservation {
+            post_board: Some(vec![0b1111111110, 0b1110111111, 0]),
+            post_gmask: Some(vec![0b1111111110, 0, 0]),
+            post_letters: Some(vec![
+                "_XXXXXXXXX".to_owned(),
+                "LLLLTT_TZZ".to_owned(),
+                "__________".to_owned(),
+            ]),
+        }),
+        Some(observation(0b1111111111, "LLLLTTITZZ")),
+    ]);
+
+    assert_eq!(
+        analysis.assessments[2]
+            .as_ref()
+            .map(|value| value.board_cells),
+        Some(9)
+    );
+    let matched = analysis
+        .catalogued_board_match
+        .expect("first two locks confirm");
+    assert_eq!((matched.first_match_index, matched.anchor_index), (0, 1));
+    let recognition = analysis
+        .recognition
+        .expect("recognition keeps usable slots");
+    assert_eq!(recognition.per_lock.len(), 4);
+    let deviation = analysis
+        .guide
+        .and_then(|guide| guide.deviation)
+        .expect("the off-route continuation is compared after garbage removal");
+    assert_eq!(deviation.divergence_lock, 2);
+    assert_eq!(deviation.lock_index, 2);
+    assert_eq!(deviation.player_rows, ["LLLLTT_TZZ"]);
+    assert_eq!(deviation.target_rows, ["LLLLTTTTZZ"]);
+    assert_eq!(
+        (deviation.missing, deviation.stray, deviation.wrong_letter),
+        (1, 0, 0)
+    );
 }
 
 #[test]

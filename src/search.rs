@@ -2068,7 +2068,7 @@ mod tests {
     fn search_latency_probe() {
         use std::time::Instant;
 
-        // Mid-game holey fixture (same shape as bench_beam's BOARD_ROWS).
+        // Mid-game holey fixture with a representative search shape.
         let mut mid_rows = [0u16; 40];
         mid_rows[0] = 0x37F;
         mid_rows[1] = 0x3BF;

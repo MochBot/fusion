@@ -24,10 +24,10 @@ fn over_budget_catalog() -> OpenerCatalog {
 #[test]
 fn cache_first_use_cold_attempts_in_shortlist_order() {
     let catalog = mini_catalog();
-    let cache = RecordGraphCache::default();
+    let cache = RecordGraphCache::for_catalog(catalog.clone());
 
     let (graph, profile) =
-        cache.shortlist_graph_profiled(&catalog, &ids(&["crowbar-v2", "perfect-clear-opener"]));
+        cache.shortlist_graph_profiled(&ids(&["crowbar-v2", "perfect-clear-opener"]));
 
     assert!(graph.is_some());
     assert_eq!(profile.records.len(), 2);
@@ -48,13 +48,13 @@ fn cache_first_use_cold_attempts_in_shortlist_order() {
 #[test]
 fn cache_repeated_shortlist_has_no_cold_attempts() {
     let catalog = mini_catalog();
-    let cache = RecordGraphCache::default();
+    let cache = RecordGraphCache::for_catalog(catalog.clone());
     let shortlist = ids(&["crowbar-v2", "perfect-clear-opener"]);
 
     cache
-        .shortlist_graph(&catalog, &shortlist)
+        .shortlist_graph(&shortlist)
         .expect("shortlist compiles");
-    let (graph, profile) = cache.shortlist_graph_profiled(&catalog, &shortlist);
+    let (graph, profile) = cache.shortlist_graph_profiled(&shortlist);
 
     assert!(graph.is_some());
     assert!(profile
@@ -71,14 +71,14 @@ fn cache_repeated_shortlist_has_no_cold_attempts() {
 #[test]
 fn cache_overlapping_reordered_shortlist_compiles_only_new_records() {
     let catalog = mini_catalog();
-    let cache = RecordGraphCache::default();
+    let cache = RecordGraphCache::for_catalog(catalog.clone());
 
-    let (_, first) = cache.shortlist_graph_profiled(&catalog, &ids(&["crowbar-v2"]));
+    let (_, first) = cache.shortlist_graph_profiled(&ids(&["crowbar-v2"]));
     assert_eq!(first.records.len(), 1);
     assert_eq!(first.records[0].outcome, CacheRecordOutcome::ColdSuccess);
 
     let (graph, second) =
-        cache.shortlist_graph_profiled(&catalog, &ids(&["perfect-clear-opener", "crowbar-v2"]));
+        cache.shortlist_graph_profiled(&ids(&["perfect-clear-opener", "crowbar-v2"]));
 
     assert!(graph.is_some());
     assert_eq!(second.records.len(), 2);
@@ -92,16 +92,16 @@ fn cache_overlapping_reordered_shortlist_compiles_only_new_records() {
 #[test]
 fn cache_failed_record_is_memoized_not_retried() {
     let catalog = over_budget_catalog();
-    let cache = RecordGraphCache::default();
+    let cache = RecordGraphCache::for_catalog(catalog.clone());
 
-    let (first_graph, first) = cache.shortlist_graph_profiled(&catalog, &ids(&["over-budget"]));
+    let (first_graph, first) = cache.shortlist_graph_profiled(&ids(&["over-budget"]));
     assert!(first_graph.is_none());
     assert_eq!(first.records.len(), 1);
     assert_eq!(first.records[0].outcome, CacheRecordOutcome::ColdFailure);
     assert!(first.records[0].compile.is_some());
     assert_eq!(cache.len(), 1);
 
-    let (second_graph, second) = cache.shortlist_graph_profiled(&catalog, &ids(&["over-budget"]));
+    let (second_graph, second) = cache.shortlist_graph_profiled(&ids(&["over-budget"]));
     assert!(second_graph.is_none());
     assert_eq!(second.records.len(), 1);
     assert_eq!(second.records[0].outcome, CacheRecordOutcome::CachedFailure);
@@ -109,8 +109,8 @@ fn cache_failed_record_is_memoized_not_retried() {
     assert_eq!(cache.len(), 1);
 
     let mixed = ids(&["fixture", "over-budget"]);
-    let normal = cache.shortlist_graph(&catalog, &mixed);
-    let (profiled, mixed_profile) = cache.shortlist_graph_profiled(&catalog, &mixed);
+    let normal = cache.shortlist_graph(&mixed);
+    let (profiled, mixed_profile) = cache.shortlist_graph_profiled(&mixed);
     assert_eq!(normal.is_some(), profiled.is_some());
     assert_eq!(
         normal.map(|graph| graph.compile_skipped),
@@ -132,12 +132,12 @@ fn cache_failed_record_is_memoized_not_retried() {
 #[test]
 fn cache_missing_ids_are_not_compile_skipped() {
     let catalog = mini_catalog();
-    let cache = RecordGraphCache::default();
+    let cache = RecordGraphCache::for_catalog(catalog.clone());
     let shortlist = ids(&["crowbar-v2", "not-in-catalog"]);
 
-    let normal = cache.shortlist_graph(&catalog, &shortlist);
-    let fresh = RecordGraphCache::default();
-    let (profiled, profile) = fresh.shortlist_graph_profiled(&catalog, &shortlist);
+    let normal = cache.shortlist_graph(&shortlist);
+    let fresh = RecordGraphCache::for_catalog(catalog.clone());
+    let (profiled, profile) = fresh.shortlist_graph_profiled(&shortlist);
 
     assert_eq!(
         normal.map(|graph| (graph.graph.states.len(), graph.compile_skipped)),
@@ -149,8 +149,7 @@ fn cache_missing_ids_are_not_compile_skipped() {
         CacheRecordOutcome::MissingCatalogRecord
     );
 
-    let (missing_graph, missing) =
-        fresh.shortlist_graph_profiled(&catalog, &ids(&["not-in-catalog"]));
+    let (missing_graph, missing) = fresh.shortlist_graph_profiled(&ids(&["not-in-catalog"]));
     assert!(missing_graph.is_none());
     assert_eq!(missing.records.len(), 1);
     assert_eq!(
@@ -162,10 +161,10 @@ fn cache_missing_ids_are_not_compile_skipped() {
 #[test]
 fn cache_union_success_leaves_merged_unexecuted() {
     let catalog = mini_catalog();
-    let cache = RecordGraphCache::default();
+    let cache = RecordGraphCache::for_catalog(catalog.clone());
 
     let (graph, profile) =
-        cache.shortlist_graph_profiled(&catalog, &ids(&["crowbar-v2", "perfect-clear-opener"]));
+        cache.shortlist_graph_profiled(&ids(&["crowbar-v2", "perfect-clear-opener"]));
 
     assert!(graph.is_some());
     assert!(profile.union_graphs.is_some());

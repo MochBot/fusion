@@ -11,14 +11,15 @@
 //
 // Beam nodes carry only `rows: [u16; 40]` plus chain counters (no Board, no
 // cols cache). A Board is rebuilt once per surviving node for movegen.
-// Placement/clearing is raw row arithmetic mirroring Board::place /
-// line_clears / clear_lines bit-for-bit (see the `oracle` test module for
-// the differential reference).
+// Placement/clearing uses the shared row arithmetic in `board.rs`, which
+// mirrors Board::place / line_clears / clear_lines bit-for-bit (the `oracle`
+// test module holds the independent Board-only differential reference).
 
 use crate::attack::calculate_attack_s2_tl_with_multiplier;
-use crate::board::{Board, FULL_ROW};
+use crate::board::{clear_rows, line_clears, place_rows, Board};
+pub(crate) use crate::board::{compact_gm_bits, rows_nonempty_mask};
 use crate::eval::{evaluate, EvalWeights};
-use crate::header::{piece_from_external, piece_to_external, Move};
+use crate::header::{piece_from_external, piece_to_external};
 use crate::move_buffer::MoveBuffer;
 use crate::movegen::generate_playable;
 use std::cmp::Ordering;
@@ -57,93 +58,9 @@ pub(crate) type FxFullSet =
 pub(crate) type FxFullMap<V> =
     std::collections::HashMap<([u16; 40], i32, i32), V, std::hash::BuildHasherDefault<FxHasher64>>;
 
-// Drop the bits of `gm` at cleared row positions and shift higher bits down,
-// matching how `clear_lines` compacts the board (software pext on a single u64).
-#[inline]
-pub(crate) fn compact_gm_bits(gm: u64, cleared: u64) -> u64 {
-    if cleared == 0 {
-        return gm;
-    }
-    let mut out = 0u64;
-    let mut w = 0u32;
-    let mut k = !cleared;
-    while k != 0 {
-        let y = k.trailing_zeros();
-        if gm & (1u64 << y) != 0 {
-            out |= 1u64 << w;
-        }
-        w += 1;
-        k &= k - 1;
-    }
-    out
-}
-
-// Bitmask of rows that still contain at least one cell (gm bits for emptied rows
-// must be dropped, mirroring the per-cell `gm[y] &= rows[y]` step).
-#[inline]
-pub(crate) fn rows_nonempty_mask(rows: &[u16; 40]) -> u64 {
-    let mut ne = 0u64;
-    for (y, &row) in rows.iter().enumerate() {
-        if row != 0 {
-            ne |= 1u64 << y;
-        }
-    }
-    ne
-}
-
 #[cfg(test)]
 pub(crate) fn nonempty_row_mask(board: &Board) -> u64 {
     rows_nonempty_mask(&board.rows)
-}
-
-// Mirrors Board::place exactly, including the `as usize` wrap that skips
-// negative coordinates -- placed cells drive dedup keys, so any bounds
-// deviation changes beam outputs.
-#[inline]
-fn place_on_rows(rows: &mut [u16; 40], m: &Move) {
-    let pc = m.cells();
-    let x = m.x();
-    let y = m.y();
-
-    let xu = x as usize;
-    let yu = y as usize;
-    if xu < 10 && yu < 40 {
-        rows[yu] |= 1 << x;
-    }
-
-    for i in 0..3 {
-        let cx = (pc[i].x as i32 + x) as usize;
-        let cy = (pc[i].y as i32 + y) as usize;
-        if cx < 10 && cy < 40 {
-            rows[cy] |= 1 << cx;
-        }
-    }
-}
-
-#[inline]
-fn row_clear_mask(rows: &[u16; 40]) -> u64 {
-    let mut cleared = 0u64;
-    for (y, &row) in rows.iter().enumerate() {
-        if row == FULL_ROW {
-            cleared |= 1u64 << y;
-        }
-    }
-    cleared
-}
-
-// Mirrors Board::clear_lines row compaction (cols cache does not exist here).
-#[inline]
-fn compact_rows(rows: &mut [u16; 40], cleared: u64) {
-    let mut write = 0usize;
-    for read in 0..40 {
-        if cleared & (1u64 << read) == 0 {
-            rows[write] = rows[read];
-            write += 1;
-        }
-    }
-    for row in rows.iter_mut().skip(write) {
-        *row = 0;
-    }
 }
 
 fn board_health_rows(rows: &[u16; 40]) -> (i32, i32) {
@@ -166,18 +83,7 @@ fn board_health_rows(rows: &[u16; 40]) -> (i32, i32) {
 /// Build a Board (rows + cols cache) from pre-masked u16 rows. Equivalent to
 /// wasm_board::board_from_row_bitmasks for inputs already reduced to 10 bits.
 pub(crate) fn board_from_u16(rows: &[u16; 40]) -> Board {
-    let mut b = Board::new();
-    b.rows = *rows;
-    b.cols = [0; 10];
-    for (y, row) in b.rows.iter().enumerate() {
-        let mut bits = *row as u64;
-        while bits != 0 {
-            let x = bits.trailing_zeros() as usize;
-            b.cols[x] |= 1u64 << y;
-            bits &= bits - 1;
-        }
-    }
-    b
+    Board::from_rows(*rows)
 }
 
 #[derive(Clone, Copy)]
@@ -277,11 +183,11 @@ pub fn beam_best_gm(
             generate_playable(&node_board, &mut moves, p, false);
             for m in moves.as_slice() {
                 let mut cr = node.rows;
-                place_on_rows(&mut cr, m);
-                let cleared = row_clear_mask(&cr);
+                place_rows(&mut cr, m);
+                let cleared = line_clears(&cr);
                 let lines = cleared.count_ones() as u8;
                 if cleared != 0 {
-                    compact_rows(&mut cr, cleared);
+                    clear_rows(&mut cr, cleared);
                 }
                 let spin = m.spin();
                 let garbage_cleared = (cleared & node.gm).count_ones() as u8;
@@ -587,11 +493,11 @@ pub fn beam_best_gm_line(
             generate_playable(&node_board, &mut moves, p, false);
             for m in moves.as_slice() {
                 let mut cr = node.rows;
-                place_on_rows(&mut cr, m);
-                let cleared = row_clear_mask(&cr);
+                place_rows(&mut cr, m);
+                let cleared = line_clears(&cr);
                 let lines = cleared.count_ones() as u8;
                 if cleared != 0 {
-                    compact_rows(&mut cr, cleared);
+                    clear_rows(&mut cr, cleared);
                 }
                 let spin_u8 = m.spin() as u8;
                 let garbage_cleared = (cleared & node.gm).count_ones() as u8;
@@ -795,11 +701,11 @@ pub fn beam_best_gm_gi(
             generate_playable(&node_board, &mut moves, p, false);
             for m in moves.as_slice() {
                 let mut cr = node.rows;
-                place_on_rows(&mut cr, m);
-                let cleared = row_clear_mask(&cr);
+                place_rows(&mut cr, m);
+                let cleared = line_clears(&cr);
                 let lines = cleared.count_ones() as u8;
                 if cleared != 0 {
-                    compact_rows(&mut cr, cleared);
+                    clear_rows(&mut cr, cleared);
                 }
                 let spin = m.spin();
                 let garbage_cleared = (cleared & node.gm).count_ones() as u8;
@@ -882,9 +788,10 @@ pub fn beam_best_gm_gi(
     mx as f64
 }
 
-// The original Board-based kernels, kept verbatim as the differential parity
-// reference for the rows-only rewrites above (same role as bench_beam's
-// BASELINE replica). Do not "improve" this module.
+// The original Board-based kernels remain the differential parity reference
+// for the rows-only rewrites above. They must stay independent of the shared
+// row helpers in `board.rs`, so this module keeps its own inline arithmetic.
+// Do not "improve" this module.
 #[cfg(test)]
 mod oracle {
     use super::*;
@@ -1446,6 +1353,7 @@ mod oracle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::board::FULL_ROW;
     use crate::header::Piece;
 
     fn xs(state: &mut u64) -> u64 {
@@ -1501,10 +1409,10 @@ mod tests {
                 let n = moves.as_slice().len();
                 if n > 0 {
                     let m = moves.as_slice()[(xs(state) as usize) % n];
-                    place_on_rows(&mut rows, &m);
-                    let cleared = row_clear_mask(&rows);
+                    place_rows(&mut rows, &m);
+                    let cleared = line_clears(&rows);
                     if cleared != 0 {
-                        compact_rows(&mut rows, cleared);
+                        clear_rows(&mut rows, cleared);
                     }
                 }
             }
@@ -2056,7 +1964,7 @@ mod tests {
     }
 
     #[test]
-    fn place_on_rows_matches_board_place_on_playable_moves() {
+    fn place_rows_matches_board_place_on_playable_moves() {
         let mut state = 0x9A0B_0A4D_2026_0703u64;
         let mut moves = MoveBuffer::new();
         let mut checked = 0u32;
@@ -2070,13 +1978,13 @@ mod tests {
                 let mut want = b.clone();
                 want.place(m);
                 let mut got = rows;
-                place_on_rows(&mut got, m);
+                place_rows(&mut got, m);
                 assert_eq!(got, want.rows);
-                assert_eq!(row_clear_mask(&got), want.line_clears());
+                assert_eq!(line_clears(&got), want.line_clears());
                 let cleared = want.line_clears();
                 if cleared != 0 {
                     want.clear_lines(cleared);
-                    compact_rows(&mut got, cleared);
+                    clear_rows(&mut got, cleared);
                     assert_eq!(got, want.rows);
                 }
                 checked += 1;

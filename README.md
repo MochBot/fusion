@@ -16,12 +16,17 @@ Copy `.env.example` to `.env` only for replay collection, Modal training, or the
 
 Large artifacts (replay corpora, training bins, label sidecars, ONNX models) are not tracked; keep a model's `.metadata.json` next to it. See `training/TRAINING.md` for the training pipeline.
 
-The test command verifies and caches checksum-pinned opener inputs and generates the shared recommendation vectors before running the library suite.
+The test command verifies and caches checksum-pinned opener inputs before running the library suite.
 It needs Python 3.11+, curl and either sha256sum or shasum on first use; intact cached opener inputs work offline.
-The inputs stay ignored under `fixtures/openers/` and `tests/fixtures/recommend-v1.json`, with no sibling application checkout or storage credentials required.
-Run `sh scripts/test.sh --test recommend_contract` to include the native recommendation boundary tests.
-Before running Cargo test commands directly, run `sh scripts/hydrate-opener-tests.sh`, create `tests/fixtures/`, and run `python3 scripts/generate-recommend-vectors.py tests/fixtures/recommend-v1.json`.
-Generated reports stay under ignored `evidence-out/`. The ignored historical census comparison requires
-its separately retained baseline report; normal compiler tests do not read that report.
+The inputs stay ignored under `fixtures/openers/`, with no sibling application checkout or storage credentials required.
+The pinned perf request predates the retired dealt-input/tail-queue fields, so hydration drops exactly those keys and checks the result against its expected output digest.
+Before running Cargo test commands directly, run `sh scripts/hydrate-opener-tests.sh`.
+Generated reports stay under ignored `evidence-out/`. The default library suite needs no
+retained report: census compilation is pure and the ordinary recognition tests run without
+one. The explicit `#[ignore]` census gate
+(`openers::recognition::tests::full_catalog_census`) does join a historical path-A report at
+`evidence-out/opener-recognition-census/census.json` and fails loudly when it is absent; that
+report is not published with the source, so run that gate only where the retained report is
+available.
 
 The opener runtime accepts catalog bytes from its caller. Dataset downloads are test setup, not engine runtime behavior.

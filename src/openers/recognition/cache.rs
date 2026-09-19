@@ -14,21 +14,49 @@ use std::sync::{Arc, Mutex};
 
 #[cfg(test)]
 use super::census::CompileCensus;
-use super::compile::{compile_recognition_subgraph, CompileBudget};
+#[cfg(test)]
+use super::compile::compile_recognition_subgraph;
+use super::compile::{compile_borrowed_records, CompileBudget};
 use super::graph::{CanonicalKey, RecognitionGraph, StateId, Transition};
 #[cfg(all(test, not(target_arch = "wasm32")))]
 use super::profile::{CacheProfile, CacheRecordOutcome, CacheRecordProfile};
 use crate::openers::catalog::{OpenerCatalog, OpenerRecord};
 
-/// Compiled record graphs by record id; `None` marks a record that failed or
-/// reached a compile budget and is excluded from every shortlist.
-#[derive(Default)]
+/// Compiled graphs for one immutable catalog. `None` caches compile failure
+/// or budget exclusion; missing record IDs are never cached.
 pub(crate) struct RecordGraphCache {
+    catalog: OpenerCatalog,
     records: Mutex<HashMap<String, Option<Arc<RecognitionGraph>>>>,
+    /// First position per record id; duplicate ids keep the first occurrence.
+    positions: HashMap<String, usize>,
+}
+
+impl RecordGraphCache {
+    pub(crate) fn for_catalog(catalog: OpenerCatalog) -> Self {
+        let mut positions = HashMap::with_capacity(catalog.openers.len());
+        for (index, record) in catalog.openers.iter().enumerate() {
+            positions.entry(record.id.clone()).or_insert(index);
+        }
+        Self {
+            catalog,
+            records: Mutex::default(),
+            positions,
+        }
+    }
+
+    pub(crate) fn catalog(&self) -> &OpenerCatalog {
+        &self.catalog
+    }
+
+    fn resolve(&self, id: &str) -> Option<&OpenerRecord> {
+        self.positions
+            .get(id)
+            .map(|&index| &self.catalog.openers[index])
+    }
 }
 
 pub(crate) struct ShortlistGraph {
-    pub(crate) graph: RecognitionGraph,
+    pub(crate) graph: Arc<RecognitionGraph>,
     pub(crate) compile_skipped: usize,
 }
 
@@ -36,13 +64,8 @@ impl RecordGraphCache {
     /// Returns the merged shortlist graph, compiling only records this snapshot
     /// has not compiled before. `None` mirrors the uncached contract: no
     /// eligible record, or the merged graph reached a compile budget.
-    pub(crate) fn shortlist_graph(
-        &self,
-        catalog: &OpenerCatalog,
-        shortlist: &[String],
-    ) -> Option<ShortlistGraph> {
+    pub(crate) fn shortlist_graph(&self, shortlist: &[String]) -> Option<ShortlistGraph> {
         self.shortlist_graph_core(
-            catalog,
             shortlist,
             #[cfg(all(test, not(target_arch = "wasm32")))]
             None,
@@ -54,11 +77,10 @@ impl RecordGraphCache {
     #[cfg(all(test, not(target_arch = "wasm32")))]
     pub(crate) fn shortlist_graph_profiled(
         &self,
-        catalog: &OpenerCatalog,
         shortlist: &[String],
     ) -> (Option<ShortlistGraph>, CacheProfile) {
         let mut profile = CacheProfile::default();
-        let graph = self.shortlist_graph_core(catalog, shortlist, Some(&mut profile));
+        let graph = self.shortlist_graph_core(shortlist, Some(&mut profile));
         (graph, profile)
     }
 
@@ -69,23 +91,20 @@ impl RecordGraphCache {
     #[cfg(all(test, not(target_arch = "wasm32")))]
     pub(crate) fn shortlist_graph_profiled_with_budget(
         &self,
-        catalog: &OpenerCatalog,
         shortlist: &[String],
         budget: &CompileBudget,
     ) -> (Option<ShortlistGraph>, CacheProfile) {
         let mut profile = CacheProfile::default();
-        let graph = self.shortlist_graph_core_impl(catalog, shortlist, Some(&mut profile), budget);
+        let graph = self.shortlist_graph_core_impl(shortlist, Some(&mut profile), budget);
         (graph, profile)
     }
 
     pub(super) fn shortlist_graph_core(
         &self,
-        catalog: &OpenerCatalog,
         shortlist: &[String],
         #[cfg(all(test, not(target_arch = "wasm32")))] profile: Option<&mut CacheProfile>,
     ) -> Option<ShortlistGraph> {
         self.shortlist_graph_core_impl(
-            catalog,
             shortlist,
             #[cfg(all(test, not(target_arch = "wasm32")))]
             profile,
@@ -95,7 +114,6 @@ impl RecordGraphCache {
 
     fn shortlist_graph_core_impl(
         &self,
-        catalog: &OpenerCatalog,
         shortlist: &[String],
         #[cfg(all(test, not(target_arch = "wasm32")))] mut profile: Option<&mut CacheProfile>,
         budget: &CompileBudget,
@@ -109,11 +127,7 @@ impl RecordGraphCache {
             Err(poisoned) => poisoned.into_inner(),
         };
         for opener_id in shortlist {
-            let Some(record) = catalog
-                .openers
-                .iter()
-                .find(|record| record.id == *opener_id)
-            else {
+            let Some(record) = self.resolve(opener_id) else {
                 #[cfg(all(test, not(target_arch = "wasm32")))]
                 if let Some(profile) = profile.as_mut() {
                     profile.records.push(CacheRecordProfile {
@@ -143,7 +157,7 @@ impl RecordGraphCache {
                 None => {
                     #[cfg(all(test, not(target_arch = "wasm32")))]
                     let cold_started = profile.as_ref().map(|_| std::time::Instant::now());
-                    let compiled = compile_single_record(catalog, record);
+                    let compiled = compile_borrowed_single_record(record);
                     #[cfg(all(test, not(target_arch = "wasm32")))]
                     let cold_elapsed = cold_started.map(|started| started.elapsed());
                     #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -178,7 +192,16 @@ impl RecordGraphCache {
         }
         #[cfg(all(test, not(target_arch = "wasm32")))]
         let union_started = std::time::Instant::now();
-        let union = union_graphs(&parts, budget.max_total_states);
+        let union = if parts.len() == 1 {
+            let state_count = parts[0].states.len();
+            if u32::try_from(state_count).unwrap_or(u32::MAX) > budget.max_total_states {
+                None
+            } else {
+                Some(Arc::clone(&parts[0]))
+            }
+        } else {
+            union_graphs(&parts, budget.max_total_states).map(Arc::new)
+        };
         #[cfg(all(test, not(target_arch = "wasm32")))]
         if let Some(profile) = profile.as_mut() {
             profile.union_graphs = Some(union_started.elapsed());
@@ -191,7 +214,7 @@ impl RecordGraphCache {
             None => {
                 #[cfg(all(test, not(target_arch = "wasm32")))]
                 let merged_started = std::time::Instant::now();
-                let merged = merged_compile(catalog, shortlist, &parts, budget);
+                let merged = merged_compile(self, shortlist, &parts, budget).map(Arc::new);
                 #[cfg(all(test, not(target_arch = "wasm32")))]
                 if let Some(profile) = profile.as_mut() {
                     profile.merged_compile = Some(merged_started.elapsed());
@@ -283,7 +306,7 @@ pub(super) fn union_graphs(
 }
 
 fn merged_compile(
-    catalog: &OpenerCatalog,
+    cache: &RecordGraphCache,
     shortlist: &[String],
     parts: &[Arc<RecognitionGraph>],
     budget: &CompileBudget,
@@ -295,22 +318,12 @@ fn merged_compile(
         .filter_map(|state| state.origins.first())
         .map(|origin| origin.record.to_string())
         .collect::<Vec<_>>();
+    // Compile ordinals follow the eligible shortlist order, including repeats.
     let records = shortlist
         .iter()
         .filter(|opener_id| eligible.contains(opener_id))
-        .filter_map(|opener_id| {
-            catalog
-                .openers
-                .iter()
-                .find(|record| record.id == *opener_id)
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-    let merged_catalog = OpenerCatalog {
-        format_version: catalog.format_version,
-        openers: records,
-    };
-    let outcome = compile_recognition_subgraph(&merged_catalog, budget).ok()?;
+        .filter_map(|opener_id| cache.resolve(opener_id));
+    let outcome = compile_borrowed_records(records, budget).ok()?;
     (!outcome.budget_exceeded).then_some(outcome.graph)
 }
 
@@ -358,11 +371,14 @@ pub(crate) fn uncached_shortlist_graph_with_budget(
         return None;
     }
     Some(ShortlistGraph {
-        graph: outcome.graph,
+        graph: Arc::new(outcome.graph),
         compile_skipped,
     })
 }
 
+/// Clone-based reference probe for the uncached path: it compiles one record
+/// out of a temporary single-record catalog.
+#[cfg(test)]
 fn compile_single_record(
     catalog: &OpenerCatalog,
     record: &OpenerRecord,
@@ -372,6 +388,15 @@ fn compile_single_record(
         openers: vec![record.clone()],
     };
     match compile_recognition_subgraph(&single, &CompileBudget::default()) {
+        Ok(outcome) if !outcome.budget_exceeded => Some(outcome.graph),
+        Ok(_) | Err(_) => None,
+    }
+}
+
+/// Cold probe for one record the snapshot already resolved: it compiles that
+/// record alone at local ordinal 0, without cloning the record or a catalog.
+fn compile_borrowed_single_record(record: &OpenerRecord) -> Option<RecognitionGraph> {
+    match compile_borrowed_records(std::iter::once(record), &CompileBudget::default()) {
         Ok(outcome) if !outcome.budget_exceeded => Some(outcome.graph),
         Ok(_) | Err(_) => None,
     }

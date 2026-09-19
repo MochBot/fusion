@@ -1,5 +1,5 @@
 use fusion_engine::openers::{
-    analyze_opener_round, set_opener_catalog, AnalyzeError, BoardMatch, OpenerAssessment,
+    analyze_opener_round, install_opener_runtime, AnalyzeError, BoardMatch, OpenerAssessment,
     OpenerLockPolicy, OpenerObservation, OpenerRoundInput,
 };
 use serde::Deserialize;
@@ -79,7 +79,7 @@ fn assert_policy_and_assessment_parity() {
         Ok(fixture) => fixture,
         Err(error) => panic!("round fixture should parse: {error}"),
     };
-    if let Err(error) = set_opener_catalog(catalog_bytes) {
+    if let Err(error) = install_opener_runtime(catalog_bytes, None) {
         panic!("mini catalog should install: {error}");
     }
     let first_round = match fixture.rounds.first() {
@@ -155,7 +155,6 @@ fn analyze(
     match analyze_opener_round(&OpenerRoundInput {
         observations: observations.to_vec(),
         relax_depth,
-        ..OpenerRoundInput::default()
     }) {
         Ok(analysis) => analysis,
         Err(error) => panic!("installed catalog should analyze: {error}"),
@@ -250,7 +249,7 @@ fn install_catalog() {
       ]}
     ]}
     "#;
-    if let Err(error) = set_opener_catalog(catalog) {
+    if let Err(error) = install_opener_runtime(catalog, None) {
         panic!("test catalog should install: {error}");
     }
 }

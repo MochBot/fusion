@@ -2,10 +2,12 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::openers::board::{mirror_mask_10, rows_to_masks_floor_up, strip_garbage_rows};
+use crate::openers::board::{mirror_mask_10, rows_to_masks_floor_up};
 use crate::openers::catalog::navigation::record_by_id;
 use crate::openers::catalog::{OpenerCatalog, OpenerRecord};
-use crate::openers::phase::OpenerObservation;
+use crate::openers::phase::PreparedObservation;
+#[cfg(test)]
+use crate::openers::phase::{prepare_observations, OpenerObservation};
 use crate::openers::route::resolve_report_route;
 use crate::openers::witness_catalog::RuntimeSearchShapeTarget;
 
@@ -101,14 +103,19 @@ pub(crate) fn match_catalogued_boards(
     catalog: &OpenerCatalog,
     observations: &[Option<OpenerObservation>],
 ) -> Option<RoundCataloguedBoardMatch> {
-    match_catalogued_boards_with_targets(catalog, &NodeBoards::build(catalog), &[], observations)
+    match_catalogued_boards_with_targets(
+        catalog,
+        &NodeBoards::build(catalog),
+        &[],
+        &prepare_observations(observations),
+    )
 }
 
 pub(crate) fn match_catalogued_boards_with_targets(
     catalog: &OpenerCatalog,
     node_boards: &NodeBoards,
     runtime_targets: &[RuntimeSearchShapeTarget],
-    observations: &[Option<OpenerObservation>],
+    observations: &[Option<PreparedObservation>],
 ) -> Option<RoundCataloguedBoardMatch> {
     let mut first_match_index = None;
     let mut anchor_index = 0;
@@ -205,13 +212,11 @@ fn exact_candidates<'a>(
     catalog: &'a OpenerCatalog,
     node_boards: &NodeBoards,
     runtime_targets: &[RuntimeSearchShapeTarget],
-    observation: &OpenerObservation,
+    observation: &PreparedObservation,
     index: usize,
     survivors: &BTreeSet<String>,
 ) -> Option<Vec<ExactCandidate<'a>>> {
-    let board = observation.post_board.as_deref()?;
-    let garbage = observation.post_gmask.as_deref()?;
-    let normalized = strip_garbage_rows(board, garbage, observation.post_letters.as_deref());
+    let normalized = observation.normalized.as_ref()?;
     let pieces = u32::try_from(index.saturating_add(1)).ok()?;
     let mut candidates = Vec::new();
 

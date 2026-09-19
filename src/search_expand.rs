@@ -11,9 +11,9 @@ use crate::state::{
     ChainState, CoachingState, FatalityState, GameState, ObligationState, SurgeState,
 };
 use smallvec::{smallvec, SmallVec};
-use std::sync::Arc;
 #[cfg(not(target_arch = "wasm32"))]
-use std::{cell::Cell, cell::RefCell, collections::HashSet, time::Instant};
+use std::{cell::Cell, cell::RefCell, time::Instant};
+use std::{collections::HashSet, sync::Arc};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SearchExpansionStats {
@@ -51,38 +51,13 @@ pub struct SearchExpansionStats {
 
 #[cfg(not(target_arch = "wasm32"))]
 thread_local! {
+    // Keep the always-on hot counters free of RefCell borrowing.
     static EXPANDED_NODES: Cell<u64> = const { Cell::new(0) };
     static MOVEGEN_CALLS: Cell<u64> = const { Cell::new(0) };
     static ACTION_BUILDER_STATES: Cell<u64> = const { Cell::new(0) };
     static DUPLICATE_ACTION_GENERATIONS: Cell<u64> = const { Cell::new(0) };
-    static ACTION_GENERATION_NANOS: Cell<u64> = const { Cell::new(0) };
-    static LEGAL_FILTER_NANOS: Cell<u64> = const { Cell::new(0) };
-    static RUNTIME_INFERENCE_NANOS: Cell<u64> = const { Cell::new(0) };
-    static CHILD_EVAL_NANOS: Cell<u64> = const { Cell::new(0) };
-    static DO_MOVE_NANOS: Cell<u64> = const { Cell::new(0) };
-    static EVAL_FALLBACK_NANOS: Cell<u64> = const { Cell::new(0) };
-    static SORT_PRUNE_TRUNCATE_NANOS: Cell<u64> = const { Cell::new(0) };
-    static CANDIDATE_COPY_NANOS: Cell<u64> = const { Cell::new(0) };
-    static ROOT_SCORE_AGGREGATION_NANOS: Cell<u64> = const { Cell::new(0) };
-    static UNIQUE_ACTION_KEYS: Cell<u64> = const { Cell::new(0) };
-    static REPEATED_ACTION_BUILDS: Cell<u64> = const { Cell::new(0) };
-    static RUNTIME_ATTEMPT_ROWS: Cell<u64> = const { Cell::new(0) };
-    static RUNTIME_UNAVAILABLE_NODES: Cell<u64> = const { Cell::new(0) };
-    static ABANDONED_NODES: Cell<u64> = const { Cell::new(0) };
-    static RUNTIME_CALLS: Cell<u64> = const { Cell::new(0) };
-    static BATCH_CALLS: Cell<u64> = const { Cell::new(0) };
-    static INFERRED_ROWS: Cell<u64> = const { Cell::new(0) };
-    static MAX_BATCH_ROWS: Cell<u64> = const { Cell::new(0) };
-    static DEADLINE_CHECKS: Cell<u64> = const { Cell::new(0) };
-    static DEADLINE_HITS: Cell<u64> = const { Cell::new(0) };
-    static COMPLETED_DEPTH: Cell<u32> = const { Cell::new(0) };
-    static COMPLETED_WIDTH: Cell<u32> = const { Cell::new(0) };
-    static FALLBACK_LEVELS: Cell<u64> = const { Cell::new(0) };
-    static ABANDONED_LEVELS: Cell<u64> = const { Cell::new(0) };
-    static NONINFERABLE_NODES: Cell<u64> = const { Cell::new(0) };
-    static Q_EXTENSIONS_COMPLETED: Cell<u64> = const { Cell::new(0) };
+    static SEARCH_PROFILE: RefCell<SearchProfile> = RefCell::new(SearchProfile::default());
     static PROFILING_ENABLED: Cell<bool> = const { Cell::new(false) };
-    static ACTION_KEYS: RefCell<HashSet<Vec<u16>>> = RefCell::new(HashSet::new());
     #[cfg(test)]
     static POISON_BATCH_CHUNK: Cell<Option<usize>> = const { Cell::new(None) };
     #[cfg(test)]
@@ -91,6 +66,12 @@ thread_local! {
     static LEVEL_ROOT_ENTERED: Cell<bool> = const { Cell::new(false) };
     #[cfg(test)]
     static LEVEL_EXPAND_ENTERED: Cell<bool> = const { Cell::new(false) };
+}
+
+#[derive(Default)]
+struct SearchProfile {
+    stats: SearchExpansionStats,
+    action_keys: HashSet<Vec<u16>>,
 }
 
 #[cfg(test)]
@@ -120,18 +101,13 @@ pub(crate) fn level_path_markers() -> (bool, bool) {
 pub fn set_search_profiling_enabled(enabled: bool) {
     #[cfg(not(target_arch = "wasm32"))]
     PROFILING_ENABLED.with(|flag| flag.set(enabled));
+    #[cfg(target_arch = "wasm32")]
+    let _ = enabled;
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn search_profiling_enabled() -> bool {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        PROFILING_ENABLED.with(|flag| flag.get())
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        false
-    }
+    PROFILING_ENABLED.with(Cell::get)
 }
 
 pub fn reset_search_expansion_stats() {
@@ -141,33 +117,11 @@ pub fn reset_search_expansion_stats() {
         MOVEGEN_CALLS.with(|count| count.set(0));
         ACTION_BUILDER_STATES.with(|count| count.set(0));
         DUPLICATE_ACTION_GENERATIONS.with(|count| count.set(0));
-        ACTION_GENERATION_NANOS.with(|count| count.set(0));
-        LEGAL_FILTER_NANOS.with(|count| count.set(0));
-        RUNTIME_INFERENCE_NANOS.with(|count| count.set(0));
-        CHILD_EVAL_NANOS.with(|count| count.set(0));
-        DO_MOVE_NANOS.with(|count| count.set(0));
-        EVAL_FALLBACK_NANOS.with(|count| count.set(0));
-        SORT_PRUNE_TRUNCATE_NANOS.with(|count| count.set(0));
-        CANDIDATE_COPY_NANOS.with(|count| count.set(0));
-        ROOT_SCORE_AGGREGATION_NANOS.with(|count| count.set(0));
-        UNIQUE_ACTION_KEYS.with(|count| count.set(0));
-        REPEATED_ACTION_BUILDS.with(|count| count.set(0));
-        RUNTIME_ATTEMPT_ROWS.with(|count| count.set(0));
-        RUNTIME_UNAVAILABLE_NODES.with(|count| count.set(0));
-        ABANDONED_NODES.with(|count| count.set(0));
-        RUNTIME_CALLS.with(|count| count.set(0));
-        BATCH_CALLS.with(|count| count.set(0));
-        INFERRED_ROWS.with(|count| count.set(0));
-        MAX_BATCH_ROWS.with(|count| count.set(0));
-        DEADLINE_CHECKS.with(|count| count.set(0));
-        DEADLINE_HITS.with(|count| count.set(0));
-        COMPLETED_DEPTH.with(|count| count.set(0));
-        COMPLETED_WIDTH.with(|count| count.set(0));
-        FALLBACK_LEVELS.with(|count| count.set(0));
-        ABANDONED_LEVELS.with(|count| count.set(0));
-        NONINFERABLE_NODES.with(|count| count.set(0));
-        Q_EXTENSIONS_COMPLETED.with(|count| count.set(0));
-        ACTION_KEYS.with(|keys| keys.borrow_mut().clear());
+        SEARCH_PROFILE.with(|cell| {
+            let mut profile = cell.borrow_mut();
+            profile.stats = SearchExpansionStats::default();
+            profile.action_keys.clear();
+        });
     }
 }
 
@@ -175,39 +129,13 @@ pub fn search_expansion_stats() -> SearchExpansionStats {
     #[cfg(not(target_arch = "wasm32"))]
     {
         SearchExpansionStats {
-            expanded_nodes: EXPANDED_NODES.with(|count| count.get()),
-            movegen_calls: MOVEGEN_CALLS.with(|count| count.get()),
-            action_builder_states: ACTION_BUILDER_STATES.with(|count| count.get()),
-            duplicate_action_generations: DUPLICATE_ACTION_GENERATIONS.with(|count| count.get()),
-            action_generation_nanos: ACTION_GENERATION_NANOS.with(|count| count.get()),
-            legal_filter_nanos: LEGAL_FILTER_NANOS.with(|count| count.get()),
-            runtime_inference_nanos: RUNTIME_INFERENCE_NANOS.with(|count| count.get()),
-            child_eval_nanos: CHILD_EVAL_NANOS.with(|count| count.get()),
-            do_move_nanos: DO_MOVE_NANOS.with(|count| count.get()),
-            eval_fallback_nanos: EVAL_FALLBACK_NANOS.with(|count| count.get()),
-            sort_prune_truncate_nanos: SORT_PRUNE_TRUNCATE_NANOS.with(|count| count.get()),
-            candidate_copy_nanos: CANDIDATE_COPY_NANOS.with(|count| count.get()),
-            root_score_aggregation_nanos: ROOT_SCORE_AGGREGATION_NANOS.with(|count| count.get()),
-            unique_action_keys: UNIQUE_ACTION_KEYS.with(|count| count.get()),
-            repeated_action_builds: REPEATED_ACTION_BUILDS.with(|count| count.get()),
-            runtime_attempt_rows: RUNTIME_ATTEMPT_ROWS.with(|count| count.get()),
-            runtime_unavailable_nodes: RUNTIME_UNAVAILABLE_NODES.with(|count| count.get()),
-            abandoned_nodes: ABANDONED_NODES.with(|count| count.get()),
-            runtime_calls: RUNTIME_CALLS.with(|count| count.get()),
-            batch_calls: BATCH_CALLS.with(|count| count.get()),
-            inferred_rows: INFERRED_ROWS.with(|count| count.get()),
-            max_batch_rows: MAX_BATCH_ROWS.with(|count| count.get()),
-            deadline_checks: DEADLINE_CHECKS.with(|count| count.get()),
-            deadline_hits: DEADLINE_HITS.with(|count| count.get()),
-            completed_depth: COMPLETED_DEPTH.with(|count| count.get()),
-            completed_width: COMPLETED_WIDTH.with(|count| count.get()),
-            fallback_levels: FALLBACK_LEVELS.with(|count| count.get()),
-            abandoned_levels: ABANDONED_LEVELS.with(|count| count.get()),
-            noninferable_nodes: NONINFERABLE_NODES.with(|count| count.get()),
-            q_extensions_completed: Q_EXTENSIONS_COMPLETED.with(|count| count.get()),
+            expanded_nodes: EXPANDED_NODES.with(Cell::get),
+            movegen_calls: MOVEGEN_CALLS.with(Cell::get),
+            action_builder_states: ACTION_BUILDER_STATES.with(Cell::get),
+            duplicate_action_generations: DUPLICATE_ACTION_GENERATIONS.with(Cell::get),
+            ..SEARCH_PROFILE.with(|cell| cell.borrow().stats)
         }
     }
-
     #[cfg(target_arch = "wasm32")]
     {
         SearchExpansionStats::default()
@@ -239,6 +167,16 @@ fn record_duplicate_action_generation() {
 }
 
 #[inline]
+fn with_profile(update: impl FnOnce(&mut SearchProfile)) {
+    #[cfg(not(target_arch = "wasm32"))]
+    if search_profiling_enabled() {
+        SEARCH_PROFILE.with(|cell| update(&mut cell.borrow_mut()));
+    }
+    #[cfg(target_arch = "wasm32")]
+    let _ = update;
+}
+
+#[inline]
 fn piece_key(piece: Option<Piece>) -> u16 {
     match piece {
         Some(Piece::I) => 1,
@@ -254,89 +192,101 @@ fn piece_key(piece: Option<Piece>) -> u16 {
 
 #[inline]
 fn record_action_key(board: &Board, current: Option<Piece>, hold: Option<Piece>, queue: &[Piece]) {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        if !search_profiling_enabled() {
-            return;
-        }
+    with_profile(|profile| {
         let mut key = Vec::with_capacity(BOARD_HEIGHT + 2 + queue.len());
         key.extend_from_slice(&board.rows);
         key.push(piece_key(current));
         key.push(piece_key(hold));
         key.extend(queue.iter().map(|piece| piece_key(Some(*piece))));
-        ACTION_KEYS.with(|keys| {
-            if keys.borrow_mut().insert(key) {
-                UNIQUE_ACTION_KEYS.with(|count| count.set(count.get() + 1));
-            } else {
-                REPEATED_ACTION_BUILDS.with(|count| count.set(count.get() + 1));
-            }
-        });
-    }
+        if profile.action_keys.insert(key) {
+            profile.stats.unique_action_keys += 1;
+        } else {
+            profile.stats.repeated_action_builds += 1;
+        }
+    });
 }
 
 #[inline]
-#[cfg(not(target_arch = "wasm32"))]
-fn increment_profile_counter(cell: &'static std::thread::LocalKey<Cell<u64>>) {
+fn profile_counter(slot: impl FnOnce(&mut SearchExpansionStats) -> &mut u64, amount: u64) {
+    with_profile(|profile| {
+        let counter = slot(&mut profile.stats);
+        *counter = counter.saturating_add(amount);
+    });
+}
+
+#[inline]
+fn timed_profile<T>(
+    slot: impl FnOnce(&mut SearchExpansionStats) -> &mut u64,
+    f: impl FnOnce() -> T,
+) -> T {
+    #[cfg(not(target_arch = "wasm32"))]
     if search_profiling_enabled() {
-        cell.with(|count| count.set(count.get().saturating_add(1)));
+        let started = Instant::now();
+        // Do not hold a borrow across f: nested profiling must remain valid.
+        let result = f();
+        let nanos = started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+        SEARCH_PROFILE.with(|cell| {
+            let mut profile = cell.borrow_mut();
+            let counter = slot(&mut profile.stats);
+            *counter = counter.saturating_add(nanos);
+        });
+        return result;
     }
+    #[cfg(target_arch = "wasm32")]
+    let _ = slot;
+    f()
 }
 
 #[inline]
 fn record_runtime_attempt() {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        increment_profile_counter(&RUNTIME_ATTEMPT_ROWS);
-        increment_profile_counter(&RUNTIME_CALLS);
-    }
+    with_profile(|profile| {
+        let stats = &mut profile.stats;
+        stats.runtime_attempt_rows = stats.runtime_attempt_rows.saturating_add(1);
+        stats.runtime_calls = stats.runtime_calls.saturating_add(1);
+    });
 }
 
 #[inline]
 fn record_runtime_unavailable() {
-    #[cfg(not(target_arch = "wasm32"))]
-    increment_profile_counter(&RUNTIME_UNAVAILABLE_NODES);
+    profile_counter(|stats| &mut stats.runtime_unavailable_nodes, 1);
 }
 
 #[inline]
 fn record_inferred_row() {
-    #[cfg(not(target_arch = "wasm32"))]
-    increment_profile_counter(&INFERRED_ROWS);
+    profile_counter(|stats| &mut stats.inferred_rows, 1);
 }
 
 #[inline]
 fn record_batch_dispatch(rows: usize) {
-    #[cfg(not(target_arch = "wasm32"))]
-    if search_profiling_enabled() {
+    with_profile(|profile| {
         let rows = rows.min(u64::MAX as usize) as u64;
-        RUNTIME_ATTEMPT_ROWS.with(|count| count.set(count.get().saturating_add(rows)));
-        RUNTIME_CALLS.with(|count| count.set(count.get().saturating_add(1)));
-        BATCH_CALLS.with(|count| count.set(count.get().saturating_add(1)));
-        MAX_BATCH_ROWS.with(|count| count.set(count.get().max(rows)));
-    }
+        let stats = &mut profile.stats;
+        stats.runtime_attempt_rows = stats.runtime_attempt_rows.saturating_add(rows);
+        stats.runtime_calls = stats.runtime_calls.saturating_add(1);
+        stats.batch_calls = stats.batch_calls.saturating_add(1);
+        stats.max_batch_rows = stats.max_batch_rows.max(rows);
+    });
 }
 
 #[inline]
 fn record_inferred_rows(rows: usize) {
-    #[cfg(not(target_arch = "wasm32"))]
-    if search_profiling_enabled() {
-        let rows = rows.min(u64::MAX as usize) as u64;
-        INFERRED_ROWS.with(|count| count.set(count.get().saturating_add(rows)));
-    }
+    profile_counter(
+        |stats| &mut stats.inferred_rows,
+        rows.min(u64::MAX as usize) as u64,
+    );
 }
 
 #[inline]
 fn record_abandoned_nodes(nodes: usize) {
-    #[cfg(not(target_arch = "wasm32"))]
-    if search_profiling_enabled() {
-        let nodes = nodes.min(u64::MAX as usize) as u64;
-        ABANDONED_NODES.with(|count| count.set(count.get().saturating_add(nodes)));
-    }
+    profile_counter(
+        |stats| &mut stats.abandoned_nodes,
+        nodes.min(u64::MAX as usize) as u64,
+    );
 }
 
 #[inline]
 fn record_fallback_level() {
-    #[cfg(not(target_arch = "wasm32"))]
-    increment_profile_counter(&FALLBACK_LEVELS);
+    profile_counter(|stats| &mut stats.fallback_levels, 1);
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -357,219 +307,81 @@ fn level_deadline_expired(_ctx: &SearchExpansionContext<'_>) -> bool {
 
 #[inline]
 fn record_noninferable_node() {
-    #[cfg(not(target_arch = "wasm32"))]
-    increment_profile_counter(&NONINFERABLE_NODES);
+    profile_counter(|stats| &mut stats.noninferable_nodes, 1);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[inline]
 pub(crate) fn record_deadline_check(expired: bool) {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        increment_profile_counter(&DEADLINE_CHECKS);
+    with_profile(|profile| {
+        profile.stats.deadline_checks = profile.stats.deadline_checks.saturating_add(1);
         if expired {
-            increment_profile_counter(&DEADLINE_HITS);
+            profile.stats.deadline_hits = profile.stats.deadline_hits.saturating_add(1);
         }
-    }
+    });
 }
 
 #[inline]
 pub(crate) fn record_completed_search(depth: usize, width: usize) {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        if search_profiling_enabled() {
-            COMPLETED_DEPTH.with(|count| count.set(depth.min(u32::MAX as usize) as u32));
-            COMPLETED_WIDTH.with(|count| count.set(width.min(u32::MAX as usize) as u32));
-        }
-    }
+    with_profile(|profile| {
+        profile.stats.completed_depth = depth.min(u32::MAX as usize) as u32;
+        profile.stats.completed_width = width.min(u32::MAX as usize) as u32;
+    });
 }
 
 #[inline]
 pub(crate) fn record_abandoned_level() {
-    #[cfg(not(target_arch = "wasm32"))]
-    increment_profile_counter(&ABANDONED_LEVELS);
+    profile_counter(|stats| &mut stats.abandoned_levels, 1);
 }
 
 #[inline]
 pub(crate) fn record_q_extension_completed() {
-    #[cfg(not(target_arch = "wasm32"))]
-    increment_profile_counter(&Q_EXTENSIONS_COMPLETED);
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn add_elapsed(cell: &'static std::thread::LocalKey<Cell<u64>>, started: Instant) {
-    let nanos = started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
-    cell.with(|total| total.set(total.get().saturating_add(nanos)));
+    profile_counter(|stats| &mut stats.q_extensions_completed, 1);
 }
 
 #[inline]
 fn profile_action_generation<T>(f: impl FnOnce() -> T) -> T {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        if !search_profiling_enabled() {
-            return f();
-        }
-        let started = Instant::now();
-        let result = f();
-        add_elapsed(&ACTION_GENERATION_NANOS, started);
-        result
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        f()
-    }
+    timed_profile(|stats| &mut stats.action_generation_nanos, f)
 }
 
 #[inline]
 fn profile_legal_filter<T>(f: impl FnOnce() -> T) -> T {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        if !search_profiling_enabled() {
-            return f();
-        }
-        let started = Instant::now();
-        let result = f();
-        add_elapsed(&LEGAL_FILTER_NANOS, started);
-        result
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        f()
-    }
+    timed_profile(|stats| &mut stats.legal_filter_nanos, f)
 }
 
 #[inline]
 fn profile_runtime_inference<T>(f: impl FnOnce() -> T) -> T {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        if !search_profiling_enabled() {
-            return f();
-        }
-        let started = Instant::now();
-        let result = f();
-        add_elapsed(&RUNTIME_INFERENCE_NANOS, started);
-        result
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        f()
-    }
+    timed_profile(|stats| &mut stats.runtime_inference_nanos, f)
 }
 
 #[inline]
 fn profile_child_eval<T>(f: impl FnOnce() -> T) -> T {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        if !search_profiling_enabled() {
-            return f();
-        }
-        let started = Instant::now();
-        let result = f();
-        add_elapsed(&CHILD_EVAL_NANOS, started);
-        result
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        f()
-    }
+    timed_profile(|stats| &mut stats.child_eval_nanos, f)
 }
 
 #[inline]
 fn profile_do_move<T>(f: impl FnOnce() -> T) -> T {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        if !search_profiling_enabled() {
-            return f();
-        }
-        let started = Instant::now();
-        let result = f();
-        add_elapsed(&DO_MOVE_NANOS, started);
-        result
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        f()
-    }
+    timed_profile(|stats| &mut stats.do_move_nanos, f)
 }
 
 #[inline]
 fn profile_eval_fallback<T>(f: impl FnOnce() -> T) -> T {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        if !search_profiling_enabled() {
-            return f();
-        }
-        let started = Instant::now();
-        let result = f();
-        add_elapsed(&EVAL_FALLBACK_NANOS, started);
-        result
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        f()
-    }
+    timed_profile(|stats| &mut stats.eval_fallback_nanos, f)
 }
 
 #[inline]
 pub(crate) fn profile_sort_prune_truncate<T>(f: impl FnOnce() -> T) -> T {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        if !search_profiling_enabled() {
-            return f();
-        }
-        let started = Instant::now();
-        let result = f();
-        add_elapsed(&SORT_PRUNE_TRUNCATE_NANOS, started);
-        result
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        f()
-    }
+    timed_profile(|stats| &mut stats.sort_prune_truncate_nanos, f)
 }
 
 #[inline]
 fn profile_candidate_copy<T>(f: impl FnOnce() -> T) -> T {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        if !search_profiling_enabled() {
-            return f();
-        }
-        let started = Instant::now();
-        let result = f();
-        add_elapsed(&CANDIDATE_COPY_NANOS, started);
-        result
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        f()
-    }
+    timed_profile(|stats| &mut stats.candidate_copy_nanos, f)
 }
 
 #[inline]
 pub(crate) fn profile_root_score_aggregation<T>(f: impl FnOnce() -> T) -> T {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        if !search_profiling_enabled() {
-            return f();
-        }
-        let started = Instant::now();
-        let result = f();
-        add_elapsed(&ROOT_SCORE_AGGREGATION_NANOS, started);
-        result
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        f()
-    }
+    timed_profile(|stats| &mut stats.root_score_aggregation_nanos, f)
 }
 
 #[derive(Clone)]
@@ -843,7 +655,7 @@ fn infer_for_actions(
         record_runtime_attempt();
     } else {
         #[cfg(not(target_arch = "wasm32"))]
-        increment_profile_counter(&RUNTIME_CALLS);
+        profile_counter(|profile| &mut profile.runtime_calls, 1);
     }
     let inference =
         profile_runtime_inference(|| runtime.infer(&state, runtime_context, &candidates)).ok()?;
@@ -2564,6 +2376,35 @@ clear:43
     }
 
     #[test]
+    fn action_builder_filters_forced_moves_above_board_ceiling() {
+        let board = Board::from_rows([
+            144, 657, 198, 806, 735, 507, 849, 14, 696, 85, 265, 495, 896, 648, 570, 757, 966, 24,
+            82, 629, 589, 683, 93, 659, 114, 506, 901, 863, 569, 358, 476, 627, 993, 478, 662, 708,
+            753, 218, 988, 0,
+        ]);
+        let mut generated = crate::move_buffer::MoveBuffer::new();
+        crate::movegen::generate_search(&board, &mut generated, Piece::O);
+        let expected: Vec<_> = generated
+            .iter()
+            .filter(|mv| board.legal_lock_placement(mv))
+            .copied()
+            .collect();
+        assert!(
+            generated.len() > expected.len(),
+            "fixture must exercise the rejection path"
+        );
+        assert!(
+            !expected.is_empty(),
+            "fixture must retain valid alternatives"
+        );
+
+        let mut ctx = context(0, 64);
+        let actions = super::enumerate_actions(&mut ctx, &board, Some(Piece::O), None, &[]);
+        let actual: Vec<_> = actions.iter().map(|action| action.mv).collect();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
     fn expansion_stats_include_profiler_buckets() {
         super::reset_search_expansion_stats();
         let stats = super::search_expansion_stats();
@@ -2595,5 +2436,65 @@ clear:43
         };
 
         assert!((super::coaching_context_bias(previous, next) + 0.4).abs() < 1e-6);
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod profile_state_tests {
+    use super::*;
+
+    #[test]
+    fn nested_timers_survive_gate_changes_without_recording_panics() {
+        reset_search_expansion_stats();
+        set_search_profiling_enabled(true);
+        let value = profile_child_eval(|| {
+            profile_legal_filter(|| {
+                record_runtime_attempt();
+                set_search_profiling_enabled(false);
+                std::thread::sleep(std::time::Duration::from_millis(1));
+                42
+            })
+        });
+        let stats = search_expansion_stats();
+        assert_eq!(value, 42);
+        assert_eq!(stats.runtime_calls, 1);
+        assert!(stats.legal_filter_nanos >= 1_000_000);
+        assert!(stats.child_eval_nanos >= stats.legal_filter_nanos);
+        set_search_profiling_enabled(true);
+        assert!(std::panic::catch_unwind(|| profile_do_move(|| panic!("timer probe"))).is_err());
+        assert_eq!(search_expansion_stats().do_move_nanos, 0);
+        set_search_profiling_enabled(false);
+    }
+
+    #[test]
+    fn resets_clear_keys_and_counts_without_crossing_threads() {
+        reset_search_expansion_stats();
+        set_search_profiling_enabled(false);
+        let board = Board::new();
+        record_expanded_node();
+        record_action_key(&board, Some(Piece::T), None, &[]);
+        assert_eq!(search_expansion_stats().expanded_nodes, 1);
+        assert_eq!(search_expansion_stats().unique_action_keys, 0);
+        set_search_profiling_enabled(true);
+        record_action_key(&board, Some(Piece::T), None, &[]);
+        record_action_key(&board, Some(Piece::T), None, &[]);
+        assert_eq!(search_expansion_stats().unique_action_keys, 1);
+        assert_eq!(search_expansion_stats().repeated_action_builds, 1);
+        std::thread::spawn(|| {
+            assert_eq!(search_expansion_stats().expanded_nodes, 0);
+            assert_eq!(search_expansion_stats().unique_action_keys, 0);
+            set_search_profiling_enabled(true);
+            record_expanded_node();
+            assert_eq!(search_expansion_stats().expanded_nodes, 1);
+        })
+        .join()
+        .unwrap();
+        assert_eq!(search_expansion_stats().expanded_nodes, 1);
+        reset_search_expansion_stats();
+        assert_eq!(search_expansion_stats().expanded_nodes, 0);
+        record_action_key(&board, Some(Piece::T), None, &[]);
+        assert_eq!(search_expansion_stats().unique_action_keys, 1);
+        assert_eq!(search_expansion_stats().repeated_action_builds, 0);
+        set_search_profiling_enabled(false);
     }
 }
