@@ -521,24 +521,6 @@ defaults or probability calibration.
 
 </details>
 
-## Current Receipt
-
-The confirmation follow-up is complete locally: Fusion
-`939e76a8d76545d28b0e08f642f05f071188f181`
-(`feat(openers): confirm catalogued boards by lock ordinal`) passed review gate
-`.omo/review-gate/approved-26cf8a83bcd32792.json` for reviewed diff SHA-256
-`26cf8a83bcd327925aa63fbd63b124d410b694c2b1c456f4405c486bff4829f1`.
-Gates: catalogued-match 10, phase 7, non-ignored opener tests 106 passed / 5
-ignored, installed-catalog integration 1, unchanged full census PASS, behavioral
-battery PASS, and wasm32 PASS at the known 15-warning baseline. Strict Clippy has
-only unrelated pre-existing backlog. Mosaic is
-`fa5274edc1a1beb2bc993c5b7d9af3afaa6b0ea4`; the byte-stable two-build WASM
-SHA-256 is `3787ed45e99fd1fe067e268adc8d446eba2cbb6788d1b9afe213a82b52807cf5`.
-No push, asset ingest, fold, live asset change, or protected-file overwrite is
-implied by this receipt.
-
-See [root `STATE.md`](../../../STATE.md).
-
 ## Verification Commands
 
 Run these from `fusion-engine/` when source or catalog behavior changes:
@@ -585,10 +567,7 @@ refreshed. The battery hard gates are asserted in-process, so a passing exit
 code is the gate result. The default `cargo test --lib` suite needs neither
 retained report: census compilation itself never reads one.
 
-`cargo clippy -- -D warnings` is the lint gate for this tree. When it reports a
-lint inside `src/movegen.rs` or the allowlisted report schema file in
-`src/versus/report.rs`, treat it as unrelated pre-existing backlog rather than
-evidence about recognizer changes.
+`cargo clippy -- -D warnings` is the lint gate for this tree.
 
 For an intentional WASM-boundary change, also run:
 
