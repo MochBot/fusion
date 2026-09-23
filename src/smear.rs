@@ -1995,19 +1995,18 @@ pub fn generate_labeled_rules<const P: usize, const N: usize>(
     gen_labels_impl::<P, N>(y, force, &usable, &cands, &tc, &imm)
 }
 
-// Labeled twin of gen_impl under production rules. Structural
-// differences required for engine-exact strata:
-// (1) no missing-based early exits; closure runs to full fixpoint.
-// (2) kick waves fire while any landable target could gain a stratum
-//     (probe & (unsearched | cands)), not only while unclaimed cells remain.
+// Labeled twin of `gen_impl` under production rules, with two structural
+// differences that engine-exact strata require:
+// (1) no missing-based early exits, so each closure runs to full fixpoint;
+// (2) kick waves fire while any landable target could still gain a stratum
+//     (`probe & (unsearched | cands)`), not only while unclaimed cells remain.
 // Batches partition each rotation's closure; per-batch pre-dedup tagging
 // accumulates the engine's exact tag union independent of visit order.
-// NoSpin drop/lateral coverage is applied once at the end from the final
-// reach sets (equal to the engine's per-batch union).
-// Group2 pieces run the same 4-state split BFS as the engine's
-// searched[x][ri] (independent per-nominal-rotation worklists, mirror
-// states seeded by copy) so per-state closures and arrival-driven tag
-// unions match the engine's exactly.
+// NoSpin drop/lateral coverage is applied once at the end from the final reach
+// sets, which equals the engine's per-batch union.
+// Group2 pieces run the engine's 4-state split BFS (independent
+// per-nominal-rotation worklists, mirror states seeded by copy) so per-state
+// closures and arrival-driven tag unions match the engine's exactly.
 fn gen_labels_impl<const P: usize, const N: usize>(
     y: i32,
     force: i32,
@@ -2332,9 +2331,9 @@ fn gen_labels_impl<const P: usize, const N: usize>(
     out
 }
 
-// Shared closure body. Tracks missing[rc] = cands[rc] & !reached instead of
-// the reached move boards: every harvest is a single andnot and every
-// "all candidates covered?" test is a single any() test.
+// Shared closure body. It tracks `missing[rc] = cands[rc] & !reached` instead
+// of the reached move boards, so every harvest is a single andnot and every
+// "all candidates covered?" test is a single any().
 fn gen_impl<const P: usize, const N: usize, const EMIT: bool, const RULES: bool>(
     b: &SBoard<N>,
     y: i32,
@@ -2979,7 +2978,9 @@ mod tests {
         }
     }
 
-    // Frozen copy of the pre-missing-tracking generate (parity oracle).
+    // Frozen pre-missing-tracking closure, kept as the parity oracle for the
+    // missing-based one. It must not be re-synchronized with the production
+    // kernel or the comparison stops discriminating.
     pub fn generate_reference<const P: usize, const N: usize>(
         b: &SBoard<N>,
         y: i32,
@@ -3527,7 +3528,7 @@ mod tests {
         }
     }
 
-    // Frozen copy of the pre-fusion perft driver (parity oracle).
+    // Frozen pre-fusion perft driver (parity oracle).
     fn reference_leaf<const P: usize, const N: usize>(b: &SBoard<8>, h: i32) -> u64 {
         let b1: SBoard<N> = b.cast();
         count_locks::<P, N>(&b1, h, 0) as u64

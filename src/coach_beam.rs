@@ -1,19 +1,19 @@
-// coach_beam.rs -- S2 coaching beam kernels (wasm.rs keeps only JS marshaling).
+// S2 coaching beam kernels; `wasm.rs` keeps only JS marshaling.
 //
 // Kernels (shared child-expansion shape):
-// - beam_best_gm:      max accumulated S2 attack over a piece queue.
-// - beam_best_gm_line: step+wellness variant matching the TS s2BestLine contract.
-// - beam_best_gm_gi:    garbage-injecting variant keeping the player's line reachable.
+// - `beam_best_gm`:      max accumulated S2 attack over a piece queue.
+// - `beam_best_gm_line`: step+wellness variant matching the TS s2BestLine contract.
+// - `beam_best_gm_gi`:   garbage-injecting variant keeping the player's line reachable.
 //
-// Parity contract: outputs are consumed by refrozen mosaic coaching goldens.
-// Dedup keys are raw row arrays, sorts are stable, f64 accumulation order is
-// part of the contract -- do not reorder operations.
+// Parity contract: outputs are consumed by frozen Mosaic coaching goldens.
+// Dedup keys are raw row arrays, sorts are stable, and f64 accumulation order is
+// part of the contract, so operations must not be reordered.
 //
 // Beam nodes carry only `rows: [u16; 40]` plus chain counters (no Board, no
 // cols cache). A Board is rebuilt once per surviving node for movegen.
 // Placement/clearing uses the shared row arithmetic in `board.rs`, which
-// mirrors Board::place / line_clears / clear_lines bit-for-bit (the `oracle`
-// test module holds the independent Board-only differential reference).
+// mirrors `Board::place` / `line_clears` / `clear_lines` bit-for-bit (the
+// `oracle` test module holds the independent Board-only differential reference).
 
 use crate::attack::calculate_attack_s2_tl_with_multiplier;
 use crate::board::{clear_rows, line_clears, place_rows, Board};
@@ -394,27 +394,24 @@ fn line_idx_cmp(order: &[LineNode], ia: u32, ib: u32) -> Ordering {
 
 /// Step+wellness-emitting beam. Selection score = acc - penalty (penalty vs
 /// start board). With hole_w=height_w=0 the max accumulated attack is
-/// identical to the surge-shaped beam_best_gm. Reconstructs the chosen
+/// identical to the surge-shaped `beam_best_gm`. Reconstructs the chosen
 /// line's per-step breakdown matching the TS s2BestLine contract.
 ///
-/// `terminal_lambda` re-ranks the final frontier by
-/// `sel + terminal_lambda * eval(final board)`. `eval::evaluate` scores with
-/// negative weights (clean empty board = 0, holes/height push the score
-/// down), so adding the term rewards cleaner terminal boards and the chosen
-/// line cannot dump its last piece for a marginal attack win. 0.0 = pick by
-/// selection score, bit-identical to the pre-lambda kernel.
+/// Optional dials, all sel-only and all neutral at 0.0:
 ///
-/// `dig_combo_w`/`dig_attack_w` shape selection IN-BEAM while the parent node
-/// still has garbage rows (`gm != 0`): clearing steps earn
-/// `dig_combo_w * combo_after` and every step earns
-/// `dig_attack_w * step_attack`, added to `sel` only — `acc` (the reported
-/// attack) is never touched, so the panel's attack arithmetic and the gap
-/// numerator are unaffected. Both 0.0 = bit-identical to the pre-dig kernel.
+/// - `terminal_lambda` re-ranks the final frontier by
+///   `sel + terminal_lambda * eval(final board)`. `eval::evaluate` uses
+///   negative weights (empty board 0, holes/height push down), so the term
+///   rewards cleaner terminal boards and a line cannot dump its last piece for
+///   a marginal attack win.
+/// - `dig_combo_w`/`dig_attack_w` fire while the parent node still has garbage
+///   rows (`gm != 0`): clearing steps earn `dig_combo_w * combo_after` and every
+///   step earns `dig_attack_w * step_attack`.
+/// - `spin_w` prices spin clears (rank-readability dial): each spin-clear step
+///   adds `spin_w`, so negative discourages spin-hunting lines.
 ///
-/// `spin_w` prices spin clears IN-BEAM (rank-readability dial, retarget C):
-/// every spin-clear step adds `spin_w` to `sel` — negative discourages
-/// spin-hunting lines (low-rank readability), positive encourages them.
-/// Like the dig weights it is sel-only; 0.0 = bit-identical.
+/// The dials never touch `acc`, the reported attack, so the panel's attack
+/// arithmetic and the gap numerator are unaffected.
 #[allow(clippy::too_many_arguments)]
 pub fn beam_best_gm_line(
     rows0: &[u16; 40],
@@ -788,10 +785,9 @@ pub fn beam_best_gm_gi(
     mx as f64
 }
 
-// The original Board-based kernels remain the differential parity reference
-// for the rows-only rewrites above. They must stay independent of the shared
-// row helpers in `board.rs`, so this module keeps its own inline arithmetic.
-// Do not "improve" this module.
+// Independent Board-based parity reference for the rows-only kernels above.
+// It deliberately keeps its own inline row arithmetic rather than calling the
+// shared helpers in `board.rs`, so agreement is evidence and not shared code.
 #[cfg(test)]
 mod oracle {
     use super::*;
@@ -1776,10 +1772,9 @@ mod tests {
     }
 
     // Pins the eval sign convention the terminal_lambda re-rank depends on:
-    // default-weight evaluate() is 0 on an empty board and DROPS as holes
-    // appear, so "cleaner terminal" means HIGHER eval. Without this anchor the
-    // re-rank invariant test below is circular (it would pass with either
-    // sign, as the 2026-07-09 inverted-sign bug proved).
+    // default-weight evaluate() is 0 on an empty board and drops as holes
+    // appear, so "cleaner terminal" means higher eval. Without this anchor the
+    // re-rank invariant test below would pass with either sign.
     #[test]
     fn eval_default_weights_score_cleaner_boards_higher() {
         let weights = EvalWeights::default();
@@ -1837,11 +1832,11 @@ mod tests {
         );
     }
 
-    // Dig-shaping sign pin (non-circular, per the 2026-07-09 lambda lesson):
-    // asserts population direction, not per-case monotonicity — an in-beam
-    // term interacts with pruning, so single cases may trade combo away, but
-    // a sign error would push the aggregate DOWN. Also pins the gm gate:
-    // garbage-free starts must be bit-identical with weights engaged.
+    // Dig-shaping sign pin: asserts population direction, not per-case
+    // monotonicity - an in-beam term interacts with pruning, so single cases
+    // may trade combo away, but a sign error would push the aggregate down.
+    // Also pins the gm gate: garbage-free starts must be bit-identical with
+    // weights engaged.
     #[test]
     fn dig_weights_raise_line_combo_and_gate_on_garbage() {
         let mut state = 0xD16C_0DE5_2026_0711u64;

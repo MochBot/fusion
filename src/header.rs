@@ -60,7 +60,6 @@ pub fn piece_to_external(p: Piece) -> u8 {
 pub const PIECE_NB: usize = 7;
 /// Sentinel used in Move bitfield to mark T-spin moves
 pub const TSPIN: u16 = 7;
-pub const NO_PIECE: u8 = 8;
 
 pub const ALL_PIECES: [Piece; PIECE_NB] = [
     Piece::I,

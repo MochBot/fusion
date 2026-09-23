@@ -7,14 +7,14 @@
 Collect every available recent league replay for X and X+ ranked players.
 
 Pipeline:
-  Phase A: paginate TETR.IO league leaderboard, dump all X/X+ players
+  Phase A: paginate the TETR.IO league leaderboard, dump all X/X+ players
   Phase B: per player, paginate league records, dump all replay IDs
-  Phase C: fetch /summaries/league for each player, attach current rank/TR
-  Phase D: download every unique .ttrm via inoue.szy.lol with port-failover
+  Phase C: fetch /summaries/league per player, attach current rank/TR
+  Phase D: download every unique .ttrm via inoue.szy.lol with port failover
            and adaptive backoff on inoue 500s
 
-All output goes to fusion-engine/data/replays-x-xplus/.
-State is fully resumable - safe to kill and restart.
+All output goes to fusion-engine/data/replays-x-xplus/. Every phase resumes from
+its JSONL state, so the run is safe to kill and restart.
 """
 
 from __future__ import annotations
@@ -33,6 +33,12 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+
+SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
+from collect_rank_coverage import validate_ttrm_payload
 
 UA = "mosaic-fusion-coaching-collector/0.1 (research; xran/xplus league replays for coaching model training)"
 
@@ -95,9 +101,9 @@ def proxy_config(env: Mapping[str, str] = os.environ) -> tuple[str, str, str]:
 
 def proxy_url(port: int, country: str | None = None) -> str:
     proxy_user, proxy_pass, proxy_host = proxy_config()
-    # GeoNode rotating-gateway contract (mirrors ip-pool geonode adapter):
-    # the configured value is a bare base login; the wire username must
-    # carry the product-type suffix or the gateway answers HTTP 407.
+    # GeoNode rotating-gateway contract (mirrors the ip-pool geonode adapter): the
+    # configured value is a bare base login, and the wire username must carry the
+    # product-type suffix or the gateway answers HTTP 407.
     user = proxy_user if "-type-" in proxy_user else f"{proxy_user}-type-residential"
     if country:
         user = f"{user}-country-{country.lower()}"
@@ -111,25 +117,23 @@ def client_headers(session_id: str | None = None) -> dict[str, str]:
     return headers
 
 
-def make_direct_client(session_id: str | None = None) -> httpx.AsyncClient:
+def _make_http_client(session_id: str | None, proxy: str | None = None) -> httpx.AsyncClient:
     return httpx.AsyncClient(
         headers=client_headers(session_id),
         limits=httpx.Limits(max_keepalive_connections=80, max_connections=160),
         timeout=httpx.Timeout(DOWNLOAD_TIMEOUT_S, connect=10.0),
         follow_redirects=True,
         trust_env=False,
+        **({"proxy": proxy} if proxy is not None else {}),
     )
+
+
+def make_direct_client(session_id: str | None = None) -> httpx.AsyncClient:
+    return _make_http_client(session_id)
 
 
 def make_geonode_client(port: int, session_id: str | None = None) -> httpx.AsyncClient:
-    return httpx.AsyncClient(
-        proxy=proxy_url(port),
-        headers=client_headers(session_id),
-        limits=httpx.Limits(max_keepalive_connections=80, max_connections=160),
-        timeout=httpx.Timeout(DOWNLOAD_TIMEOUT_S, connect=10.0),
-        follow_redirects=True,
-        trust_env=False,
-    )
+    return _make_http_client(session_id, proxy=proxy_url(port))
 
 
 def make_client(port: int, session_id: str | None = None) -> httpx.AsyncClient:
@@ -508,29 +512,12 @@ def is_valid_replay_body(body: bytes | bytearray) -> bool:
     """A league replay body must be JSON with a non-empty replay.rounds structure."""
     try:
         payload = json.loads(body)
+        if not isinstance(payload, dict):
+            return False
+        validate_ttrm_payload(payload)
+        return True
     except (ValueError, UnicodeDecodeError):
         return False
-    if not isinstance(payload, dict) or payload.get("gamemode") != "league":
-        return False
-    replay = payload.get("replay")
-    if not isinstance(replay, dict):
-        return False
-    rounds = replay.get("rounds")
-    if not isinstance(rounds, list) or not rounds:
-        return False
-    for round_data in rounds:
-        if not isinstance(round_data, list) or len(round_data) < 2:
-            return False
-        for side in round_data[:2]:
-            if not isinstance(side, dict):
-                return False
-            side_replay = side.get("replay")
-            if not isinstance(side_replay, dict):
-                return False
-            events = side_replay.get("events")
-            if not isinstance(events, list) or not events:
-                return False
-    return True
 
 
 async def download_one(

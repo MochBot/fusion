@@ -21,11 +21,10 @@ thread_local! {
     static PROFILE_FORCE_SEARCH_NONE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-// allow: SIZE_OK — P0 plan pins one versus module with 21 in-file named tests.
-
 pub mod report;
 
-// ===== todo 1: rng+bag =====
+// Seed derivation: one stream per (match, game, purpose, slot), so bag and
+// garbage-hole draws from the same match never share state.
 
 #[derive(Clone)]
 struct SplitMix64 {
@@ -146,7 +145,7 @@ impl Iterator for HoleStream {
     }
 }
 
-// ===== todo 2: garbage queue =====
+// Garbage queue: FIFO chunks held for spawn, plus the tracked garbage-row set.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct GarbageChunk {
@@ -218,7 +217,8 @@ impl GarbageQueue {
     }
 }
 
-// ===== todo 3: lock helper =====
+// Garbage-row bookkeeping: materialized rows are tracked so clears can be
+// attributed to garbage rather than player-stacked cells.
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct GarbageRows {
@@ -310,7 +310,7 @@ fn lock_piece(board: &mut Board, tracked_garbage: &mut GarbageRows, m: &Move) ->
     }
 }
 
-// ===== todo 4: S2 chain + transition =====
+// S2 chain counters and the shared versus transition.
 
 pub(crate) fn s2_outcome_to_state(outcome: &S2TlAttackOutcome) -> (u8, u32) {
     let b2b = if outcome.b2b_after < 0 {
@@ -357,8 +357,8 @@ pub(crate) fn apply_versus_transition(
     state.set_chain_state(next);
 }
 
-// ===== todo 5: piece advance =====
-
+/// Advance the bag and queue after a lock. A hold from an empty hold slot also
+/// drops the queue head, so the visible window advances by two pieces.
 pub(crate) fn advance_piece_state(state: &mut GameState, hold_used: bool, bag: &mut BagStream) {
     let previous_current = state.current;
     if hold_used {
@@ -380,7 +380,8 @@ pub(crate) fn advance_piece_state(state: &mut GameState, hold_used: bool, bag: &
     }
 }
 
-// ===== game loop (todo 6) =====
+// Game loop: player configuration, per-turn processing, and the public
+// play_game* entry points. Report serialization lives in `versus::report`.
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum EngineMode {
@@ -680,10 +681,9 @@ fn new_player_state(seed: u64, game_idx: u32, slot: u8) -> PlayerState {
 }
 
 fn materialize_player_garbage(player: &mut PlayerState) {
-    // 1. MATERIALIZE: pop FIFO chunks from P.inbound — at most 8 rows total
-    // this spawn; a partially-consumed chunk keeps its sampled hole column and
-    // stays at queue head; one Board::spawn_garbage(rows, hole) call per
-    // chunk-part; update P's tracked garbage-row set.
+    // 1. MATERIALIZE: pop FIFO chunks from P.inbound, at most 8 rows per spawn.
+    // A partially consumed chunk keeps its hole column and stays at the queue
+    // head; each part spawns rows and updates P's tracked garbage-row set.
     for (rows, hole) in player.inbound.materialize(8) {
         if let Ok(spawn_rows) = i32::try_from(rows) {
             player.game.board.spawn_garbage(spawn_rows, i32::from(hole));
@@ -702,12 +702,11 @@ fn resolve_lock_exchange(
     mv: &Move,
     hold_used: bool,
 ) -> (LockOutcome, S2TlAttackOutcome) {
-    // 5. LOCK: versus lock helper — capture cleared-rows mask BEFORE clearing;
-    // garbage_cleared via count_cleared_garbage_rows; is_pc = board empty after
-    // clear; shift tracked garbage-row set per cleared rows.
+    // 5. LOCK: capture the cleared-rows mask before clearing, count garbage rows
+    // cleared, detect a perfect clear, and shift the tracked garbage set.
     let lock = lock_piece(&mut att.game.board, &mut att.tracked_garbage, mv);
-    // 6. ATTACK: calculate_attack_s2_tl with PRE-move canonical signed counters;
-    // update canonical counters verbatim from S2TlAttackOutcome.
+    // 6. ATTACK: score with the pre-move canonical signed counters, then adopt
+    // the post-move counters verbatim from the outcome.
     let outcome = calculate_attack_s2_tl(
         lock.lines_cleared,
         mv.spin(),
@@ -718,9 +717,10 @@ fn resolve_lock_exchange(
     );
     att.s2_b2b = outcome.b2b_after;
     att.s2_combo = outcome.combo_after;
-    // 7. CANCEL→SEND: rem cancels own inbound 1:1; remainder enqueued to
-    // OPPONENT as ONE chunk with hole from the RECEIVER's hole stream drawn at
-    // enqueue time.
+    // 7. CANCEL→SEND: senders cancel their own inbound 1:1 first; the remainder
+    // goes to the opponent as one chunk. The hole is drawn from the RECEIVER's
+    // hole stream at enqueue time, so incoming patterns depend only on that
+    // player's own stream state.
     let cancelled = att.inbound.cancel(outcome.attack);
     let rem = outcome.attack.saturating_sub(cancelled);
     if rem > 0 {
@@ -729,7 +729,7 @@ fn resolve_lock_exchange(
             hole: def.holes.next(),
         });
     }
-    // 8. BOOKKEEP: apply_versus_transition with post-cancel inbound_total.
+    // 8. BOOKKEEP: shared transition using the post-cancel inbound total.
     apply_versus_transition(
         &mut att.game,
         mv,
@@ -806,17 +806,17 @@ fn process_player_turn(
     }
 
     materialize_player_garbage(att);
-    // 2. SPAWN CHECK: if spawn_envelope_blocked(&P.board) → P dead this round,
-    // skip 3-9. This is the ONLY top-out rule in P0.
+    // 2. SPAWN CHECK: a blocked spawn envelope kills P for this round and skips
+    // steps 3-9. This is the only top-out rule.
     if GameState::spawn_envelope_blocked(&att.game.board) {
         att.dead = true;
         terminal[ctx.slot] = TerminalPhase::SpawnTopout;
         return;
     }
-    // 3. SYNC: P.state.pending_garbage = min(P.inbound.total_rows(),255) as u8.
+    // 3. SYNC: pending_garbage = min(inbound.total_rows(), 255) as u8.
     sync_pending_garbage(att);
 
-    // 4. SEARCH: record wall time — CLOCKED mode only; None result → P dead this round.
+    // 4. SEARCH: wall time is recorded in clocked mode only; no move kills P.
     let routed_model = match env.cfg.engine {
         EngineMode::Model => env.model,
         EngineMode::Heuristic => None,
@@ -929,7 +929,7 @@ fn process_player_turn(
     };
     records.push(record_row.clone());
     record(record_row);
-    // 9. ADVANCE: advance_piece_state with THIS PLAYER'S own bag.
+    // 9. ADVANCE: draw from this player's own bag.
     advance_piece_state(&mut att.game, hold_used, &mut att.bag);
 }
 
@@ -1139,8 +1139,6 @@ pub fn play_game_profiled(
         Some(profiles),
     )
 }
-
-// ===== reporting writers (todo 7) =====
 
 #[cfg(test)]
 mod tests {

@@ -16,6 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import httpx
 import pytest
 
 COLLECTOR_DIR = Path(__file__).resolve().parents[1] / "recovered" / "replay-collector"
@@ -438,7 +439,7 @@ def test_proxy_probe_reports_sanitized_classification(monkeypatch):
 
     class FakeStream:
         async def __aenter__(self) -> object:
-            raise driver.httpx.ProxyError(f"proxy {secret_url} failed")
+            raise httpx.ProxyError(f"proxy {secret_url} failed")
         async def __aexit__(self, *exc: object) -> bool:
             return False
 

@@ -1,10 +1,9 @@
 """TeacherNet: dual-board CNN with privileged opponent information.
 
-Uses the AlphaStar fog-of-war pattern -- the teacher sees both player and
-opponent boards in full detail during training.  Two parallel CNN encoders
-(shared architecture, separate weights) each process a 10x40 binary board,
-then the representations are fused with piece one-hots and scalar features
-before feeding into regression and classification heads.
+Fog-of-war teacher design: training sees both player and opponent boards in full.
+Two parallel CNN encoders (same architecture, separate weights) each process a
+10x40 binary board, then the representations are fused with piece one-hots and
+scalar features before the regression and classification heads.
 
 Total trainable parameters: ~1.17M
 """

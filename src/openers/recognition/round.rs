@@ -16,7 +16,7 @@ const MAX_SHORTLIST: usize = 24;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-/// Consumers may key UI off the report record's hypothesis; ranked alternates are tooling evidence.
+/// Consumers may key UI off `hypotheses[0]`; ranked alternates are tooling evidence.
 pub(crate) struct RoundRecognition {
     pub(crate) retrieval_bounded: bool,
     pub(crate) shortlist_size: usize,
@@ -40,8 +40,8 @@ pub(crate) struct RoundLockRecognition {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-/// Recognition keys are mirror-folded, so cost is chirality-invariant; only grey-node opacity
-/// freezes identity, while bridge costs preserve it for v1 evidence.
+/// Recognition keys are mirror-folded, so cost is chirality-invariant; only
+/// grey-node opacity freezes identity, while bridge costs preserve it.
 pub(crate) struct RoundHypothesis {
     pub(crate) record: String,
     /// Deepest surviving node and its route; naming needs both.

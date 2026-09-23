@@ -12,6 +12,10 @@ CLOUD_EXEC_SKIP=1 cargo clippy -- -D warnings
 cd training && uv sync && uv run pytest tests
 ```
 
+Test tiers: `cargo test --lib` (~30 s) is the default. `cargo test --lib -- --ignored`
+runs full differential corpora and ONNX model tests; run it once per milestone.
+Production spine: movegen -> `search(SearchRequest)` -> `ChainState` lock core -> S2/TL attack.
+
 Copy `.env.example` to `.env` only for replay collection, Modal training, or the label generator; tests and clippy run without it.
 
 Large artifacts (replay corpora, training bins, label sidecars, ONNX models) are not tracked; keep a model's `.metadata.json` next to it. See `training/TRAINING.md` for the training pipeline.

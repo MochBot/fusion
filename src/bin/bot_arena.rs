@@ -15,8 +15,6 @@ use fusion_engine::versus::{
     EngineMode, GameSeeds,
 };
 
-// allow: SIZE_OK — P0 pins this binary as a single manual-arg-loop CLI with pairing, reports, and probes.
-
 const USAGE: &str = "bot_arena [--experiment] [--games N=200] [--base-seed S=20260709] [--budget-ms X|none=500] [--heuristic] [--profile] [--model PATH=models/rebal-r01/checkpoint.ckpt.policy_value.onnx.metadata.json] [--model-sha256 HEX] [--metadata-sha256 HEX] [--{a,b}-engine model|heuristic] [--{a,b}-nn-scoring per-child-value|policy-proxy] [--{a,b}-batch scalar|level] [--{a,b}-proxy-weight F] [--a-beam N=800] [--a-depth N=14] [--b-beam N=800] [--b-depth N=14] [--piece-cap N=1000] [--engine-rev STR=unknown] [--out DIR=target/bot_arena_out]";
 
 const FROZEN_MODEL_SHA256: &str =

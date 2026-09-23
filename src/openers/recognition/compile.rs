@@ -174,7 +174,9 @@ pub(crate) struct CompileBudget {
 impl Default for CompileBudget {
     fn default() -> Self {
         Self {
-            // 2026-08-30 probe: 1.38M/4M total states; two canonical k=28 edges remain excluded.
+            // Measured peak ~1.38M total states against this 4M cap; two
+            // canonical k=28 edges still exceed the per-edge budget and remain
+            // listed as accepted exclusions in `census`.
             max_states_per_edge: 16_384,
             max_placements_per_edge: 32,
             max_dfs_visits_per_edge: 20_000,

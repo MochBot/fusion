@@ -129,10 +129,6 @@ impl Board {
         self.rows[yu] & (1 << x) != 0
     }
 
-    pub fn occupied_coord(&self, c: &Coordinates) -> bool {
-        self.occupied(c.x as i32, c.y as i32)
-    }
-
     pub fn obstructed(&self, x: i32, y: i32) -> bool {
         !is_ok_x(x) || !is_ok_y(y) || self.occupied(x, y)
     }
@@ -339,30 +335,6 @@ impl Board {
             }
         }
         0
-    }
-
-    pub fn to_string_with_move(&self, m: &Move) -> String {
-        let mut output = self.to_string();
-        if !self.obstructed_move(m) {
-            let lines: i32 = 20;
-            let pc = m.cells();
-            let x = m.x();
-            let y = m.y();
-            for i in 0..4usize {
-                let inverse_y = lines - if i == 0 { y } else { pc[i - 1].y as i32 + y };
-                if inverse_y < 0 {
-                    continue;
-                }
-                let cell_x = if i == 0 { x } else { pc[i - 1].x as i32 + x };
-                let idx = (inverse_y * 86 + cell_x * 4 + 47) as usize;
-                if idx < output.len() {
-                    unsafe {
-                        output.as_bytes_mut()[idx] = b'.';
-                    }
-                }
-            }
-        }
-        output
     }
 
     pub fn row(&self, y: usize) -> u16 {

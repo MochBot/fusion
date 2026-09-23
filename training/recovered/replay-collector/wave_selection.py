@@ -5,11 +5,11 @@
 # ///
 """Pure selection policy for the X/X+/U/SS replay wave.
 
-Rank/recency/dedup rules with no network access, so focused tests can pin
-them without fakes: X/X+ take all API-available refs, U/SS take the
-globally newest top_n unique replay IDs by record timestamp, every replay
-ID is fetched at most once, and all candidate refs are preserved for rank
-overlap.
+Rank/recency/dedup rules with no network access, so focused tests can pin them
+without fakes. Two selection shapes exist: dedup_all keeps every unique replay ID
+newest-first (the X/X+ take-all path), and select_global_newest additionally caps
+the result at the newest top_n by record timestamp. Both keep one ref per replay
+ID and preserve rank overlap.
 """
 
 from __future__ import annotations
@@ -68,7 +68,7 @@ def ref_from_record(player_id: PlayerId, rank: str, record: Json) -> WaveRef | N
 
 
 def select_global_newest(refs: list[WaveRef], top_n: int) -> list[WaveRef]:
-    """Dedup refs by replay ID keeping the newest timestamp, return newest top_n."""
+    """Dedup by replay ID keeping the newest timestamp, then return the newest top_n."""
     newest: dict[ReplayId, WaveRef] = {}
     for ref in refs:
         if ref.ts_epoch is None:
@@ -80,7 +80,7 @@ def select_global_newest(refs: list[WaveRef], top_n: int) -> list[WaveRef]:
 
 
 def dedup_all(refs: list[WaveRef]) -> list[WaveRef]:
-    """Dedup refs by replay ID keeping the newest timestamp (X/X+ take-all path)."""
+    """Dedup by replay ID keeping the newest timestamp (the X/X+ take-all path)."""
     newest: dict[ReplayId, WaveRef] = {}
     for ref in refs:
         prior = newest.get(ref.replayid)

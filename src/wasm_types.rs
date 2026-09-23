@@ -1,5 +1,4 @@
-// wasm_types.rs -- Shared types and conversion helpers for WASM bridge
-// Extracted from wasm.rs to reduce godfile complexity.
+// wasm_types.rs -- shared types and conversion helpers for the WASM bridge
 
 use wasm_bindgen::prelude::*;
 

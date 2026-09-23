@@ -169,8 +169,10 @@ fn get_input_inner(
     let mut vec: Vec<PathNode> = Vec::new();
     let mut queue: VecDeque<GhostMove> = VecDeque::new();
 
-    // Strict emission dedup: non-T NoSpin yields to Mini (NoSpin &= !Mini).
-    // A later stuck rotation arrival claims the cell as Mini, invalidating
+    // Strict emission dedup: non-T NoSpin yields to Mini (`NoSpin &= !Mini`).
+    // A later stuck rotation arrival claims the cell as Mini, so a NoSpin path
+    // found here is deferred and discarded if a Mini lock covers the target
+    // cell (checked after the search).
     let defer_nospin = is_allspin && target.spin() == SpinType::NoSpin;
     let mut deferred: Option<Inputs> = None;
     let mut mini_locks = [[0u64; ROTATION_NB]; COL_NB];
@@ -736,8 +738,9 @@ mod tests {
     }
 
     // Frozen pre-strict semantics (later-kick phantom states, face-cell T
-    // labels, no T immobility fallback). Kept verbatim for the
-    // strict-vs-legacy diff harness; do not "fix" this copy.
+    // labels, no T immobility fallback), kept verbatim as the legacy side of
+    // the strict-vs-legacy diff harness. It must not be updated to match the
+    // strict kernel, or the harness stops discriminating.
     fn reachable_locks_legacy(
         board: &Board,
         p: Piece,
@@ -1660,8 +1663,7 @@ mod tests {
                             "cube vs get_input disagree m={m:?} p={p:?} force={force} \
                              rows={rows:?}"
                         );
-                        // Shared left-edge canonical-frame blind spot is
-                        // gone; every strict emission must be retained.
+                        // Every strict emission must be retained.
                         assert!(
                             retained,
                             "strict emission not reachable m={m:?} p={p:?} force={force} \
@@ -1787,10 +1789,10 @@ mod tests {
         );
     }
 
-    // Pinned boards from smear_core disqualification probes (P1) and the
-    // T3b diagnosis. case-13/case-4: strict-reachable left-edge locks;
-    // case-353: force lane whose old kick resolution was wrong-target;
-    // case-1: raw engine over-produces 9 phantoms (soundness side).
+    // Pinned boards from strict-emission disqualification probes.
+    // case-13/case-4: strict-reachable left-edge locks; case-353: force lane
+    // whose old kick resolution was wrong-target; case-1: raw engine
+    // over-produces 9 phantoms (soundness side).
     #[test]
     fn group2_fold_probe_boards_pin() {
         // case13: I North (1,1) in a left-edge slot
@@ -1803,9 +1805,8 @@ mod tests {
             "case13 placement-level reachability (move_reachable strata union)"
         );
 
-        // case4: S East (1,15), an isolated pocket (P1's original
-        // finding; T3b table mis-read it as pathfinder miss).
-        // Strict arbiter omits it; pin is soundness direction.
+        // case4: S East (1,15), an isolated pocket. The strict arbiter omits
+        // it, so the pin is in the soundness direction.
         let b4 = board_from_rows(&[
             531, 182, 32, 710, 608, 683, 985, 727, 402, 562, 545, 977, 414, 691, 779, 97, 468, 708,
         ]);

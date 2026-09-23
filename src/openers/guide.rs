@@ -360,14 +360,14 @@ fn guide_rows(rows_top_down: &[String], mirrored: bool) -> Vec<String> {
 /// locked-piece ordinal of the shape they were building toward.
 ///
 /// `divergence_lock` is the first lock past the confirmed anchor whose
-/// alignment paid a non-zero cost; a divergence past the opener phase window
-/// is ordinary play, not an opener lesson, and yields no deviation. The compared board is the player's board
-/// at the ordinal where the intended phase completes (its pre-clear frame
-/// when the phase clears), so both boards hold the same number of placed
-/// pieces. For a confirmed opener the intended phase is the anchor's
-/// continuation that best overlaps the player's board; a finished opener with
-/// no catalogued continuation has no deviation. For a nearest opener it is
-/// the phase in progress at the divergence.
+/// alignment paid a non-zero cost; a divergence past the opener phase window is
+/// ordinary play, not an opener lesson, and yields no deviation. The compared
+/// board is the player's board at the ordinal where the intended phase completes
+/// (its pre-clear frame when the phase clears), so both boards hold the same
+/// number of placed pieces. For a confirmed opener the intended phase is the
+/// anchor's continuation that best overlaps the player's board; a finished
+/// opener with no catalogued continuation has no deviation. For a nearest
+/// opener it is the phase in progress at the divergence.
 fn deviation(
     record: &OpenerRecord,
     anchor: &OpenerTreeNode,

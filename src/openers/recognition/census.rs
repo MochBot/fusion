@@ -8,7 +8,8 @@ use super::graph::BridgeReason;
 use super::legality::LegalityVerdict;
 use crate::openers::recognition::record::edge_ref;
 
-// The user accepted these two canonical budget exclusions on 2026-08-31.
+// Canonical edges whose compile cost exceeds the default budget; these two are
+// accepted as known exclusions rather than fixed.
 const USER_ACCEPTED_BUDGET_EXCLUSIONS: [(&str, u32); 2] =
     [("sasasa123-634", 4), ("sasasa123-933", 2)];
 

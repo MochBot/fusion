@@ -8,7 +8,8 @@ Feature layout (854 floats):
   [0..400)    player board  (10×40, column-major, 1.0=filled 0.0=empty)
   [400..800)  opponent board (10×40, same layout)
   [800..849)  piece one-hots (7 pieces × 7 slots: current, hold, queue[0..4])
-  [849..854)  scalars: combo_norm, b2b_norm, lines_norm, garbage_pending_norm, bag_position_norm
+  [849..854)  scalars: combo, b2b, lines, garbage_pending, bag_number; each
+              divided by its cap (20/10/100/12/20) and clamped to 1.0
 
 Label layout (5 floats):
   game_outcome      (1.0=win, 0.0=loss)
@@ -125,8 +126,8 @@ class _PlayerPlacementEvent:
     hold_piece: str | None
     queue: list[str]
 
-# SRS piece shapes - each rotation state is list of (row, col) offsets from spawn origin
-# Origin is top-left of bounding box. Coordinates are (row_offset, col_offset).
+# SRS piece shapes: per rotation state, (row, col) offsets from the spawn origin
+# at the top-left of the bounding box.
 SRS_SHAPES: dict[str, list[list[tuple[int, int]]]] = {
     "i": [
         [(1, 0), (1, 1), (1, 2), (1, 3)],
@@ -172,8 +173,7 @@ SRS_SHAPES: dict[str, list[list[tuple[int, int]]]] = {
     ],
 }
 
-# SRS wall kick tables
-# (old_rotation, new_rotation) -> list of (dx, dy) offsets to try
+# SRS wall kick tables: (old_rotation, new_rotation) -> ordered (dx, dy) offsets.
 JLSTZ_KICKS: dict[tuple[int, int], list[tuple[int, int]]] = {
     (0, 1): [(0, 0), (-1, 0), (-1, 1), (0, -2), (-1, -2)],
     (1, 0): [(0, 0), (1, 0), (1, -1), (0, 2), (1, 2)],
@@ -203,7 +203,7 @@ class GameState:
     def __init__(self, full_event_data: dict[str, Any]) -> None:
         game = full_event_data["game"]
 
-        # board: 40×10, True = filled
+        # board: (40, 10), 1.0 = filled
         self.board = np.zeros((BOARD_HEIGHT, BOARD_WIDTH), dtype=np.float32)
         raw_board = game.get("board", [])
         for row_idx, row in enumerate(raw_board):
@@ -216,14 +216,13 @@ class GameState:
                     if cell is not None:
                         self.board[row_idx][col_idx] = 1.0
 
-        # piece queue from bag
+        # Queue comes from the bag the server sent, minus the falling piece below.
         self.queue: list[str] = []
         bag = game.get("bag", [])
         for p in bag:
             if isinstance(p, str) and p.lower() in PIECE_INDEX:
                 self.queue.append(p.lower())
 
-        # hold piece
         hold_data = game.get("hold", {})
         self.hold: str | None = None
         self.hold_locked = False
@@ -233,7 +232,6 @@ class GameState:
                 self.hold = hp.lower()
             self.hold_locked = bool(hold_data.get("locked", False))
 
-        # current falling piece
         falling = game.get("falling", {})
         self.current_piece: str | None = None
         self.piece_x = 3
@@ -249,7 +247,6 @@ class GameState:
         if self.current_piece is not None and self.queue and self.queue[0] == self.current_piece:
             self.queue.pop(0)
 
-        # stats
         stats = full_event_data.get("stats", {})
         self.combo = int(stats.get("combo", 0))
         self.b2b = int(stats.get("btb", 0))
@@ -257,7 +254,7 @@ class GameState:
         self.pieces_placed = int(stats.get("piecesplaced", 0))
         self.garbage_pending = 0
 
-        # bag tracking for bag_position
+        # Derived from pieces_placed below; see _hard_drop.
         self.bag_number = 0
 
     def _get_cells(self, piece: str, rotation: int) -> list[tuple[int, int]]:
@@ -304,21 +301,18 @@ class GameState:
             self.piece_y += 1
 
     def _hard_drop(self) -> int:
-        """Drop and lock piece, clear lines. Returns lines cleared."""
+        """Drop to the last legal row, lock, and clear lines; return the clear count."""
         if self.current_piece is None:
             return 0
 
-        # drop to bottom
         while self._valid_position(self.current_piece, self.piece_x, self.piece_y + 1, self.piece_r):
             self.piece_y += 1
 
-        # lock piece
         for dr, dc in self._get_cells(self.current_piece, self.piece_r):
             row, col = self.piece_y + dr, self.piece_x + dc
             if 0 <= row < BOARD_HEIGHT and 0 <= col < BOARD_WIDTH:
                 self.board[row][col] = 1.0
 
-        # clear lines
         lines_cleared = 0
         new_board = np.zeros_like(self.board)
         write_row = BOARD_HEIGHT - 1
@@ -342,7 +336,6 @@ class GameState:
         else:
             self.combo = 0
 
-        # spawn next piece
         self._spawn_next()
         return lines_cleared
 
@@ -491,7 +484,7 @@ def process_round(
     if len(round_data) < 2:
         return [], [], []
 
-    # determine winner from end events
+    # Derive winner and per-player end stats from the terminal "end" events.
     outcomes = [0.0, 0.0]
     total_frames = [1, 1]
     end_stats: list[dict[str, Any]] = [{}, {}]
@@ -506,7 +499,7 @@ def process_round(
                     outcomes[pi] = 1.0
                 end_stats[pi] = d.get("stats", {})
 
-    # init game states from full events
+    # Seed each side from its "full" event, the initial board/queue snapshot.
     states: list[GameState | None] = [None, None]
     for pi in range(2):
         events = round_data[pi]["replay"]["events"]
@@ -518,7 +511,8 @@ def process_round(
     if states[0] is None or states[1] is None:
         return [], [], []
 
-    # process both players frame-by-frame so opponent snapshots are aligned to the same replay instant.
+    # Advance both players frame-by-frame so opponent snapshots are aligned to the
+    # same replay instant.
     keydowns_per_player = []
     total_placements = []
     total_lines_sent = []

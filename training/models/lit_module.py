@@ -43,12 +43,8 @@ except ImportError:
 class TeacherLitModule(L.LightningModule):
     """Lightning wrapper for TeacherNet training with Kendall multi-task loss.
 
-    Handles:
-    - Feature vector unpacking into board/pieces/scalars
-    - Label derivation (phase from bag number, regression from raw labels)
-    - Kendall uncertainty-weighted multi-task loss
-    - Optuna trial pruning via validation loss reporting
-    - Learning rate scheduling with ReduceLROnPlateau
+    Unpacks the flat feature vector, derives phase/regression targets from the raw
+    labels, and reports validation loss for Optuna trial pruning.
     """
 
     def __init__(
@@ -68,13 +64,12 @@ class TeacherLitModule(L.LightningModule):
         self.loss_fn = KendallMultiTaskLoss()
 
     def configure_model(self) -> None:
-        """Compile inner model with CUDA Graphs for kernel-launch-bound workloads.
+        """Compile the inner model with TorchInductor.
 
-        Fires before device placement and DDP wrapping - compiles the raw
-        nn.Module so TorchInductor sees the full graph without communication hooks.
-        mode='default' applies operator fusion and kernel optimization without CUDA Graphs,
-        which avoids shape-mismatch crashes when Optuna varies batch_size across trials.
-        which is the dominant bottleneck for small models on B200 (73% GPU util).
+        Runs before device placement and DDP wrapping so Inductor sees the whole
+        graph without communication hooks. mode="default" (no CUDA Graphs) avoids
+        the shape-mismatch crashes that recompilation would hit when Optuna varies
+        batch_size across trials.
         """
         self.model = cast(TeacherNet, torch.compile(self.model, mode="default", dynamic=False))
 
@@ -104,18 +99,17 @@ class TeacherLitModule(L.LightningModule):
 
         Raw labels: [game_outcome, lines_sent, b2b_after, position_normalized, time_to_topout]
 
-        Regression targets (6): The teacher learns to predict value and 5 strategic
-        metrics. For self-supervised training, we use the raw labels as proxy targets:
-            0: value = game_outcome
-            1: attack_potential = lines_sent
+        The teacher predicts value plus 5 strategic metrics; for self-supervised
+        training the raw labels serve as proxy targets:
+            0: value              = game_outcome
+            1: attack_potential   = lines_sent
             2: defensive_solidity = time_to_topout
-            3: efficiency = lines_sent * (1 - position_normalized)
-            4: flexibility = 1 - position_normalized (more options early)
-            5: tempo = lines_sent / (position_normalized + 1e-6)
+            3: efficiency         = lines_sent * max(1 - position_normalized, 0.01)
+            4: flexibility        = 1 - position_normalized
+            5: tempo              = min(lines_sent / (position_normalized + 1e-6), 10) / 10
 
-        Phase class: derived from bag_number scalar (named access through schema)
-        denormalization). opener=0 (bags 0..3), midgame=1 (bags 4+, healthy),
-        survival=2 (high garbage or late game with low time_to_topout).
+        Phase defaults to midgame (1). Bag numbers below 3 select opener (0);
+        high garbage or low time_to_topout overrides either with survival (2).
         """
         game_outcome = labels[:, 0]
         lines_sent = labels[:, 1]
@@ -125,28 +119,23 @@ class TeacherLitModule(L.LightningModule):
 
         bag_norm = scalars[:, scalar_slot("bag_number")]
 
-        # Regression targets
         value = game_outcome
         attack_potential = lines_sent
         defensive_solidity = time_to_topout
         efficiency = lines_sent * (1.0 - position_norm).clamp(min=0.01)
         flexibility = 1.0 - position_norm
         tempo = lines_sent / (position_norm + 1e-6)
-        # Clamp tempo to reasonable range
-        tempo = tempo.clamp(max=10.0) / 10.0  # normalize to ~[0, 1]
+        # Raw tempo is unbounded; clamp at 10 and rescale to roughly [0, 1].
+        tempo = tempo.clamp(max=10.0) / 10.0
 
         reg_targets = torch.stack(
             [value, attack_potential, defensive_solidity, efficiency, flexibility, tempo],
             dim=1,
         )  # (B, 6)
 
-        # Phase classification
-        # opener: early game (low bag number)
-        # survival: high garbage or very low time_to_topout
-        # midgame: everything else
         garbage_norm = scalars[:, scalar_slot("garbage_pending")]
-        phase = torch.ones(labels.shape[0], dtype=torch.long, device=labels.device)  # default midgame
-        phase[bag_norm < 0.15] = 0  # opener (approx bags 0-3 out of ~25+ bags)
+        phase = torch.ones(labels.shape[0], dtype=torch.long, device=labels.device)  # midgame
+        phase[bag_norm < 0.15] = 0  # opener: bag_norm 0.15 == bag_number 3
         phase[(garbage_norm > 0.5) | (time_to_topout < 0.2)] = 2  # survival
 
         return reg_targets, phase
@@ -173,11 +162,10 @@ class TeacherLitModule(L.LightningModule):
             phase_targets=phase_targets,
         )
 
-        # Log all losses
+        # Log all losses. The underscore alias feeds ModelCheckpoint filename
+        # interpolation: Lightning substitutes template vars literally, so
+        # {val_total_loss} needs a key without the slash.
         self.log(f"{stage}/total_loss", loss_dict["total_loss"], prog_bar=(stage == "val"))
-        # Underscore alias for ModelCheckpoint filename interpolation -
-        # Lightning uses template vars literally, so {val_total_loss} needs
-        # a matching key without the slash.
         self.log(f"{stage}_total_loss", loss_dict["total_loss"])
         self.log(f"{stage}/cls_loss", loss_dict["classification_loss"])
         for i, name in enumerate(
@@ -217,8 +205,8 @@ class TeacherLitModule(L.LightningModule):
 class FusionDataModule(L.LightningDataModule):
     """Data module for binary fusion training data.
 
-    Splits a single .bin file into train/val sets (90/10) and creates
-    DataLoaders with configurable batch size and workers.
+    Splits one .bin file into train/val (val_split) and builds DataLoaders with the
+    configured batch size and worker count.
     """
 
     def __init__(

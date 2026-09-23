@@ -1,4 +1,4 @@
-//! Shared labeling kernel extracted from `src/bin/label_opp.rs`.
+//! Shared labeling kernel for the `label_opp` and `label_opp_cand` bins.
 //!
 //! Pure, reusable primitives for K-horizon attack labeling over `.ctx` records:
 //! context parsing, 1-ply expansion with exact S2 attack (`expand_raw`), the

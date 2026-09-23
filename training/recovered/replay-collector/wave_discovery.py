@@ -5,9 +5,9 @@
 # ///
 """Live Tetra Channel discovery for the X/X+/U/SS replay wave.
 
-Fresh leaderboard pagination plus per-player league-record paging over the
-base collector's direct client. No caches are read; every report carries an
-explicit completeness flag instead of claiming complete on truncation.
+Fresh leaderboard pagination plus per-player league-record paging over the base
+collector's direct client. No caches are read, and every report carries an
+explicit completeness flag so truncation or failures cannot read as complete.
 """
 
 from __future__ import annotations
@@ -164,7 +164,7 @@ async def discover_rank_refs(
     top_n: int | None,
     max_pages: int,
 ) -> tuple[list[WaveRef], Json]:
-    """Fetch per-player records; take-all for X/X+, global-newest top_n with early-stop otherwise."""
+    """Fetch per-player records: take-all for X/X+, else serial early-stop top_n."""
     report: Json = {"players": len(entries), "records_scanned": 0, "pages": 0,
                     "truncated_players": [], "failed_players": [], "complete": True}
     transport = PageTransport(client, asyncio.Semaphore(RECORDS_CONCURRENCY))

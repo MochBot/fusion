@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# B3 cross-validation: native label_opp_cand per-candidate exact attack must match
-# the TS oracle rank-dump-k7-attack.ts on the same .ctx (sorted per-group multiset).
+# Cross-validation: per-candidate exact attack from the native label_opp_cand binary
+# must match the TS oracle rank-dump-k7-attack.ts on the same .ctx, compared as a
+# sorted per-group multiset within 1e-3.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"

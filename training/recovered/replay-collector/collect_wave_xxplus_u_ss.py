@@ -10,11 +10,10 @@ league records over direct HTTPS, then writes a reviewable manifest with
 per-rank counts, existing-body coverage, and a byte estimate. No replay
 bodies are fetched unless --download is passed explicitly.
 
-Wave scope (per delegation): X and X+ take all API-available replays;
-U takes the first 2,000 unique replay IDs in leaderboard order (not a
-global-newest sort: per-player record pages are consumed sequentially and
-the run stops once the target count is reached); SS takes the first 2,000
-in leaderboard order as the default.
+Wave scope: X and X+ take all API-available replays; U and SS take the first
+2,000 unique replay IDs in leaderboard order (--u-top-n / --ss-top-n). This is
+deliberately not a global-newest sort: per-player record pages are consumed
+sequentially and the run stops once the target count is reached.
 
 Resume (--resume --manifest <path>): reuses the supplied manifest's
 immutable records.jsonl selection with no re-scan and no new scope, skips
@@ -40,8 +39,6 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-
-import httpx
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS_DIR))
@@ -151,7 +148,6 @@ async def run_discovery(args: argparse.Namespace) -> tuple[Json, Path]:
         players_by_rank, lb_report = await fetch_leaderboard_players(client, args.ranks, args.leaderboard_pages)
         manifest_ranks: Json = {}
         all_candidates: list[WaveRef] = []
-        all_selected: list[WaveRef] = []
         existing = inventory_existing_bodies(existing_roots)
         pagination_complete = bool(lb_report["complete"])
         for rank in args.ranks:
@@ -159,7 +155,6 @@ async def run_discovery(args: argparse.Namespace) -> tuple[Json, Path]:
             top_n = top_n_by_rank.get(rank)
             selected, rep = await discover_rank_refs(client, rank, entries, top_n, args.record_pages)
             all_candidates.extend(selected)
-            all_selected.extend(selected)
             on_disk, missing = split_existing(selected, existing)
             manifest_ranks[rank] = {**rep, "candidates": len(selected),
                                     "selected_unique": len({r.replayid for r in selected}),
@@ -168,7 +163,7 @@ async def run_discovery(args: argparse.Namespace) -> tuple[Json, Path]:
             log(f"rank {rank}: players={len(entries)} selected={len(selected)} existing={len(on_disk)} missing={len(missing)}")
     finally:
         await client.aclose()
-    unique_selected = {ref.replayid for ref in all_selected}
+    unique_selected = {ref.replayid for ref in all_candidates}
     missing_unique = sorted(rid for rid in unique_selected if rid not in existing)
     manifest: Json = {
         "wave": "xxplus-u-ss-01", "created_at": datetime.now(UTC).isoformat(),
@@ -274,10 +269,10 @@ def reuse_cross_corpus_bodies(
 ) -> tuple[set[str], list[Json]]:
     """Copy validated cross-corpus bodies for wanted IDs into the wave bodies dir.
 
-    Filename-stem inventory only (no corpus-wide content parse); only IDs in
-    ``candidates`` pay for a size gate plus schema validation, and only those
-    are copied. objects-noid roots are skipped: their stems are content hashes,
-    not replay IDs, so stem matching cannot apply. Returns reused IDs plus
+    Inventory is by filename stem only (no corpus-wide content parse). Only IDs in
+    ``candidates`` pay for the size gate and schema validation, and only those are
+    copied. objects-noid roots are skipped: their stems are content hashes rather
+    than replay IDs, so stem matching cannot apply. Returns reused IDs plus
     provenance records mapping each replay ID to its source body path.
     """
     bodies_dir = wave_dir / "bodies"
@@ -350,19 +345,11 @@ async def diagnose_proxy_once(session_id: str, probe_replayid: str) -> tuple[boo
     url = collector.INOUE_REPLAY.format(replayid=probe_replayid)
     try:
         async with probe_client.stream("GET", url, timeout=PROXY_PROBE_TIMEOUT_S) as response:
-            chunk_count = 0
             async for _chunk in response.aiter_bytes():
-                chunk_count += 1
                 break
             if response.status_code == 200:
                 return True, "ok"
             return False, f"http_{response.status_code}"
-    except httpx.ProxyError as error:
-        return False, classify_proxy_error(error)
-    except httpx.TimeoutException as error:
-        return False, classify_proxy_error(error)
-    except (httpx.ConnectError, httpx.RemoteProtocolError) as error:
-        return False, classify_proxy_error(error)
     except Exception as error:
         return False, classify_proxy_error(error)
     finally:
@@ -475,10 +462,7 @@ async def run_download(args: argparse.Namespace, manifest: Json) -> None:
     """Fetch missing bodies for manifest-listed IDs, reusing the base downloader."""
     wave_dir: Path = args.out
     meta = wave_dir / "_meta"
-    wanted: list[str] = []
-    for line in (meta / "records.jsonl").read_text().splitlines():
-        if line.strip():
-            wanted.append(str(json.loads(line)["replayid"]))
+    wanted = load_resume_wanted(wave_dir)
     existing = inventory_existing_bodies(resolve_existing_roots(wave_dir, list(args.existing_root)))
     queue = [rid for rid in dict.fromkeys(wanted) if rid not in existing]
     log(f"download queue: {len(queue)} missing bodies")

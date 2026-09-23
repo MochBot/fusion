@@ -9,8 +9,6 @@ use super::{
     EngineMode, GameEndReason, GameResult, LockProfile, MoveRecord, PlayerCfg, ProfileEnd,
 };
 
-// allow: SIZE_OK — P0 plan allowlists one report submodule file for manual fixed-order JSON schemas and tests.
-
 #[derive(Clone, Copy)]
 pub enum ReportMode {
     Deterministic,

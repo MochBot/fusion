@@ -59,7 +59,7 @@ const SIGMOID_C_BASE: f32 = -13.5;
 pub fn compute_sigmoid_c(skill: &PlayerSkill) -> f32 {
     const ALPHA: f32 = -3.5; // ln(pps) coefficient (attenuated for X+)
     const BETA: f32 = -2.0; // app coefficient
-    const GAMMA: f32 = -5.0; // dsp coefficient (reduced from -8.0)
+    const GAMMA: f32 = -5.0; // dsp coefficient
 
     SIGMOID_C_BASE + ALPHA * skill.pps.max(0.1).ln() + BETA * skill.app + GAMMA * skill.dsp
 }
@@ -205,9 +205,9 @@ pub struct InsightDetectorInput {
     pub actual_combo_after: u32,
     /// Lines cleared by the player's actual move
     pub actual_lines_cleared: u8,
-    /// Board eval delta: eval_after - eval_before (positive = board improved)
     /// Combo count BEFORE the player's actual move (0 = no active combo)
     pub actual_combo_before: u32,
+    /// Board eval delta: eval_after - eval_before (positive = board improved)
     pub board_eval_delta: f32,
 }
 

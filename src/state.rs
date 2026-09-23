@@ -66,12 +66,12 @@ impl ChainState {
         }
     }
 
-    /// Coaching-family lock transition on the S2/TL attack formula — the
-    /// same rule the coaching gap line, versus exchange, and training labels
-    /// use. Unsigned chain counters store `signed_s2 + 1` (0 = no active
-    /// chain, matching the legacy `GameState` meaning). Without a tracked
-    /// garbage-row mask, `garbage_cleared` uses the pending-clear heuristic
-    /// (`push_expand_record`'s convention when no mask is supplied).
+    /// Coaching-family lock transition on the S2/TL attack formula, the same
+    /// rule the coaching gap line, versus exchange, and training labels use.
+    /// Unsigned chain counters store `signed_s2 + 1`, so 0 means no active
+    /// chain. Without a tracked garbage-row mask, `garbage_cleared` uses the
+    /// pending-clear heuristic (`push_expand_record`'s convention when no mask
+    /// is supplied).
     pub fn advance_lock(
         &self,
         m: &Move,

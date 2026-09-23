@@ -1,11 +1,10 @@
 //! Production `Move` emission from the SBoard racer kernel.
 //!
-//! `generate_engine` stays the differential oracle; the two share piece
-//! tables, the canonical anchor convention (`canon_off` == the engine's
-//! `searched[r+2]` folding), and the `(x, y, rotation)` move key space,
-//! so placement-set parity is directly assertable (pinned by the
-//! seeded-corpus test in this module). Emission order differs (mask scan
-//! vs BFS discovery order) by design.
+//! `generate_engine` stays the differential oracle; the two share piece tables,
+//! the canonical anchor convention (`canon_off` == the engine's `searched[r+2]`
+//! folding), and the `(x, y, rotation)` move key space, so placement-set parity
+//! is directly assertable (pinned by the seeded-corpus test in this module).
+//! Emission order differs by design (mask scan versus BFS discovery order).
 
 use crate::board::{Board, BOARD_HEIGHT};
 use crate::header::{Move, Piece, Rotation};
@@ -438,12 +437,12 @@ mod tests {
         engine_underreach: usize,
     }
 
-    // Smear must equal the strict SRS+/180 reference BFS exactly (both
-    // directions, every board). Low boards use sky-hover seed; tall boards
-    // use engine spawn-scan seed. Production engine sets are diagnostic only:
-    // engine raw BFS over-produces (worklist timing). `move_reachable`'s
-    // group2 fold misses (case-13 / case-353) were fixed in pathfinder.rs;
-    // the probes stay as provenance.
+    // Smear must equal the strict SRS+/180 reference BFS exactly, both
+    // directions and every board. Low boards use the sky-hover seed; tall
+    // boards use the engine spawn-scan seed. Production engine sets are
+    // diagnostic only: the engine's raw BFS over-produces on holed boards
+    // (worklist-timing artifacts), so a miss there is provenance, not a smear
+    // failure.
     fn assert_parity(b: &Board, label: &str, stats: &mut ParityStats) {
         let h = b
             .rows
@@ -1256,10 +1255,9 @@ mod tests {
                 best_smear = best_smear.min(smear);
                 best_plain = best_plain.min(plain);
             }
-            // Since the cutover, `movegen::generate` routes through
-            // `generate_smear`, so the first arm measures the dispatch
-            // wrapper (MoveRequest plumbing + CanonicalRaw sort) on top of
-            // the same kernel.
+            // `movegen::generate` routes through `generate_smear`, so this arm
+            // measures the dispatch wrapper (MoveRequest plumbing + CanonicalRaw
+            // sort) on top of the same kernel.
             println!(
                 "BENCH smear_core {:?}: dispatch(sorted) {:.1}ns generate_smear {:.1}ns wrapper+sort {:.2}x | no-rules {:.1}ns (180+srs+ tax {:.1}ns)",
                 p,
@@ -1271,7 +1269,7 @@ mod tests {
             );
         }
 
-        // Conversion cost alone, for the record.
+        // Conversion cost alone.
         let mut best_conv = f64::MAX;
         for _ in 0..7 {
             let t = Instant::now();
@@ -1340,11 +1338,10 @@ mod tests {
         nodes
     }
 
-    // Strict placement tree cross-validated by a second implementation:
-    // reference-BFS expansion + reference leaf counts vs the smear kernel
-    // tree (`perft` = generate_placements interiors + count_smear leaves).
-    // Pins the semantics change from engine-emission trees (with phantoms)
-    // to strict trees.
+    // Cross-validates the strict placement tree against a second
+    // implementation: reference-BFS expansion plus reference leaf counts versus
+    // the smear kernel tree (`perft` = generate_placements interiors +
+    // count_smear leaves).
     #[test]
     fn perft_strict_matches_reference_bfs_shallow() {
         let b = Board::new();

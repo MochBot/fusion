@@ -1,5 +1,5 @@
-// wasm.rs -- WASM bridge for Mosaic SvelteKit frontend.
-// Re-numbers piece IDs to the Triangle order (I0 O1 T2 S3 Z4 J5 L6).
+// WASM bridge for the Mosaic frontend. Re-numbers piece IDs to the Triangle
+// order (I0 O1 T2 S3 Z4 J5 L6).
 
 use wasm_bindgen::prelude::*;
 
@@ -1673,7 +1673,7 @@ mod tests {
         );
     }
 
-    // Manual: cargo test --release --features wasm beam_timing_probe -- --ignored --nocapture
+    // Run: cargo test --release --features wasm beam_timing_probe -- --ignored --nocapture
     #[test]
     #[ignore]
     fn beam_timing_probe() {

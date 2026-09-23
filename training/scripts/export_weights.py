@@ -54,36 +54,32 @@ def export_student_weights(
     checkpoint_path = Path(checkpoint_path)
     output_path = Path(output_path)
 
-    # Load checkpoint - handle both raw state_dict and Lightning checkpoint
+    # Accepts a bare state_dict or a Lightning checkpoint.
     ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
 
     if "state_dict" in ckpt:
-        # Lightning checkpoint keys vary by module structure and torch.compile.
-        # Normalize to bare StudentNet state_dict keys like:
-        #   hidden.linear0.weight / output.weight
+        # Lightning wraps the module (and torch.compile adds _orig_mod.); strip both
+        # so keys match bare StudentNet names, e.g. hidden.linear0.weight.
         raw_sd = ckpt["state_dict"]
         state_dict = {}
         for k, v in raw_sd.items():
             key = k
-            # Strip Lightning module attr prefix (student. or model.)
             for prefix in ("student.", "model.student.", "model."):
                 if key.startswith(prefix):
                     key = key[len(prefix):]
                     break
-            # Strip torch.compile wrapper prefix
             key = key.removeprefix("_orig_mod.")
             key = LEGACY_STUDENT_KEY_MAP.get(key, key)
             state_dict[key] = v
     else:
         state_dict = ckpt
 
-    # Verify all expected keys exist
     missing = [key for key, _shape in WEIGHT_EXPORT_ORDER if key not in state_dict]
     if missing:
         msg = f"Missing keys in checkpoint: {missing}"
         raise KeyError(msg)
 
-    # Verify shapes match StudentNet
+    # Guard the export layout against StudentNet drift before writing anything.
     student = StudentNet()
     expected_sd = student.state_dict()
     for key, _shape in WEIGHT_EXPORT_ORDER:
@@ -93,12 +89,11 @@ def export_student_weights(
             msg = f"Shape mismatch for {key}: expected {expected_shape}, got {actual_shape}"
             raise ValueError(msg)
 
-    # Write flat f32 binary
     total_floats = 0
     with open(output_path, "wb") as f:
         for key, _shape in WEIGHT_EXPORT_ORDER:
             tensor = state_dict[key].detach().float().contiguous()
-            # Row-major (C-contiguous) flattening - matches Rust SIMD reader
+            # Row-major (C-contiguous) flattening matches the Rust SIMD reader.
             flat = tensor.flatten().numpy()
             f.write(flat.tobytes())  # little-endian f32 on x86
             total_floats += flat.shape[0]

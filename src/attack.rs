@@ -1,17 +1,17 @@
-// attack.rs -- TETR.IO Season 2 damage formula
-// piece-agnostic allspin: any piece with spin gets bonus, not just T
+// TETR.IO Season 2 damage formula. Attack is piece-agnostic allspin: any piece
+// with a spin gets the bonus, not just T.
 
 use crate::header::SpinType;
 use std::sync::OnceLock;
 
-// base attack table - no spin
+// Base attack by line count, no spin.
 pub const SINGLE: u8 = 0;
 pub const DOUBLE: u8 = 1;
 pub const TRIPLE: u8 = 2;
 pub const QUAD: u8 = 4;
 pub const PENTA: u8 = 5;
 
-// allspin attack (any piece with spin, not just T)
+// Allspin attack by piece and line count (any piece with spin, not just T).
 pub const SPIN_MINI: u8 = 0;
 pub const SPIN: u8 = 0;
 pub const SPIN_MINI_SINGLE: u8 = 0;
@@ -586,7 +586,7 @@ mod tests {
         assert!(dmg > 4.0, "stacked bonuses should exceed base");
     }
 
-    // --- Fix #3: >5 line scaling ---
+    // --- >5 line scaling ---
 
     #[test]
     fn test_nospin_6_lines() {
@@ -623,7 +623,7 @@ mod tests {
         assert_eq!(dmg, 16.0);
     }
 
-    // --- Fix #2: Combo minifier (max semantics) ---
+    // --- Combo minifier (max semantics) ---
 
     #[test]
     fn test_combo_multiplier_max_semantics() {
@@ -668,7 +668,7 @@ mod tests {
         }
     }
 
-    // --- Fix #1: Surge release ---
+    // --- Surge release ---
 
     #[test]
     fn test_surge_release_b2b4_broken() {
@@ -798,7 +798,7 @@ mod tests {
         assert_eq!(old, new);
     }
 
-    // --- Fix #4: Garbage clear boost ---
+    // --- Garbage clear boost ---
 
     #[test]
     fn test_garbage_clear_boost_on_quad() {

@@ -113,8 +113,8 @@ pub(crate) fn align_round_exact_retaining_record(
         let _ = observation.had_garbage;
         unknown_cost = unknown_cost.saturating_add(costs.unknown_per_lock);
         let seed_cost = if initialized { unknown_cost } else { 0 };
-        // Exact-seed-only initialization with per-lock rejoin is the authored recall mechanism.
-        // Its coverage is measured in the battery and currently retains every sampled identity.
+        // Exact-seed-only initialization with per-lock rejoin is the authored
+        // recall mechanism; the behavioral battery measures its coverage.
         let seeds = ordered_exact_seeds(graph, &observation.key, &budget.seed, seed_cost, costs);
         let seeded = u32::try_from(seeds.exact.len()).unwrap_or(u32::MAX);
         let exact_hits = graph

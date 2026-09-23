@@ -425,7 +425,7 @@ fn test_attack_integration_tspin_scores_higher() {
     );
 }
 
-// Task 9: Corpus calibration - severity distribution across skill tiers
+// Corpus calibration: severity distribution across skill tiers
 
 fn d_rank_skill() -> PlayerSkill {
     PlayerSkill {
@@ -691,8 +691,7 @@ fn test_calibration_severity_distributions() {
         d_none, d_none_pct, d_inac, d_mis, d_blu, d_mistake_blunder_pct
     );
 
-    // Task 9 acceptance criteria (updated for dual-metric severity - Fix 4):
-    // Tail-region pairs now classified by raw delta, surfacing previously hidden mistakes
+    // Calibration targets: tail-region pairs are classified by raw delta.
     assert!(
         xp_none_pct >= 35.0,
         "X+ None% must be >= 35%, got {:.1}%",

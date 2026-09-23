@@ -8,13 +8,13 @@
 //!     --ignored --exact --test-threads=1 --nocapture
 //! ```
 //!
-//! The inputs retain Mosaic's captured observations for every player-round of
-//! the two versus fixture replays; retired dealt-input and tail-queue fields
-//! have been removed. The corpus digest covers every serialized analysis DTO in
-//! order, so any optimization must reproduce it exactly. The installed lane
-//! measures the production path (catalog installed once, rounds analyzed in
-//! replay order, caches warm across rounds); the uncached lane analyzes each
-//! round against a transient identity so no compiled graph is reused.
+//! The inputs are Mosaic's captured observations for every player-round of the
+//! two versus fixture replays. The corpus digest covers every serialized
+//! analysis DTO in order, so any optimization must reproduce it exactly. The
+//! installed lane measures the production path (catalog installed once, rounds
+//! analyzed in replay order, caches warm across rounds); the uncached lane
+//! analyzes each round against a transient identity so no compiled graph is
+//! reused.
 
 use std::fmt::Write as _;
 use std::time::{Duration, Instant};
@@ -249,16 +249,15 @@ fn replay_round_stage_timing() {
 
 /// Bounded first-seen/warm recognition discriminator.
 ///
-/// Runs a handful of fixture rounds through the actual recognition path twice
-/// on the shared installed cache: the first-seen call cold-compiles records
-/// this snapshot has not compiled before, the warm call reuses them. Both
-/// calls go through `recognize_round_profiled`, so every stage timing and
-/// per-record outcome below is observed from the real execution: no copied
-/// shortlist, no separate graph preflight, no union/align subtraction.
-/// Measurement only; asserts nothing about timing beyond first-seen/warm
-/// result parity. The `prepare` column is the shared observation
+/// Runs a handful of fixture rounds twice through the real recognition path on
+/// the shared installed cache: the first-seen call cold-compiles records this
+/// snapshot has not compiled before, the warm call reuses them. Both go through
+/// `recognize_round_profiled`, so every stage timing and per-record outcome is
+/// observed from the actual execution rather than a copied shortlist or a
+/// separate graph preflight. Measurement only; the sole assertion is
+/// first-seen/warm result parity. The `prepare` column is shared observation
 /// normalization, timed on its own and excluded from the stage columns;
-/// `warm full` stays the whole-call number that includes it.
+/// `warm full` is the whole-call number that includes it.
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 #[ignore]

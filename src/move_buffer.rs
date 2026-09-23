@@ -115,22 +115,6 @@ impl MoveList {
         ml
     }
 
-    pub fn with_hold(b: &Board, p: Piece, hold: Option<Piece>, force: bool) -> Self {
-        let mut moves = MoveBuffer::new();
-        generate(b, &mut moves, p, force);
-        if !moves.is_empty() {
-            if let Some(h) = hold {
-                if p != h {
-                    generate(b, &mut moves, h, force);
-                }
-            }
-        }
-        debug_assert!(moves.len() < MAX_MOVES);
-        let ml = MoveList { moves };
-        debug_assert!(ml.all_valid(b));
-        ml
-    }
-
     fn all_valid(&self, b: &Board) -> bool {
         for m in self.moves.iter() {
             if !is_ok_move(m) {

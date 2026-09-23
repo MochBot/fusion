@@ -50,7 +50,6 @@ impl BagTracker {
 
     /// Given a visible queue, consume all pieces and return the remaining
     /// unseen pieces that must appear before the next bag starts.
-    // Future: needed for extended queue prediction
     #[allow(dead_code)]
     pub(crate) fn predict_next(&mut self, queue: &[Piece]) -> Vec<Piece> {
         for &piece in queue {
@@ -60,7 +59,6 @@ impl BagTracker {
     }
 
     /// Number of pieces consumed in the current bag.
-    // Future: needed for extended queue prediction
     #[allow(dead_code)]
     pub(crate) fn count(&self) -> u8 {
         self.count
@@ -102,8 +100,8 @@ pub(crate) fn extend_queue(queue: &[Piece], current: Piece, hold: Option<Piece>)
     let remaining = tracker.remaining();
     let mut extended = queue.to_vec();
 
-    // Only predict when ≤2 pieces remain - those are guaranteed to appear
-    // before the next bag, though their order is unknown.
+    // Only predict when at most two pieces remain: those are guaranteed to
+    // appear before the next bag, though their order is unknown.
     if remaining.len() <= 2 && !remaining.is_empty() {
         extended.extend_from_slice(&remaining);
     }

@@ -54,7 +54,7 @@ fn encode_piece_slots_flat(state: &GameState, out: &mut [f32]) {
     }
 }
 
-/// Encode 854 state features as a flat Vec<f32>.
+/// Encode 854 state features in a flat `Vec<f32>`.
 pub fn encode_state_features_flat(state: &GameState, opponent_board: &Board) -> Vec<f32> {
     let mut values = vec![0.0f32; TOTAL_FEATURES];
     encode_board_flat(&state.board, &mut values[0..400]);
@@ -68,9 +68,8 @@ pub fn encode_state_features_flat(state: &GameState, opponent_board: &Board) -> 
     values
 }
 
-/// Encode candidate move features as flat Vecs.
-/// Returns (features: Vec<f32> of len CANDIDATE_CAPACITY * MOVE_FEATURE_DIM,
-///          mask: Vec<bool> of len CANDIDATE_CAPACITY).
+/// Return `CANDIDATE_CAPACITY * MOVE_FEATURE_DIM` features and a mask of
+/// `CANDIDATE_CAPACITY` entries; unused candidate slots remain zero and false.
 pub fn encode_candidate_features_flat(candidates: &[Move]) -> (Vec<f32>, Vec<bool>) {
     let mut values = vec![0.0f32; CANDIDATE_CAPACITY * MOVE_FEATURE_DIM];
     let mut mask = vec![false; CANDIDATE_CAPACITY];

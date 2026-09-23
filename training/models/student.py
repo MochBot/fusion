@@ -23,23 +23,22 @@ except ImportError:
 
 
 class StudentNet(nn.Module):
-    """Compact MLP with SCReLU activation for sub-microsecond WASM inference.
+    """Compact MLP with SCReLU activation for WASM inference.
 
-    Architecture: 854 → 192 → 96 → 48 → 9 (pure MLP, no BatchNorm/Dropout).
-    Layers are built dynamically from STUDENT_DIMS with SCReLU after each
-    hidden linear layer. The output layer has no activation.
+    Architecture: 854 -> 192 -> 96 -> 48 -> 9 (pure MLP, no BatchNorm/Dropout).
+    Layers come from STUDENT_DIMS with SCReLU after each hidden linear layer; the
+    output layer has no activation.
 
     Input:  (B, 854)  - feature vector (player board + opponent board + pieces + scalars)
     Output: (B, 9)    - 6 regression heads + 3 phase logits
         [:, 0:6] = value, attack_potential, defensive_solidity, efficiency, flexibility, tempo
         [:, 6:9] = opener, midgame, survival (phase logits)
 
-    Parameters: ~189K trainable (187,785 exact).
+    Parameters: 187,785 trainable.
 
     Weight export format (flat little-endian f32):
-        [W1(854×192)] [b1(192)] [W2(192×96)] [b2(96)] [W3(96×48)] [b3(48)] [W4(48×9)] [b4(9)]
-        W matrices are stored in row-major order matching nn.Linear's
-        (out_features, in_features) layout.
+        [W1(854x192)] [b1(192)] [W2(192x96)] [b2(96)] [W3(96x48)] [b3(48)] [W4(48x9)] [b4(9)]
+        W matrices are row-major, matching nn.Linear's (out_features, in_features) layout.
     """
 
     def __init__(self) -> None:

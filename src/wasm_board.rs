@@ -2,9 +2,9 @@ use wasm_bindgen::prelude::*;
 
 use crate::board::Board;
 
-// Board row ↔ column conversion
-// Board.rows[y] (u16): bit x set if cell (x,y) is filled
-// WASM rows[y] (u64): bit x set if cell (x,y) is filled (same semantics, wider type)
+// Board row conversion between the internal `[u16; 40]` rows and the WASM
+// bridge's `u64` rows. Bit x of row y means cell (x, y) is filled in both;
+// only the container width differs, so conversion masks to the board width.
 
 pub(crate) fn board_from_row_bitmasks(rows: &[u64]) -> Board {
     let mut out = [0u16; 40];

@@ -330,7 +330,7 @@ class PolicyValuePipelineTests(unittest.TestCase):
                     [replay_dir / "sample.ttrm"],
                     [replay_dir / "sample.ttrm"],
                 ],
-            ) as split_mock:
+            ) as split_mock, patch.object(modal_app.data_vol, "batch_upload") as upload_mock:
                 modal_app.launch_modal_player_context_artifact_pipeline(
                     replay_dir=str(replay_dir),
                     local_output_path=str(Path(tmpdir) / "training_data.bin"),
@@ -339,6 +339,8 @@ class PolicyValuePipelineTests(unittest.TestCase):
 
             split_mock.assert_called_once()
             self.assertEqual(split_mock.call_args.kwargs["shard_count"], 70)
+            upload_mock.assert_called_once_with()
+            self.assertEqual(upload_mock.return_value.__enter__.return_value.put_file.call_count, 3)
             remote_mock.remote.assert_called_once()
             self.assertEqual(remote_mock.remote.call_args.kwargs["shard_count"], 3)
 

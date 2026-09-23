@@ -37,13 +37,11 @@ def teacher_objective(
     Searches over:
     - Learning rate (log-uniform 1e-5 to 1e-2)
     - Weight decay (log-uniform 1e-6 to 1e-2)
-    - Batch size (8192, 16384, 32768, 65536)
-    - Dropout rates (uniform 0.1 to 0.5)
+    - Batch size (batch_size_choices, else 8192/16384/32768/65536)
+    - dropout_fc1 (uniform 0.1 to 0.5) and dropout_fc2 (0.05 to 0.3)
 
     Returns validation loss for Optuna minimization.
-    Uses HyperbandPruner-compatible epoch reporting.
     """
-    # Hyperparameter search space
     lr = trial.suggest_float("lr", 1e-5, 1e-2, log=True)
     weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-2, log=True)
     batch_candidates = (
@@ -55,7 +53,6 @@ def teacher_objective(
     dropout_fc1 = trial.suggest_float("dropout_fc1", 0.1, 0.5)
     dropout_fc2 = trial.suggest_float("dropout_fc2", 0.05, 0.3)
 
-    # Model and data
     model = TeacherLitModule(
         lr=lr,
         weight_decay=weight_decay,
@@ -89,6 +86,7 @@ def teacher_objective(
             mode="min",
         ),
     ]
+    # Optuna moved the Lightning callback into optuna_integration; accept either.
     try:
         pruning_module = importlib.import_module("optuna_integration.pytorch_lightning")
     except ModuleNotFoundError:

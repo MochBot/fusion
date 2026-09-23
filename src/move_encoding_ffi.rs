@@ -1,44 +1,31 @@
-//! Move-encoding FFI - single source of truth for Move.raw u16 across languages.
+//! Move-encoding FFI - single source of truth for `Move.raw` u16 across languages.
 //!
-//! Problem this module solves:
+//! Python's `policy_value_schema.encode_move_raw` and Rust's
+//! `header::Move::new(...).raw()` pack the same 16-bit field, but their input
+//! semantics differ: Python preprocess passes the BOUNDING BOX origin in
+//! matrix coordinates with row-increasing-down, while Rust expects the PIVOT
+//! coordinate in game-engine coordinates with y-increasing-up. When the two
+//! disagreed, the dataloader silently matched no search-oracle candidate
+//! (0% across 50k samples) and `player_policy_loss` collapsed to zero.
 //!
-//!   Python's `policy_value_schema.encode_move_raw` and Rust's
-//!   `header::Move::new(...).raw()` independently pack a 16-bit field. The
-//!   formulas agree, but the input *semantics* diverged historically:
-//!     - Python preprocess passes (x, y) as the BOUNDING BOX origin in
-//!       matrix coordinates with row-increasing-down.
-//!     - Rust expects (x, y) as the PIVOT coordinate in game-engine
-//!       coordinates with y-increasing-up.
+//! Rust is therefore the authoritative encoder: this module exports a C ABI
+//! function callable from Python via `ctypes`, so Python preprocess (and any
+//! other consumer) need not maintain its own bit packing.
 //!
-//!   When the two disagreed, the dataloader silently failed to match
-//!   `actual_move_raw` against any search-oracle candidate (0% match across
-//!   50k samples) and `player_policy_loss` collapsed to zero in every
-//!   training run. Both production checkpoints were therefore trained on
-//!   search supervision only, not human imitation.
-//!
-//! Fix:
-//!
-//!   Make Rust the authoritative encoder. This module exports a C ABI
-//!   function callable from Python via `ctypes`, so Python preprocess (and
-//!   any other consumer) can stop maintaining its own copy of the bit
-//!   packing.
-//!
-//!   Input convention: PIVOT (x, y) in Rust/game-engine coordinates. Any
-//!   converter that produces bbox-origin coordinates must transform them
-//!   to pivot coordinates BEFORE calling this function. The bbox→pivot
-//!   table is derived empirically against this oracle (see
-//!   `training/tests/test_move_encoding_parity.py`).
+//! Input convention: PIVOT (x, y) in Rust/game-engine coordinates. A converter
+//! that produces bbox-origin coordinates must transform them before calling;
+//! the bbox→pivot table is derived empirically against this oracle (see
+//! `training/tests/test_move_encoding_parity.py`).
 //!
 //! Symbol exposed:
 //!   `fusion_encode_move_raw(piece_id, rotation, x, y, spin) -> i32`
-//!   where piece_id ∈ {0..=6} (Rust Piece enum order: I O T L J S Z),
+//!   where piece_id ∈ {0..=6} (Rust `Piece` order: I O T L J S Z),
 //!   rotation ∈ {0..=3} (N E S W), x,y are i32 pivot coords, spin ∈ {0,1}.
-//!   Returns the u16 raw widened to i32 on success, or -1 on invalid input.
-//!   The signed return is the sentinel mechanism: every valid u16 fits in
-//!   the non-negative range of i32, so a negative result unambiguously
-//!   signals an error. (An earlier u16-returning design hit a collision:
-//!   `Move::new(I, West, 15, 63, spin=true)` encodes to 0xFFFF, which is
-//!   the same bit pattern as `u16::MAX` - the original sentinel.)
+//!   Returns the u16 raw widened to i32, or -1 on invalid input. The signed
+//!   return is the sentinel mechanism: every valid u16 is non-negative as
+//!   i32, so only errors are negative. An earlier u16-returning design hit a
+//!   collision - `Move::new(I, West, 15, 63, spin=true)` encodes to 0xFFFF,
+//!   the same bit pattern as the original `u16::MAX` sentinel.
 
 use crate::header::{Move, Piece, Rotation};
 
@@ -90,10 +77,9 @@ pub fn encode_move_raw(
 
 /// C ABI wrapper for FFI consumers (Python via ctypes).
 ///
-/// Returns the u16 raw value widened to i32 on success, or
-/// `FUSION_ENCODE_MOVE_RAW_ERROR` (-1) on invalid input. Negative is an
-/// unambiguous sentinel because every valid raw fits in 0..=0xFFFF, the
-/// non-negative range of i32.
+/// Returns the u16 raw widened to i32, or `FUSION_ENCODE_MOVE_RAW_ERROR`
+/// (-1) on invalid input. Only errors are negative, because every valid raw
+/// fits in 0..=0xFFFF.
 ///
 /// # Safety
 ///
@@ -121,9 +107,8 @@ pub static FUSION_ENCODE_MOVE_RAW_ERROR: i32 = -1;
 mod tests {
     use super::*;
 
-    /// Direct cross-check: every valid (piece, rotation, x, y, spin)
-    /// encoded via the FFI wrapper matches Move::new(...).raw() directly.
-    /// This is the property-based parity test.
+    /// Cross-check: every valid (piece, rotation, x, y, spin) encoded via the
+    /// FFI wrapper matches `Move::new(...).raw()` directly.
     #[test]
     fn ffi_matches_move_new_for_every_valid_input() {
         for piece_id in 0u8..=6 {
@@ -156,8 +141,8 @@ mod tests {
 
     #[test]
     fn ffi_returns_sentinel_for_high_corner_case() {
-        // Move::new(I, West, 15, 63, fullspin=true) encodes to 0xFFFF.
-        // Confirm the new i32 sentinel does NOT collide with this value.
+        // Move::new(I, West, 15, 63, fullspin=true) encodes to 0xFFFF, so the
+        // i32 sentinel must not collide with it.
         let ffi = fusion_encode_move_raw(Piece::I as u8, Rotation::West as u8, 15, 63, 1);
         assert_eq!(ffi, 0xFFFF);
         let direct = Move::new(Piece::I, Rotation::West, 15, 63, true).raw();

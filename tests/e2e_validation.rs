@@ -606,7 +606,7 @@ fn e2e_composite_scoring_validation() {
     );
 
     // Suboptimal insights should fire for scenarios with clear differences
-    // (we simulate worst-case: combo broken, no clear, board worsened)
+    // (worst case simulated: combo broken, no clear, board worsened)
     let any_suboptimal_insights = results.iter().any(|r| !r.insights_suboptimal.is_empty());
     assert!(
         any_suboptimal_insights,

@@ -1,18 +1,21 @@
 from __future__ import annotations
 
+import importlib.util
 import os
 import shutil
 import sys
 import tempfile
 import time
-import importlib.util
-from itertools import product
 from importlib import import_module
+from itertools import product
 from pathlib import Path
-from types import ModuleType
-from typing import TYPE_CHECKING, Literal, Sequence, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 import modal
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+    from types import ModuleType
 
 TRAINING_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = TRAINING_ROOT.parent
@@ -77,23 +80,34 @@ def _load_module_from_file(module_name: str, relative_parts: Sequence[str]) -> M
 
 
 def _import_training_module(
-    package_path: str, *, file_relative_parts: Sequence[str], bare_path: str | None = None
+    package_path: str,
+    *,
+    file_relative_parts: Sequence[str],
+    bare_path: str | None = None,
+    sibling_path: str | None = None,
 ) -> ModuleType:
     _ensure_modal_import_paths()
-    try:
-        return import_module(package_path)
-    except ImportError:
-        if bare_path is not None:
-            try:
-                return import_module(bare_path)
-            except ImportError:
-                pass
+    for candidate_path in (sibling_path, package_path, bare_path):
+        if candidate_path is None:
+            continue
+        try:
+            return import_module(candidate_path)
+        except ModuleNotFoundError as exc:
+            # Retry only when the candidate root itself is absent: a dependency that
+            # fails inside a present module must surface rather than silently resolve
+            # the module from a different import root.
+            missing = exc.name or ""
+            if missing != candidate_path and not candidate_path.startswith(f"{missing}."):
+                raise
     return _load_module_from_file(package_path.replace(".", "_"), file_relative_parts)
 
 
 def _import_training_script_module(module_name: str) -> ModuleType:
     return _import_training_module(
         f"training.scripts.{module_name}",
+        # Package-member layout: the sibling copy is authoritative, so resolve it
+        # first to keep one module identity per layout.
+        sibling_path=f"{__package__}.{module_name}" if __package__ else None,
         bare_path=f"scripts.{module_name}",
         file_relative_parts=("training", "scripts", f"{module_name}.py"),
     )
@@ -107,85 +121,49 @@ def _import_training_utils_module(module_name: str) -> ModuleType:
     )
 
 
-if TYPE_CHECKING:
-    from .policy_value_pipeline import ArtifactReadiness, PolicyValueSupervisionMode
-
-try:
-    from . import gpu_profiles as _gpu_profiles
-except ImportError:
-    _gpu_profiles = _import_training_script_module("gpu_profiles")
+# Cheap (stdlib/numpy) modules, resolved once at import time. Re-exported callables
+# stay plain module attributes so callers can substitute them via
+# `patch("scripts.modal_app.<name>")`.
+_gpu_profiles = _import_training_script_module("gpu_profiles")
+_preprocess_replays = _import_training_script_module("preprocess_replays")
+_generate_policy_value_labels = _import_training_script_module("generate_policy_value_labels")
+_policy_value_pipeline = _import_training_script_module("policy_value_pipeline")
+_example_schema = _import_training_utils_module("example_schema")
+_policy_value_schema = _import_training_utils_module("policy_value_schema")
 
 default_profile_name = _gpu_profiles.DEFAULT_PROFILE_NAME
 gpu_profiles = _gpu_profiles.GPU_PROFILES
 get_profile = _gpu_profiles.get_profile
 
+preprocess_directory = _preprocess_replays.preprocess_directory
+preprocess_replay_files = _preprocess_replays.preprocess_replay_files
+split_replay_files = _preprocess_replays.split_replay_files
+merge_preprocessed_shards = _preprocess_replays.merge_preprocessed_shards
+split_requests_file = _generate_policy_value_labels.split_requests_file
+generate_policy_value_labels_for_dataset = (
+    _generate_policy_value_labels.generate_policy_value_labels_for_dataset
+)
+artifact_readiness = _policy_value_pipeline.artifact_readiness
+missing_policy_value_artifact_paths = _policy_value_pipeline.missing_policy_value_artifact_paths
+policy_value_batch_size_for_profile = _policy_value_pipeline.policy_value_batch_size_for_profile
+policy_value_num_workers_for_profile = _policy_value_pipeline.policy_value_num_workers_for_profile
+policy_value_run_id = _policy_value_pipeline.policy_value_run_id
+required_policy_value_artifact_paths = _policy_value_pipeline.required_policy_value_artifact_paths
+validate_policy_value_artifacts = _policy_value_pipeline.validate_policy_value_artifacts
 
-def _policy_value_pipeline_module() -> ModuleType:
-    return _import_training_script_module("policy_value_pipeline")
 
-
-def artifact_readiness(
-    data_path: str | Path,
-    supervision_mode: "PolicyValueSupervisionMode" = "search_control",
-) -> "ArtifactReadiness":
-    return cast(
-        "ArtifactReadiness",
-        _policy_value_pipeline_module().artifact_readiness(
-            data_path, supervision_mode=supervision_mode
-        ),
+def merge_label_shards(
+    shard_paths: Sequence[str | Path],
+    output_path: str | Path,
+    *,
+    expected_count: int | None = None,
+) -> int:
+    # Resolved per call: callers patch the source module attribute, not this re-export.
+    return _generate_policy_value_labels.merge_label_shards(
+        shard_paths, output_path, expected_count=expected_count
     )
 
 
-def missing_policy_value_artifact_paths(
-    data_path: str | Path,
-    supervision_mode: "PolicyValueSupervisionMode" = "search_control",
-) -> list[Path]:
-    return cast(
-        list[Path],
-        _policy_value_pipeline_module().missing_policy_value_artifact_paths(
-            data_path, supervision_mode=supervision_mode
-        ),
-    )
-
-
-def policy_value_batch_size_for_profile(*args: object, **kwargs: object) -> int:
-    return cast(
-        int, _policy_value_pipeline_module().policy_value_batch_size_for_profile(*args, **kwargs)
-    )
-
-
-def policy_value_num_workers_for_profile(*args: object, **kwargs: object) -> int:
-    return cast(
-        int, _policy_value_pipeline_module().policy_value_num_workers_for_profile(*args, **kwargs)
-    )
-
-
-def policy_value_run_id(*args: object, **kwargs: object) -> str:
-    return cast(str, _policy_value_pipeline_module().policy_value_run_id(*args, **kwargs))
-
-
-def required_policy_value_artifact_paths(
-    data_path: str | Path,
-    supervision_mode: "PolicyValueSupervisionMode" = "search_control",
-) -> list[Path]:
-    return cast(
-        list[Path],
-        _policy_value_pipeline_module().required_policy_value_artifact_paths(
-            data_path, supervision_mode=supervision_mode
-        ),
-    )
-
-
-def validate_policy_value_artifacts(
-    data_path: str | Path,
-    supervision_mode: "PolicyValueSupervisionMode" = "search_control",
-) -> None:
-    _policy_value_pipeline_module().validate_policy_value_artifacts(
-        data_path, supervision_mode=supervision_mode
-    )
-
-
-# Modal app & image
 app = modal.App("fusion-training")
 
 ACTIVE_PROFILE_NAME = os.environ.get("FUSION_GPU_PROFILE", default_profile_name)
@@ -219,17 +197,17 @@ training_image = (
     )
     .env(
         {
-            # --- Memory allocation ---
+            # Reduce allocator fragmentation across long training runs.
             "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
             "CUBLAS_WORKSPACE_CONFIG": ":4096:8",
-            # --- Prevent memory leaks over long training runs ---
+            # Avoid NCCL record-stream retention and NVLS/CuMem init, which hang or
+            # leak in serverless topologies without NVSwitch.
             "TORCH_NCCL_AVOID_RECORD_STREAMS": "1",
-            # --- Prevent hangs in serverless topologies (single-GPU, no NVSwitch) ---
             "NCCL_NVLS_ENABLE": "0",
             "NCCL_CUMEM_ENABLE": "0",
             "TORCH_CUDNN_V8_API_ENABLED": "1",
-            # --- torch.compile kernel cache: shared across containers via Volume ---
-            # First worker compiles; subsequent workers load cached .so/PTX binaries.
+            # Shared Volume so the first worker compiles and later workers reuse the
+            # cached Inductor .so/PTX binaries.
             "TORCHINDUCTOR_CACHE_DIR": "/compile-cache",
             "FUSION_POLICY_VALUE_LABEL_BINARY": MODAL_LABEL_BINARY_REMOTE_PATH,
         }
@@ -251,7 +229,6 @@ training_image = (
     )
 )
 
-# Volumes
 data_vol = modal.Volume.from_name(DATA_VOLUME_NAME, create_if_missing=True)
 ckpt_vol = modal.Volume.from_name(CHECKPOINT_VOLUME_NAME, create_if_missing=True)
 compile_cache_vol = modal.Volume.from_name(COMPILE_CACHE_VOLUME_NAME, create_if_missing=True)
@@ -265,9 +242,6 @@ def checkpoint_relative_path(path: str | Path) -> str:
     checkpoint_path = Path(path).resolve()
     checkpoint_root = Path(CKPT_DIR).resolve()
     return str(checkpoint_path.relative_to(checkpoint_root))
-
-
-# Upload data
 
 
 @app.local_entrypoint()
@@ -361,144 +335,42 @@ def _player_context_replay_relpath(run_id: str, relative_replay_path: str) -> Pa
     return _player_context_run_dir(run_id) / "replays" / relative_replay_path
 
 
-def preprocess_directory(
-    input_dir: str | Path,
-    output_path: str | Path,
-    max_files: int | None = None,
-    num_workers: int | None = None,
-) -> int:
-    try:
-        from .preprocess_replays import preprocess_directory as impl
-    except ImportError:
-        impl = _import_training_script_module("preprocess_replays").preprocess_directory
-    return impl(input_dir, output_path, max_files=max_files, num_workers=num_workers)
-
-
-def preprocess_replay_files(
-    replay_files: Sequence[str | Path],
-    output_path: str | Path,
-    *,
-    num_workers: int | None = None,
-) -> int:
-    try:
-        from .preprocess_replays import preprocess_replay_files as impl
-    except ImportError:
-        impl = _import_training_script_module("preprocess_replays").preprocess_replay_files
-    return impl(replay_files, output_path, num_workers=num_workers)
-
-
-def split_replay_files(
-    input_dir: str | Path,
-    *,
-    shard_count: int,
-    max_files: int | None = None,
-) -> list[list[Path]]:
-    try:
-        from .preprocess_replays import split_replay_files as impl
-    except ImportError:
-        impl = _import_training_script_module("preprocess_replays").split_replay_files
-    return impl(input_dir, shard_count=shard_count, max_files=max_files)
-
-
-def merge_preprocessed_shards(
-    shard_paths: Sequence[str | Path],
-    output_path: str | Path,
-    *,
-    expected_sample_count: int | None = None,
-) -> int:
-    try:
-        from .preprocess_replays import merge_preprocessed_shards as impl
-    except ImportError:
-        impl = _import_training_script_module("preprocess_replays").merge_preprocessed_shards
-    return impl(shard_paths, output_path, expected_sample_count=expected_sample_count)
-
-
-def merge_label_shards(
-    shard_paths: Sequence[str | Path],
-    output_path: str | Path,
-    *,
-    expected_count: int | None = None,
-) -> int:
-    try:
-        from .generate_policy_value_labels import merge_label_shards as impl
-    except ImportError:
-        impl = _import_training_script_module("generate_policy_value_labels").merge_label_shards
-    return impl(shard_paths, output_path, expected_count=expected_count)
-
-
-def split_requests_file(
-    requests_path: str | Path,
-    output_dir: str | Path,
-    *,
-    shard_count: int,
-) -> list[Path]:
-    try:
-        from .generate_policy_value_labels import split_requests_file as impl
-    except ImportError:
-        impl = _import_training_script_module("generate_policy_value_labels").split_requests_file
-    return impl(requests_path, output_dir, shard_count=shard_count)
-
-
 def _count_nonblank_lines(path: Path) -> int:
     with path.open() as handle:
         return sum(1 for line in handle if line.strip())
 
 
 def _validate_player_context_dataset_artifacts(data_path: Path) -> dict[str, int]:
-    example_schema = _import_training_utils_module("example_schema")
-    policy_schema = _import_training_utils_module("policy_value_schema")
-    validate_player_context_identity_alignment = (
-        _policy_value_pipeline_module().validate_player_context_identity_alignment
-    )
-    _group_ids_path = example_schema.group_ids_path
-    load_dataset_metadata = example_schema.load_dataset_metadata
-    load_player_context_metadata = policy_schema.load_player_context_metadata
-    policy_value_player_context_path = policy_schema.policy_value_player_context_path
-    policy_value_requests_path = policy_schema.policy_value_requests_path
-
-    dataset_metadata = load_dataset_metadata(data_path)
+    dataset_metadata = _example_schema.load_dataset_metadata(data_path)
     sample_count = int(dataset_metadata["sample_count"])
-    context_metadata = load_player_context_metadata(data_path)
+    context_metadata = _policy_value_schema.load_player_context_metadata(data_path)
     context_sample_count = int(context_metadata["sample_count"])
     if sample_count <= 0 or context_sample_count != sample_count:
         raise RuntimeError(
             f"player-context artifact sample_count mismatch: dataset={sample_count} player_context={context_sample_count}"
         )
 
-    groups_size = _group_ids_path(data_path).stat().st_size
+    groups_size = _example_schema.group_ids_path(data_path).stat().st_size
     if groups_size != sample_count * 8:
         raise RuntimeError(
             f"group ids size mismatch: expected {sample_count * 8}, got {groups_size}"
         )
-    request_count = _count_nonblank_lines(policy_value_requests_path(data_path))
-    context_count = _count_nonblank_lines(policy_value_player_context_path(data_path))
+    request_count = _count_nonblank_lines(_policy_value_schema.policy_value_requests_path(data_path))
+    context_count = _count_nonblank_lines(
+        _policy_value_schema.policy_value_player_context_path(data_path)
+    )
     if request_count != sample_count:
         raise RuntimeError(f"request count mismatch: expected {sample_count}, got {request_count}")
     if context_count != sample_count:
         raise RuntimeError(
             f"player-context count mismatch: expected {sample_count}, got {context_count}"
         )
-    validate_player_context_identity_alignment(data_path)
+    _policy_value_pipeline.validate_player_context_identity_alignment(data_path)
     return {
         "sample_count": sample_count,
         "request_count": request_count,
         "context_count": context_count,
     }
-
-
-def generate_policy_value_labels_for_dataset(
-    data_path: str | Path,
-    *,
-    output_path: str | Path | None = None,
-    num_workers: int | None = None,
-) -> Path:
-    try:
-        from .generate_policy_value_labels import generate_policy_value_labels_for_dataset as impl
-    except ImportError:
-        impl = import_module(
-            "training.scripts.generate_policy_value_labels"
-        ).generate_policy_value_labels_for_dataset
-    return impl(data_path, output_path=output_path, num_workers=num_workers)
 
 
 @app.local_entrypoint()
@@ -660,7 +532,7 @@ def launch_modal_player_context_artifact_pipeline_remote(
     nonempty_shard_paths = [
         Path(DATA_DIR) / str(result["shard_output_relpath"])
         for result in shard_results
-        if int(cast(int, result["sample_count"])) > 0
+        if int(cast("int", result["sample_count"])) > 0
     ]
     if not nonempty_shard_paths:
         raise RuntimeError(
@@ -672,7 +544,7 @@ def launch_modal_player_context_artifact_pipeline_remote(
         nonempty_shard_paths,
         merged_output,
         expected_sample_count=sum(
-            int(cast(int, result["sample_count"])) for result in shard_results
+            int(cast("int", result["sample_count"])) for result in shard_results
         ),
     )
     counts = _validate_player_context_dataset_artifacts(merged_output)
@@ -760,8 +632,6 @@ def _resume_modal_policy_value_label_merge(
     expected_count: int,
 ) -> int:
     data_vol.reload()
-    data_filename = data_path.name
-
     labels_path = required_policy_value_artifact_paths(data_path)[4]
     merged_count = merge_label_shards(
         [
@@ -864,20 +734,13 @@ def launch_modal_policy_value_label_pipeline(
     local_data_path: str = "training/training_data.bin",
     shard_count: int = 20,
 ) -> None:
-    try:
-        from .generate_policy_value_labels import ensure_modal_compatible_release_binary
-    except ImportError:
-        ensure_modal_compatible_release_binary = _import_training_script_module(
-            "generate_policy_value_labels"
-        ).ensure_modal_compatible_release_binary
-
     data_path = Path(local_data_path)
     readiness = artifact_readiness(data_path)
     if not readiness.dataset_ready:
         reasons = "; ".join(readiness.reasons) or "dataset artifacts are invalid"
         raise RuntimeError(f"Policy/value dataset artifacts are invalid locally: {reasons}")
 
-    modal_binary_path = ensure_modal_compatible_release_binary()
+    modal_binary_path = _generate_policy_value_labels.ensure_modal_compatible_release_binary()
     requests_path = data_path.with_name(f"{data_path.name}.policy_value.requests.jsonl")
     result: dict[str, object]
     with tempfile.TemporaryDirectory(prefix="policy-value-modal-shards-") as tmpdir:
@@ -1045,10 +908,7 @@ def train_policy_value_remote(
     search_policy_weight: float | None = None,
     player_policy_weight: float | None = None,
 ) -> str:
-    try:
-        from .train_policy_value import train_policy_value
-    except ImportError:
-        train_policy_value = import_module("training.scripts.train_policy_value").train_policy_value
+    train_policy_value = _import_training_script_module("train_policy_value").train_policy_value
 
     import torch
 
@@ -1119,12 +979,9 @@ def export_policy_value_onnx_remote(
     checkpoint_relpath: str,
     run_id: str | None = None,
 ) -> dict[str, str]:
-    try:
-        from .export_policy_value_onnx import export_policy_value_onnx
-    except ImportError:
-        export_policy_value_onnx = import_module(
-            "training.scripts.export_policy_value_onnx"
-        ).export_policy_value_onnx
+    export_policy_value_onnx = _import_training_script_module(
+        "export_policy_value_onnx"
+    ).export_policy_value_onnx
 
     resolved_run_id: str = run_id or policy_value_run_id("policy-value-export")
     checkpoint_path = Path(CKPT_DIR) / checkpoint_relpath
@@ -1220,26 +1077,28 @@ def _write_policy_value_sweep_smoke_artifacts(data_path: str | Path) -> Path:
 
     data_path = Path(data_path)
     data_path.parent.mkdir(parents=True, exist_ok=True)
-    example_schema = _import_training_utils_module("example_schema")
-    policy_schema = _import_training_utils_module("policy_value_schema")
 
     raw = np.zeros((2, 859), dtype=np.float32)
     raw.tofile(data_path)
-    np.asarray([1, 2], dtype=np.uint64).tofile(example_schema.group_ids_path(data_path))
-    example_schema.write_dataset_metadata(data_path, sample_count=2)
+    np.asarray([1, 2], dtype=np.uint64).tofile(_example_schema.group_ids_path(data_path))
+    _example_schema.write_dataset_metadata(data_path, sample_count=2)
 
-    policy_schema.policy_value_requests_path(data_path).write_text('{"request":1}\n{"request":2}\n')
-    policy_schema.policy_value_labels_path(data_path).write_text('{"label":1}\n{"label":2}\n')
-    policy_schema.write_policy_value_metadata(
+    _policy_value_schema.policy_value_requests_path(data_path).write_text(
+        '{"request":1}\n{"request":2}\n'
+    )
+    _policy_value_schema.policy_value_labels_path(data_path).write_text(
+        '{"label":1}\n{"label":2}\n'
+    )
+    _policy_value_schema.write_policy_value_metadata(
         data_path,
         sample_count=2,
-        generation_mode=policy_schema.GENERATION_MODE_SEARCH_ORACLE,
+        generation_mode=_policy_value_schema.GENERATION_MODE_SEARCH_ORACLE,
         policy_temperature=1.0,
     )
-    policy_schema.policy_value_player_context_path(data_path).write_text(
+    _policy_value_schema.policy_value_player_context_path(data_path).write_text(
         '{"context":1}\n{"context":2}\n'
     )
-    policy_schema.write_player_context_metadata(
+    _policy_value_schema.write_player_context_metadata(
         data_path, sample_count=2, recent_horizon=7, future_horizon=14
     )
     return data_path
@@ -1255,13 +1114,13 @@ def run_policy_value_sweep_remote(
     for spec in run_specs or []:
         call = train_policy_value_remote.spawn(
             data_filename=data_filename,
-            run_id=cast(str, spec["run_id"]),
+            run_id=cast("str", spec["run_id"]),
             supervision_mode=supervision_mode,
-            batch_size=cast(int, spec["batch_size"]),
-            num_workers=cast(int, spec["num_workers"]),
-            max_epochs=cast(int, spec["max_epochs"]),
-            lr=cast(float, spec["lr"]),
-            weight_decay=cast(float, spec["weight_decay"]),
+            batch_size=cast("int", spec["batch_size"]),
+            num_workers=cast("int", spec["num_workers"]),
+            max_epochs=cast("int", spec["max_epochs"]),
+            lr=cast("float", spec["lr"]),
+            weight_decay=cast("float", spec["weight_decay"]),
         )
         launched_runs.append({**spec, "call_id": call.object_id})
 
@@ -1386,7 +1245,7 @@ def launch_policy_value_sweep(
     print(f"  profile={PROFILE.name}")
     print(f"  data_filename={data_path.name}")
     print(f"  run_count={result['run_count']}")
-    for run in cast(list[dict[str, object]], result["runs"]):
+    for run in cast("list[dict[str, object]]", result["runs"]):
         print(
             f"  run_id={run['run_id']} call_id={run['call_id']} "
             f"lr={run['lr']} weight_decay={run['weight_decay']} "
@@ -1417,9 +1276,6 @@ def launch_policy_value_sweep_smoke(
     )
 
 
-# Teacher training (Optuna HPO)
-
-
 @app.function(
     image=training_image,
     gpu=PROFILE.resources.gpu,
@@ -1448,14 +1304,9 @@ def train_teacher_trial(
 
     import optuna
 
-    try:
-        from .optuna_objective import teacher_objective
-    except ImportError:
-        teacher_objective = import_module("training.scripts.optuna_objective").teacher_objective
+    teacher_objective = _import_training_script_module("optuna_objective").teacher_objective
 
-    # Copy training data from Volume FUSE (~200 MB/s) to local NVMe (~5 GB/s).
-    # This is a one-time cost per container that pays back on every epoch.
-    # If file already exists with matching size, skip recopy.
+    # Stage data locally to avoid Volume reads each epoch; reuse a size-matched copy.
     fuse_path = f"{DATA_DIR}/training_data.bin"
     local_path = "/tmp/training_data.bin"
     import os
@@ -1476,9 +1327,8 @@ def train_teacher_trial(
     else:
         print(f"[worker {trial_number}] Ready {size_gb:.1f} GB at /tmp")
 
-    # Each worker runs its own independent study with in-memory storage.
-    # No shared DB needed - workers explore independently and we pick
-    # the overall best result from all workers at the end.
+    # In-memory storage: each worker explores independently and fan_out picks the
+    # overall best result, so no shared Optuna DB is needed.
     study = optuna.create_study(
         study_name=f"fusion-teacher-worker-{trial_number}",
         direction="minimize",
@@ -1520,9 +1370,6 @@ def train_teacher_trial(
     }
 
 
-# Fan-out: parallel workers
-
-
 @app.local_entrypoint()
 def fan_out(
     num_workers: int = PROFILE.settings.default_parallel_workers,
@@ -1533,7 +1380,7 @@ def fan_out(
 
     Usage: modal run training/scripts/modal_app.py::fan_out --num-workers 5
 
-    Distributes trials across workers. Max 5 concurrent GPUs.
+    Worker count is capped at the profile's max_parallel_workers.
     """
     num_workers = min(num_workers, PROFILE.settings.max_parallel_workers)
     total_trials = trials_per_worker * num_workers
@@ -1541,7 +1388,7 @@ def fan_out(
     print(f"Launching {num_workers} workers × {trials_per_worker} trials = {total_trials} total")
     print(f"Max epochs per trial: {max_epochs}")
 
-    # Spawn parallel workers
+    # Spawn one worker per parallel GPU.
     handles = []
     for i in range(num_workers):
         handle = train_teacher_trial.spawn(
@@ -1567,7 +1414,7 @@ def fan_out(
             print(f"Failures: {failures}")
         return
 
-    # Find overall best
+    # Each worker owns an independent study, so pick the overall best across workers.
     best = min(results, key=lambda r: r["best_value"])
     print(f"\n{'=' * 60}")
     print(f"Best trial: #{best['best_trial_number']}")
@@ -1579,9 +1426,6 @@ def fan_out(
     print(f"{'=' * 60}")
 
 
-# Checkpoint discovery (runs on Modal to access volume)
-
-
 @app.function(
     image=training_image,
     volumes={CKPT_DIR: ckpt_vol},
@@ -1590,8 +1434,8 @@ def find_best_checkpoint(worker_number: int, trial_number: int) -> str | None:
     """Find best checkpoint file for a given worker/trial on the Modal volume.
 
     Returns:
-        Relative path (e.g. "worker_0/trial_2/best-epoch=50-val_total_loss=0.1234.ckpt")
-        or None if not found.
+        Path relative to CKPT_DIR (e.g.
+        "worker_0/trial_2/best-epoch=50-val_total_loss=0.1234.ckpt"), or None.
     """
     trial_dir = Path(f"{CKPT_DIR}/worker_{worker_number}/trial_{trial_number}")
     ckpt_vol.reload()
@@ -1599,9 +1443,6 @@ def find_best_checkpoint(worker_number: int, trial_number: int) -> str | None:
     if not ckpt_files:
         return None
     return str(ckpt_files[0]).removeprefix(f"{CKPT_DIR}/")
-
-
-# Student distillation
 
 
 @app.function(
@@ -1624,7 +1465,8 @@ def distill_student_remote(
     """Run student distillation on Modal GPU.
 
     Args:
-        teacher_checkpoint: Path relative to CKPT_DIR (e.g. "trial_42/best-epoch=50-val/total_loss=0.1234.ckpt")
+        teacher_checkpoint: Checkpoint path relative to CKPT_DIR, as returned by
+            find_best_checkpoint (e.g. "worker_0/trial_2/best-epoch=50-....ckpt").
 
     Returns:
         Path to best student checkpoint (relative to CKPT_DIR).
@@ -1632,16 +1474,12 @@ def distill_student_remote(
     import shutil
     import time
 
-    try:
-        from .distill_student import distill_student
-    except ImportError:
-        distill_student = import_module("training.scripts.distill_student").distill_student
+    distill_student = _import_training_script_module("distill_student").distill_student
 
-    # Reload checkpoint volume to see teacher checkpoints from HPO workers
+    # Checkpoints written by the HPO workers live on the same volume.
     ckpt_vol.reload()
 
-    # Copy training data from Volume FUSE to local NVMe.
-    # If file already exists with matching size, skip recopy.
+    # Stage data locally to avoid Volume reads each epoch; reuse a size-matched copy.
     fuse_path = f"{DATA_DIR}/training_data.bin"
     local_path = "/tmp/training_data.bin"
     import os
@@ -1680,18 +1518,14 @@ def distill_student_remote(
     ckpt_vol.commit()
     compile_cache_vol.commit()
 
-    # Return path relative to CKPT_DIR so callers can reconstruct.
-    # Lightning's best_model_path runs os.path.realpath() which resolves
-    # the /checkpoints symlink to /__modal/volumes/vo-<id>/..., so simple
-    # string prefix matching fails.  Use os.path to normalize robustly.
+    # Return a path relative to CKPT_DIR. Lightning's best_model_path is realpath'd,
+    # so it resolves the /checkpoints symlink to /__modal/volumes/vo-<id>/... and plain
+    # prefix stripping fails; realpath both sides instead.
     import os
 
     real_ckpt_dir = os.path.realpath(CKPT_DIR)
     real_best = os.path.realpath(str(best_path))
     return os.path.relpath(real_best, real_ckpt_dir)
-
-
-# Weight export
 
 
 @app.function(
@@ -1703,12 +1537,9 @@ def export_weights_remote(student_checkpoint: str) -> None:
 
     The output .bin file can be downloaded from the checkpoint volume.
     """
-    try:
-        from .export_weights import export_student_weights
-    except ImportError:
-        export_student_weights = import_module(
-            "training.scripts.export_weights"
-        ).export_student_weights
+    export_student_weights = _import_training_script_module(
+        "export_weights"
+    ).export_student_weights
 
     ckpt_path = f"{CKPT_DIR}/{student_checkpoint}"
     output_path = f"{CKPT_DIR}/student_weights.bin"
@@ -1717,9 +1548,6 @@ def export_weights_remote(student_checkpoint: str) -> None:
     print(f"Exported {n} floats ({n * 4} bytes) to {output_path}")
 
     ckpt_vol.commit()
-
-
-# Full pipeline
 
 
 @app.function(
@@ -1733,10 +1561,10 @@ def run_pipeline(
     teacher_epochs: int = PROFILE.settings.teacher_epochs,
     student_epochs: int = PROFILE.settings.student_epochs,
 ) -> dict[str, object]:
-    """Run the complete training pipeline on Modal: teacher HPO → distill → export.
+    """Run the complete training pipeline on Modal: teacher HPO -> distill -> export.
 
-    Runs entirely server-side - survives client disconnection.
-    Returns dict with pipeline results.
+    Runs server-side, so it survives client disconnection. Returns the pipeline
+    results dict.
     """
     num_workers = min(num_workers, PROFILE.settings.max_parallel_workers)
 
@@ -1809,7 +1637,7 @@ def run_pipeline(
     print("Phase 3: Weight Export")
     print("=" * 60)
 
-    # distill_student_remote now returns relative path, but guard against absolutes
+    # distill_student_remote returns a CKPT_DIR-relative path; strip a prefix if one appears.
     student_ckpt_rel = student_best
     if student_ckpt_rel.startswith(CKPT_DIR):
         student_ckpt_rel = student_ckpt_rel.removeprefix(CKPT_DIR).lstrip("/")

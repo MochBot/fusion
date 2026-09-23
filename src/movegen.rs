@@ -853,9 +853,10 @@ impl MovegenRequest {
     }
 }
 
-// Production dispatch: strict reach (no worklist-timing phantoms, no
-// phantom spin labels) with engine-exact Full/Mini strata, at 2-4x the
-// hybrid's speed. The scalar engine remains the labeled parity oracle.
+// Production dispatch: strict reach by construction (no worklist-timing
+// phantoms, no phantom spin labels) with engine-exact Full/Mini strata, so no
+// post-generation reachability filter is needed. The scalar engine remains the
+// labeled parity oracle.
 pub fn generate_with_request(b: &Board, moves: &mut MoveBuffer, request: MovegenRequest) {
     crate::smear_core::generate_smear(b, moves, request.piece, request.force);
 
@@ -1771,9 +1772,8 @@ mod tests {
 
     #[test]
     fn generate_equals_engine_on_clean_height_boundaries() {
-        // Clean flat boards have no phantoms; strict generate() must equal
-        // the sorted engine output at every height band the old hybrid
-        // routed differently.
+        // Clean flat boards have no phantoms, so strict generate() must equal
+        // the sorted engine output at each height boundary below.
         for h in [13usize, 18, 23, 24, 25, 29] {
             let b = board_with_height(h);
             for &p in &[Piece::I, Piece::S, Piece::Z, Piece::L, Piece::J] {
@@ -1876,10 +1876,9 @@ mod tests {
         moves.as_slice().iter().map(|m| m.raw()).collect()
     }
 
-    // With the canonical-frame in_bounds fix, the pathfinder filter is exact
-    // on strict emissions, so filtering strict generate() by move_reachable
-    // must be the identity (the old blind spot, including probe case-13's
-    // NoSpin I North (1,7) placement, is pinned closed).
+    // With the canonical-frame in_bounds fix, filtering strict generate() by
+    // move_reachable must be the identity, including probe case-13's NoSpin I
+    // North (1,7) placement.
     #[test]
     fn pathfinder_filter_is_identity_on_strict_generate() {
         pathfinder_filter_identity_corpus(200, 12);

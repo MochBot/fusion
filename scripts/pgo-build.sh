@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
-# PGO build for fusion-engine perft engine
-#
-# Three-step:
-#   1. Instrumented build, run D5 perft to collect profile data
-#   2. Merge .profraw files
-#   3. Rebuild with profile data applied
+# Build perft_cli with profile-guided optimization using a D5 training run.
 #
 # Usage:
 #   ./scripts/pgo-build.sh          # full PGO cycle + D5 benchmark
@@ -32,11 +27,10 @@ echo "=== Step 1: Instrumented build + D5 profile collection ==="
 rm -rf "$PGO_DIR"
 mkdir -p "$PGO_DIR"
 
-# build instrumented binary
+# Instrumented build, then the D5 profile-collecting run.
 RUSTFLAGS="-Cprofile-generate=$PGO_DIR" \
     cargo build --release --bin perft_cli 2>&1
 
-# run D5 as training workload (exercises generate() heavily)
 echo "running D5 training workload..."
 RUSTFLAGS="-Cprofile-generate=$PGO_DIR" \
     cargo run --release --bin perft_cli -- 5 2>&1

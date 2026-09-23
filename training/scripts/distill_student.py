@@ -60,7 +60,7 @@ class StudentDistillModule(L.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
-        # Load frozen teacher
+        # Frozen teacher: the distillation target.
         self.teacher = TeacherLitModule.load_from_checkpoint(
             teacher_checkpoint,
             strict=False,
@@ -68,7 +68,6 @@ class StudentDistillModule(L.LightningModule):
         self.teacher.freeze()
         self.teacher.eval()
 
-        # Student to train
         self.student = StudentNet()
 
         self.alpha = alpha
@@ -76,7 +75,7 @@ class StudentDistillModule(L.LightningModule):
         self.temperature = temperature
 
     def configure_model(self) -> None:
-        """Compile student network for kernel fusion on B200 (no CUDA Graphs - batch sizes vary)."""
+        """Compile the student for kernel fusion; no CUDA Graphs because batch sizes vary."""
         self.student = cast(StudentNet, torch.compile(self.student, mode="default", dynamic=False))
 
     def forward(self, features: torch.Tensor) -> torch.Tensor:
@@ -87,24 +86,24 @@ class StudentDistillModule(L.LightningModule):
     ) -> torch.Tensor:
         features = batch["features"]
 
-        # Teacher forward (no grad)
+        # Frozen teacher targets, computed without grad.
         with torch.no_grad():
             teacher_out = self.teacher(features)
             teacher_reg = teacher_out["regression"]  # (B, 6)
             teacher_phase = teacher_out["phase_logits"]  # (B, 3)
 
-        # Student forward
         student_model = cast(StudentNet, self.student)
         student_raw = student_model(features)  # (B, 9)
         student_reg, student_phase = student_model.split_output(student_raw)
 
-        # Regression loss: MSE between student and teacher predictions
         reg_loss = F.mse_loss(student_reg, teacher_reg)
 
-        # Phase distillation: KL divergence with temperature scaling
+        # Temperature-scaled phase distillation. F.kl_div(log_target=True) takes
+        # (student_log_softmax, teacher_log_softmax) and computes
+        # sum(teacher * (log_teacher - log_student)); the T**2 factor restores the
+        # gradient scale that the softened logits would otherwise shrink.
         teacher_soft = F.log_softmax(teacher_phase / self.temperature, dim=1)
         student_log_soft = F.log_softmax(student_phase / self.temperature, dim=1)
-        # KL(teacher || student) = sum(teacher * (log_teacher - log_student))
         kl_loss = F.kl_div(
             student_log_soft,
             teacher_soft,
@@ -115,7 +114,7 @@ class StudentDistillModule(L.LightningModule):
         total_loss = self.alpha * reg_loss + self.beta * kl_loss
 
         self.log(f"{stage}/total_loss", total_loss, prog_bar=(stage == "val"))
-        # Underscore alias for ModelCheckpoint filename interpolation
+        # Underscore alias for ModelCheckpoint filename interpolation.
         self.log(f"{stage}_total_loss", total_loss)
         self.log(f"{stage}/reg_loss", reg_loss)
         self.log(f"{stage}/kl_loss", kl_loss)
@@ -217,7 +216,7 @@ def distill_student(
 
     trainer.fit(model, datamodule=dm)
 
-    # Return best checkpoint path
+    # callbacks[0] is the ModelCheckpoint; best_model_path is set once fit has run.
     best = callbacks[0]
     assert isinstance(best, ModelCheckpoint)
     assert best.best_model_path is not None

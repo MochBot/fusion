@@ -50,7 +50,7 @@ class FusionBinaryDataset(Dataset[dict[str, torch.Tensor]]):
     Layout: [player_board(400) | opponent_board(400) | pieces(49) | scalars(5) | labels(5)]
 
     Horizontal mirror augmentation flips both boards left-right (column reflection)
-    while keeping piece one-hots and scalars unchanged. This doubles effective dataset
+    while keeping piece one-hots and scalars unchanged, doubling effective dataset
     size without storing extra data.
     """
 
@@ -135,25 +135,23 @@ class MirrorAugmentedDataset(Dataset[dict[str, torch.Tensor]]):
 
 
 def _mirror_board(board_flat: np.ndarray) -> np.ndarray:
-    """Horizontally mirror a column-major board (400,) → (400,).
+    """Horizontally mirror a column-major board (400,) -> (400,).
 
-    Board is stored column-major: columns 0..9, each 40 cells high.
-    Mirror = reverse column order: col[i] ↔ col[9-i].
+    Columns 0..9 are each 40 cells high, so mirroring reverses the column order
+    (col[i] <-> col[9-i]).
     """
     board = board_flat.reshape(BOARD_WIDTH, BOARD_HEIGHT)  # (10, 40) col-major
     return board[::-1].reshape(-1).copy()
 
 
 def _mirror_features(features: np.ndarray) -> np.ndarray:
-    """Mirror both boards in feature vector, keep pieces/scalars unchanged."""
+    """Mirror both boards in the feature vector; pieces and scalars are unchanged."""
     result = features.copy()
-    # player board: [0..400)
     result[:PLAYER_BOARD_FEATURES] = _mirror_board(
         features[:PLAYER_BOARD_FEATURES]
     )
-    # opponent board: [400..800)
     opp_start = PLAYER_BOARD_FEATURES
     opp_end = opp_start + OPPONENT_BOARD_FEATURES
     result[opp_start:opp_end] = _mirror_board(features[opp_start:opp_end])
-    # pieces [800..849) and scalars [849..854) stay unchanged
+    # pieces [800..849) and scalars [849..854) keep their slot order.
     return result

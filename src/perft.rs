@@ -7,9 +7,6 @@ use crate::smear::{band_words, h_gen, SBoard, TLINES};
 use crate::smear_core::{
     count_smear_band, count_smear_band_pair, count_smear_rows, generate_placements, pack_band,
 };
-#[cfg(feature = "rayon")]
-use rayon::prelude::*;
-
 const QUEUE: [Piece; 7] = [
     Piece::I,
     Piece::O,
@@ -323,50 +320,13 @@ pub fn divide(board: &Board, depth: usize) -> u64 {
     total
 }
 
-/// parallel perft: two-level work split for high core saturation
-pub fn perft_parallel(board: &Board, depth: usize) -> u64 {
-    if depth <= 2 {
-        return perft(board, 0, depth);
-    }
-
-    // expand first 2 plies into work units
-    let piece0 = queue_piece(0);
-    let ml0 = placements(board, piece0);
-
-    let work_units: Vec<Board> = ml0
-        .iter()
-        .flat_map(|m0| {
-            let mut b1 = board.clone();
-            b1.do_move(m0);
-            let piece1 = queue_piece(1);
-            let ml1 = placements(&b1, piece1);
-            ml1.iter()
-                .map(|m1| {
-                    let mut b2 = b1.clone();
-                    b2.do_move(m1);
-                    b2
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect();
-
-    #[cfg(feature = "rayon")]
-    {
-        work_units.par_iter().map(|b| perft(b, 2, depth - 2)).sum()
-    }
-    #[cfg(not(feature = "rayon"))]
-    {
-        work_units.iter().map(|b| perft(b, 2, depth - 2)).sum()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // Strict placement-tree pins. D1-D4 unchanged; D5 drops
-    // 3,573,524 -> 3,500,883 (-2.03%) because the old emission tree
-    // over-produced on L/J overhangs. Cross-validated by reference BFS.
+    // Strict placement-tree pins, cross-validated by reference BFS. D1-D5 match
+    // the cobra baselines; an emission tree that over-produces on L/J overhangs
+    // reaches 3,573,524 at D5 instead.
     const D1: u64 = 17;
     const D2: u64 = 153;
     const D3: u64 = 5266;

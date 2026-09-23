@@ -22,6 +22,7 @@ CLOUD_EXEC_SKIP=1 cargo run --bin policy_value_runtime_smoke -- path/to/model.on
 ```
 
 Replay collection scripts live in `training/recovered/replay-collector/`. Canonical corpus: `data/replays-x-xplus/`.
+The full X/X+ collector does not parse `--help` and starts collection when invoked; do not run a live scrape as a verification step.
 
 Wave resume reuses the records selection next to the selected manifest:
 the manifest must live in `<out>/_meta` (pass the matching `--out` for

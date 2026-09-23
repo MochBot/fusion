@@ -11,11 +11,10 @@
 //!
 //! The ranking walks the captured replay-round fixture through the real
 //! `recognize_round_profiled` path on a shared cache, so every cold record is
-//! observed from actual execution: no copied shortlist, no separate graph
-//! preflight. The top records are then recompiled one by one with the actual
-//! compiler under stage profiling. Measurement only; the single assert per
-//! top record is determinism (stage recompile agrees with the cold outcome),
-//! never a timing threshold.
+//! observed from actual execution. The top records are then recompiled one by
+//! one with the actual compiler under stage profiling. Measurement only; the
+//! single assert per top record is determinism (stage recompile agrees with the
+//! cold outcome), never a timing threshold.
 //!
 //! Stage columns are exclusive leaves (`legality`, `intern`, `transition`,
 //! `finish`); `other-residual` is the residual of that same compile and also

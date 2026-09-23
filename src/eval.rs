@@ -1,12 +1,11 @@
-// eval.rs -- board-quality-only evaluation
-// presim (beam search) handles tactics; eval scores board shape only
+// Board-shape evaluation only; beam search handles tactics.
 
 use crate::board::Board;
 use crate::header::*;
 
 #[derive(Clone, Debug)]
 pub struct EvalWeights {
-    // -- existing board-shape features --
+    // Board-shape features.
     pub holes: f32,
     pub cell_coveredness: f32,
     pub height: f32,
@@ -16,7 +15,7 @@ pub struct EvalWeights {
     pub bumpiness_sq: f32,
     pub row_transitions: f32,
     pub well_depth: f32,
-    // -- structural pattern bonuses --
+    // Structural pattern bonuses.
     pub tsd_overhang: f32,
     pub four_wide_well: f32,
 }
