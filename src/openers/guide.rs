@@ -19,6 +19,8 @@ use crate::openers::recognition::round::{RoundHypothesis, RoundRecognition};
 use crate::openers::segments::{derive_placements, floor_up_letters, ShowcasePlacement};
 
 pub const GUIDE_VARIATION_LIMIT: usize = 6;
+/// Most guides built for catalogued matches other than the primary guide's.
+pub const GUIDE_ALTERNATIVE_LIMIT: usize = 6;
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -118,7 +120,10 @@ pub(crate) struct GuideSubject {
     pub basis: GuideBasis,
     pub record_id: String,
     pub node_id: Option<u32>,
-    pub mirrored: bool,
+    /// The chirality an exact catalogued board established. Recognition keys
+    /// fold a board with its mirror image, so without one the player's own
+    /// boards decide it.
+    pub mirrored: Option<bool>,
     /// The deepest lock confirmation accepted as exact; divergence is sought
     /// only after it.
     pub anchor_lock: Option<usize>,
@@ -127,7 +132,7 @@ pub(crate) struct GuideSubject {
 /// Chooses the guide's subject from the walk's deepest surviving point.
 ///
 /// A singleton exact match names the record when its recognition hypothesis is
-/// still viable; that hypothesis supplies the authored node and mirror state.
+/// still viable; that hypothesis supplies the authored node.
 /// Tied confirmations and nearest matches continue to follow the top hypothesis.
 /// Naming is withheld while an unconfirmed tie spans different shapes, or while
 /// the selected hypothesis has crossed an opaque identity boundary.
@@ -189,9 +194,7 @@ pub(crate) fn select_subject(
         },
         record_id: selected.record.clone(),
         node_id,
-        mirrored: confirmed
-            .and_then(|opener| opener.mirrored)
-            .unwrap_or(selected.mirrored),
+        mirrored: confirmed.and_then(|opener| opener.mirrored),
         anchor_lock: matched
             .filter(|_| confirmed.is_some())
             .map(|matched| matched.anchor_index),
@@ -228,6 +231,39 @@ fn tied_hypotheses_share_shape(
         })
 }
 
+/// Guides for the catalogued matches the primary guide is not about, in match
+/// order. Each matched the round's board exactly, so each is confirmed, but
+/// none is preferred: a tie still has no primary guide. `recognize_record`
+/// aligns the round against one record, so each deviation is that record's.
+pub(crate) fn alternative_guides(
+    catalog: &OpenerCatalog,
+    matched: Option<&RoundCataloguedBoardMatch>,
+    primary: Option<&OpenerGuide>,
+    observations: &[Option<PreparedObservation>],
+    recognize_record: impl Fn(&str) -> Option<RoundRecognition>,
+) -> Vec<OpenerGuide> {
+    let Some(matched) = matched else {
+        return Vec::new();
+    };
+    matched
+        .matching_openers
+        .iter()
+        .filter(|opener| primary.is_none_or(|guide| guide.record_id != opener.id))
+        .filter_map(|opener| {
+            let subject = GuideSubject {
+                basis: GuideBasis::Confirmed,
+                record_id: opener.id.clone(),
+                node_id: deepest_candidate(catalog, &opener.id, &opener.candidate_node_ids),
+                mirrored: opener.mirrored,
+                anchor_lock: Some(matched.anchor_index),
+            };
+            let recognition = recognize_record(&opener.id);
+            build_guide(catalog, &subject, observations, recognition.as_ref())
+        })
+        .take(GUIDE_ALTERNATIVE_LIMIT)
+        .collect()
+}
+
 pub(crate) fn build_guide(
     catalog: &OpenerCatalog,
     subject: &GuideSubject,
@@ -240,13 +276,15 @@ pub(crate) fn build_guide(
         .and_then(|node_id| node_by_id(record, node_id))
         .or_else(|| deepest_lettered_root_path_node(record))?;
     let path = path_to(record, anchor)?;
-    let mirrored = subject.mirrored;
+    let mirrored = subject
+        .mirrored
+        .unwrap_or_else(|| built_mirrored(&path, observations));
 
     let mut phases = path
         .iter()
         .map(|node| guide_phase(record, node, mirrored))
         .collect::<Vec<_>>();
-    let rounded_phase = rounded_child_phase(record, anchor, subject, observations);
+    let rounded_phase = rounded_child_phase(record, anchor, subject, mirrored, observations);
     if let Some(phase) = &rounded_phase {
         phases.push(phase.clone());
     }
@@ -356,6 +394,62 @@ fn guide_rows(rows_top_down: &[String], mirrored: bool) -> Vec<String> {
     floor_up_letters(rows_top_down, mirrored)
 }
 
+/// Whether the player's boards fit the mirror of `path` better than its
+/// authored chirality: each phase is compared with the player's board at the
+/// same piece count, and the chirality with fewer differing cells wins. A
+/// tie, including a round with no comparable board, keeps the authored one.
+fn built_mirrored(path: &[&OpenerTreeNode], observations: &[Option<PreparedObservation>]) -> bool {
+    let differing_cells = |mirrored: bool| -> u32 {
+        path.iter()
+            .filter_map(|node| {
+                let observation = observations
+                    .get((node.pieces as usize).checked_sub(1)?)?
+                    .as_ref()?;
+                let stripped = observation.normalized.as_ref()?;
+                let player = letter_rows(&stripped.masks, stripped.letters.as_deref());
+                let target = floor_up_letters(
+                    node.pre_clear_rows.as_deref().unwrap_or(&node.rows),
+                    mirrored,
+                );
+                let differences = cell_differences(&player, &target);
+                Some(differences.missing + differences.stray + differences.wrong_letter)
+            })
+            .sum()
+    };
+    differing_cells(true) < differing_cells(false)
+}
+
+struct CellDifferences {
+    missing: u32,
+    stray: u32,
+    wrong_letter: u32,
+}
+
+/// Floor-up rows, `_` empty and `X` a cell of unknown letter.
+fn cell_differences(player_rows: &[String], target_rows: &[String]) -> CellDifferences {
+    let mut differences = CellDifferences {
+        missing: 0,
+        stray: 0,
+        wrong_letter: 0,
+    };
+    let height = player_rows.len().max(target_rows.len());
+    for y in 0..height {
+        let player = player_rows.get(y).map_or("__________", String::as_str);
+        let expected = target_rows.get(y).map_or("__________", String::as_str);
+        for (mine, theirs) in player.bytes().zip(expected.bytes()) {
+            match (mine != b'_', theirs != b'_') {
+                (false, true) => differences.missing += 1,
+                (true, false) => differences.stray += 1,
+                (true, true) if theirs != b'X' && mine != b'X' && mine != theirs => {
+                    differences.wrong_letter += 1
+                }
+                _ => {}
+            }
+        }
+    }
+    differences
+}
+
 /// Where the player's build left the catalogued route, compared at the
 /// locked-piece ordinal of the shape they were building toward.
 ///
@@ -458,24 +552,11 @@ fn deviation(
         target_rows,
         ..
     } = best?;
-    let mut missing = 0;
-    let mut stray = 0;
-    let mut wrong_letter = 0;
-    let height = player_rows.len().max(target_rows.len());
-    for y in 0..height {
-        let player = player_rows.get(y).map_or("__________", String::as_str);
-        let expected = target_rows.get(y).map_or("__________", String::as_str);
-        for (mine, theirs) in player.bytes().zip(expected.bytes()) {
-            match (mine != b'_', theirs != b'_') {
-                (false, true) => missing += 1,
-                (true, false) => stray += 1,
-                (true, true) if theirs != b'X' && mine != b'X' && mine != theirs => {
-                    wrong_letter += 1
-                }
-                _ => {}
-            }
-        }
-    }
+    let CellDifferences {
+        missing,
+        stray,
+        wrong_letter,
+    } = cell_differences(&player_rows, &target_rows);
     if missing + stray + wrong_letter == 0 {
         return None;
     }
@@ -495,6 +576,7 @@ fn rounded_child_phase(
     record: &OpenerRecord,
     anchor: &OpenerTreeNode,
     subject: &GuideSubject,
+    mirrored: bool,
     observations: &[Option<PreparedObservation>],
 ) -> Option<GuidePhase> {
     if subject.basis != GuideBasis::Confirmed {
@@ -546,14 +628,14 @@ fn rounded_child_phase(
                 if letters.next().is_some() {
                     return false;
                 }
-                let letter = if subject.mirrored {
+                let letter = if mirrored {
                     mirror_piece_letter(letter)
                 } else {
                     letter
                 };
                 player_rows.iter().any(|rows| {
                     placement.cells.iter().all(|[x, y]| {
-                        let x = if subject.mirrored { 9 - *x } else { *x };
+                        let x = if mirrored { 9 - *x } else { *x };
                         rows.get(usize::from(*y))
                             .and_then(|row| row.chars().nth(usize::from(x)))
                             .is_some_and(|observed| observed == letter || observed == 'X')
@@ -570,7 +652,7 @@ fn rounded_child_phase(
             best = Some((child, matched_placements));
         }
     }
-    best.map(|(child, _)| guide_phase(record, child, subject.mirrored))
+    best.map(|(child, _)| guide_phase(record, child, mirrored))
 }
 
 fn letter_rows(masks: &[u16], letters: Option<&[String]>) -> Vec<String> {

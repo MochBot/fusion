@@ -317,6 +317,76 @@ fn mirrored_build_renders_mirrored_boards_and_promotes_the_mirror_clause() {
     assert_eq!(guide.requirements.dependencies.as_deref(), Some("J>Z"));
 }
 
+/// Two records that share their first board but not their shape.
+const TWIN_CATALOG: &str = r#"{
+  "formatVersion": 2,
+  "openers": [
+    {
+      "id": "twin-a",
+      "aliases": {"en": "Twin A"},
+      "shapeKey": "twin-a",
+      "tree": [
+        {"id": 1, "parent": null, "pieces": 1, "rows": ["LLLL______"]},
+        {"id": 2, "parent": 1, "pieces": 2, "rows": ["LLLL____ZZ"], "routeName": "A Route"}
+      ]
+    },
+    {
+      "id": "twin-b",
+      "aliases": {"en": "Twin B"},
+      "shapeKey": "twin-b",
+      "tree": [
+        {"id": 1, "parent": null, "pieces": 1, "rows": ["LLLL______"]},
+        {"id": 2, "parent": 1, "pieces": 2, "rows": ["LLLLOO____"], "routeName": "B Route"}
+      ]
+    }
+  ]
+}"#;
+
+#[test]
+fn a_tie_names_no_guide_but_builds_one_for_every_tied_opener() {
+    let _scope = crate::openers::isolated_catalog_test();
+    install(TWIN_CATALOG);
+
+    let analysis = analyze(vec![Some(observation(0b0000001111, "LLLL______"))]);
+
+    let matched = analysis
+        .catalogued_board_match
+        .as_ref()
+        .expect("the shared board is catalogued");
+    assert_eq!(matched.matching_openers.len(), 2);
+    assert!(
+        analysis.guide.is_none(),
+        "a tie across shapes must not invent a primary guide"
+    );
+    let alternatives = analysis
+        .alternative_guides
+        .iter()
+        .map(|guide| (guide.record_id.as_str(), guide.basis, guide.phases.len()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        alternatives,
+        [
+            ("twin-a", GuideBasis::Confirmed, 1),
+            ("twin-b", GuideBasis::Confirmed, 1)
+        ]
+    );
+}
+
+#[test]
+fn the_primary_guide_is_not_repeated_among_the_alternatives() {
+    let _scope = crate::openers::isolated_catalog_test();
+    install(TWIN_CATALOG);
+
+    let analysis = analyze(vec![
+        Some(observation(0b0000001111, "LLLL______")),
+        Some(observation(0b1100001111, "LLLL____ZZ")),
+    ]);
+
+    let guide = analysis.guide.expect("the deeper board names twin A");
+    assert_eq!(guide.record_id, "twin-a");
+    assert!(analysis.alternative_guides.is_empty());
+}
+
 #[test]
 fn leaf_anchor_lists_its_siblings_as_other_variations() {
     let _scope = crate::openers::isolated_catalog_test();

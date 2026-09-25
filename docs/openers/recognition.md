@@ -123,6 +123,19 @@ Otherwise there is no guide. On the 34-round perf fixture this yields 25
 confirmed (4 of them tie-broken by recognition), 2 nearest, and 7 silent
 rounds; every silent round is a margin-0 tie across unrelated records.
 
+A confirmed guide takes its chirality from the catalogued board match. A
+nearest guide cannot take it from recognition, whose canonical keys fold a
+board with its mirror, so it compares each phase with the player's board at
+the same piece count and uses the mirror when that differs in fewer cells; a
+tie keeps the authored chirality.
+
+`alternativeGuides` holds a confirmed guide for each other catalogued match,
+in match order and capped at `GUIDE_ALTERNATIVE_LIMIT`, so a reader can switch
+between openers that share the board. A silent tie leaves `guide` empty and
+lists every tied record here; none of them is preferred. Round recognition's
+per-lock cost is the cheapest over the whole shortlist, so each alternative's
+deviation comes from aligning the round against that record alone.
+
 The deviation compares the player's board with the shape they were building
 toward at that shape's locked-piece ordinal, so both boards hold the same
 number of placed pieces. `divergenceLock` is the first lock past the confirmed

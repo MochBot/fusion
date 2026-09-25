@@ -26,7 +26,7 @@ pub use catalog::{OpenerLink, OpenerNodeEst};
 pub use catalogued_match::{MatchingOpener, RoundCataloguedBoardMatch};
 pub use guide::{
     GuideAliases, GuideBasis, GuideDeviation, GuidePhase, GuideRequirements, GuideVariation,
-    OpenerGuide, GUIDE_VARIATION_LIMIT,
+    OpenerGuide, GUIDE_ALTERNATIVE_LIMIT, GUIDE_VARIATION_LIMIT,
 };
 pub use matcher::BoardMatch;
 pub use phase::{OpenerAssessment, OpenerObservation};

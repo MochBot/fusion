@@ -3,7 +3,7 @@ use crate::openers::catalog::{OpenerCatalog, OpenerRecord};
 use crate::openers::catalogued_match::{
     match_catalogued_boards, MatchingOpener, RoundCataloguedBoardMatch,
 };
-use crate::openers::guide::{select_subject, GuideBasis};
+use crate::openers::guide::{alternative_guides, build_guide, select_subject, GuideBasis};
 use crate::openers::matcher::BoardMatch;
 use crate::openers::phase::{
     assess_opener_phase, prepare_observations, OpenerAssessment, OpenerObservation,
@@ -16,7 +16,8 @@ use super::super::compile::{compile_recognition_graph, CompileBudget};
 use super::super::cost::{EditCosts, EditOps};
 use super::super::graph::{RecognitionGraph, StateId, TransitionLabel};
 use super::{
-    recognize_round, shortlist, singleton_confirmed_id, RoundHypothesis, RoundRecognition,
+    recognize_round, shortlist, singleton_confirmed_id, RoundHypothesis, RoundLockRecognition,
+    RoundRecognition,
 };
 use crate::openers::recognition::RecordGraphCache;
 
@@ -173,6 +174,156 @@ fn singleton_confirmation_does_not_override_lower_cost_recognition() {
     assert_eq!(subject.record_id, "alternate");
     assert_eq!(subject.node_id, Some(19));
     assert_eq!(subject.anchor_lock, None);
+}
+
+const CHIRAL_CATALOG: &str = r#"{
+  "formatVersion": 2,
+  "openers": [{
+    "id": "chiral",
+    "aliases": {"en": "Chiral"},
+    "shapeKey": "chiral",
+    "tree": [
+      {"id": 1, "parent": null, "pieces": 1, "rows": ["LLLL______"]},
+      {"id": 2, "parent": 1, "pieces": 2, "rows": ["LLLL____ZZ"]}
+    ]
+  }]
+}"#;
+
+fn one_row(letters: &str) -> Option<OpenerObservation> {
+    let mask = letters
+        .bytes()
+        .enumerate()
+        .filter(|(_, cell)| *cell != b'_')
+        .fold(0u16, |mask, (x, _)| mask | (1 << x));
+    Some(OpenerObservation {
+        post_board: Some(vec![mask]),
+        post_gmask: Some(vec![0]),
+        post_letters: Some(vec![letters.to_owned()]),
+    })
+}
+
+/// Recognition keys fold a board with its mirror image, so a hypothesis
+/// carries the authored chirality whichever one the player built. A nearest
+/// guide must take the chirality from the player's boards instead.
+#[test]
+fn nearest_guide_takes_the_chirality_the_player_built() {
+    let catalog: OpenerCatalog =
+        serde_json::from_str(CHIRAL_CATALOG).expect("chiral catalog should parse");
+    let recognition = recognition(vec![hypothesis("chiral", 2, 40, 40)]);
+    let subject = select_subject(&catalog, None, Some(&recognition))
+        .expect("the viable hypothesis should carry a nearest guide");
+    assert_eq!(subject.basis, GuideBasis::Nearest);
+    assert_eq!(subject.mirrored, None);
+
+    let guide_for = |observations: &[Option<OpenerObservation>]| {
+        build_guide(
+            &catalog,
+            &subject,
+            &prepare_observations(observations),
+            Some(&recognition),
+        )
+        .expect("the record resolves")
+    };
+
+    // The mirror of the route, one cell short at piece 2.
+    let mirror_build = guide_for(&[one_row("______JJJJ"), one_row("_S____JJJJ")]);
+    assert!(mirror_build.mirrored);
+    assert_eq!(mirror_build.phases[1].rows, ["SS____JJJJ"]);
+
+    // The same slip in the authored chirality keeps it.
+    let authored_build = guide_for(&[one_row("LLLL______"), one_row("LLLL____Z_")]);
+    assert!(!authored_build.mirrored);
+    assert_eq!(authored_build.phases[1].rows, ["LLLL____ZZ"]);
+
+    // No board to compare leaves the authored chirality.
+    assert!(!guide_for(&[]).mirrored);
+}
+
+const TWIN_CATALOG: &str = r#"{
+  "formatVersion": 2,
+  "openers": [
+    {
+      "id": "twin-a",
+      "aliases": {"en": "Twin A"},
+      "shapeKey": "twin-a",
+      "tree": [
+        {"id": 1, "parent": null, "pieces": 1, "rows": ["LLLL______"]},
+        {"id": 2, "parent": 1, "pieces": 2, "rows": ["LLLL____ZZ"]}
+      ]
+    },
+    {
+      "id": "twin-b",
+      "aliases": {"en": "Twin B"},
+      "shapeKey": "twin-b",
+      "tree": [
+        {"id": 1, "parent": null, "pieces": 1, "rows": ["LLLL______"]},
+        {"id": 2, "parent": 1, "pieces": 2, "rows": ["LLLLOO____"]}
+      ]
+    }
+  ]
+}"#;
+
+fn twin(id: &str) -> MatchingOpener {
+    MatchingOpener {
+        id: id.to_owned(),
+        name: id.to_owned(),
+        deepest_pieces: 1,
+        candidate_node_ids: vec![1],
+        route_name: None,
+        mirrored: Some(false),
+    }
+}
+
+fn locks(costs: &[u32]) -> Vec<RoundLockRecognition> {
+    costs
+        .iter()
+        .map(|cost| RoundLockRecognition {
+            best_cost: Some(*cost),
+            unknown_cost: 6,
+            active_states: 1,
+            exact_hits: 0,
+            opaque_entries: 0,
+        })
+        .collect()
+}
+
+/// Shortlist-wide lock costs stay zero while any record fits, so each
+/// alternative takes its departure from an alignment against its own record.
+#[test]
+fn each_alternative_guide_departs_where_its_own_record_does() {
+    let catalog: OpenerCatalog =
+        serde_json::from_str(TWIN_CATALOG).expect("twin catalog should parse");
+    let matched = RoundCataloguedBoardMatch {
+        first_match_index: 0,
+        anchor_index: 0,
+        matching_openers: vec![twin("twin-a"), twin("twin-b")],
+    };
+    let observations = prepare_observations(&[
+        one_row("LLLL______"),
+        one_row("LLLLS_____"),
+        one_row("LLLLSS____"),
+    ]);
+    let asked = std::cell::RefCell::new(Vec::new());
+
+    let guides = alternative_guides(&catalog, Some(&matched), None, &observations, |id| {
+        asked.borrow_mut().push(id.to_owned());
+        let mut own = recognition(Vec::new());
+        own.per_lock = match id {
+            "twin-a" => locks(&[0, 5, 9]),
+            _ => locks(&[0, 0, 4]),
+        };
+        Some(own)
+    });
+
+    assert_eq!(*asked.borrow(), ["twin-a", "twin-b"]);
+    let departures = guides
+        .iter()
+        .map(|guide| {
+            let deviation = guide.deviation.as_ref().expect("both routes were left");
+            (guide.record_id.as_str(), deviation.divergence_lock)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(departures, [("twin-a", 1), ("twin-b", 2)]);
 }
 
 #[test]

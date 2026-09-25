@@ -3,7 +3,7 @@
 mod tests;
 use serde::{Deserialize, Serialize};
 
-use super::align::{align_round_exact_retaining_record, AlignBudget, Observation};
+use super::align::{align_round_exact_retaining_record, AlignBudget, AlignmentResult, Observation};
 use super::cache::RecordGraphCache;
 use super::cost::{EditCosts, EditOps};
 use super::graph::CanonicalKey;
@@ -156,10 +156,68 @@ fn recognize_round_core(
     }
     #[cfg(all(test, not(target_arch = "wasm32")))]
     let result_started = std::time::Instant::now();
+    let recognition = round_recognition(
+        &alignment,
+        &mapped_observations,
+        shortlist.ids.len(),
+        shortlist.truncated,
+        shortlist_compile_skipped,
+        edit_costs,
+    );
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    if let Some(profile) = profile.as_mut() {
+        profile.result_mapping = Some(result_started.elapsed());
+    }
+    Some(recognition)
+}
+
+/// The round aligned against one record alone. Round recognition aligns the
+/// whole shortlist, so its per-lock cost stays zero while any record still
+/// fits and reports a later record's departure late; a guide for a record
+/// other than the top hypothesis needs its own alignment.
+pub(crate) fn recognize_record(
+    compiled: &RecordGraphCache,
+    record_id: &str,
+    observations: &[Option<PreparedObservation>],
+) -> Option<RoundRecognition> {
+    let mapped_observations = observations
+        .iter()
+        .map(|observation| observation.as_ref().and_then(observation_for))
+        .collect::<Vec<_>>();
+    if mapped_observations.iter().all(Option::is_none) {
+        return None;
+    }
+    let cached = compiled.shortlist_graph(&[record_id.to_owned()])?;
+    let edit_costs = EditCosts::default();
+    let alignment = align_round_exact_retaining_record(
+        &cached.graph,
+        &edit_costs,
+        &mapped_observations,
+        &AlignBudget::default(),
+        Some(record_id),
+    );
+    Some(round_recognition(
+        &alignment,
+        &mapped_observations,
+        1,
+        false,
+        cached.compile_skipped,
+        edit_costs,
+    ))
+}
+
+fn round_recognition(
+    alignment: &AlignmentResult,
+    mapped_observations: &[Option<Observation>],
+    shortlist_size: usize,
+    shortlist_truncated: bool,
+    shortlist_compile_skipped: usize,
+    edit_costs: EditCosts,
+) -> RoundRecognition {
     let per_lock = alignment
         .per_lock
         .iter()
-        .zip(&mapped_observations)
+        .zip(mapped_observations)
         .filter_map(|(lock, observation)| {
             observation.as_ref().map(|_| RoundLockRecognition {
                 best_cost: lock.best_cost,
@@ -198,10 +256,10 @@ fn recognize_round_core(
         })
         .collect();
 
-    let recognition = RoundRecognition {
+    RoundRecognition {
         retrieval_bounded: true,
-        shortlist_size: shortlist.ids.len(),
-        truncated: shortlist.truncated || alignment.truncated_any,
+        shortlist_size,
+        truncated: shortlist_truncated || alignment.truncated_any,
         shortlist_compile_skipped,
         per_lock,
         hypotheses,
@@ -210,12 +268,7 @@ fn recognize_round_core(
             .last()
             .map_or(0, |lock| lock.unknown_cost),
         edit_costs,
-    };
-    #[cfg(all(test, not(target_arch = "wasm32")))]
-    if let Some(profile) = profile.as_mut() {
-        profile.result_mapping = Some(result_started.elapsed());
     }
-    Some(recognition)
 }
 
 fn singleton_confirmed_id(matched: Option<&RoundCataloguedBoardMatch>) -> Option<&str> {

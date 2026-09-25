@@ -6,11 +6,11 @@ use crate::openers::catalog::{installed_opener_catalog, InstalledCatalog};
 use crate::openers::catalogued_match::{
     match_catalogued_boards_with_targets, RoundCataloguedBoardMatch,
 };
-use crate::openers::guide::{build_guide, select_subject, OpenerGuide};
+use crate::openers::guide::{alternative_guides, build_guide, select_subject, OpenerGuide};
 use crate::openers::phase::{
     assess_opener_phase, prepare_observations, OpenerAssessment, OpenerObservation,
 };
-use crate::openers::recognition::round::{recognize_round, RoundRecognition};
+use crate::openers::recognition::round::{recognize_record, recognize_round, RoundRecognition};
 use crate::openers::report::{build_opener_report, OpenerPhaseReport};
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -39,6 +39,10 @@ pub struct OpenerRoundAnalysis {
     pub catalogued_board_match: Option<RoundCataloguedBoardMatch>,
     pub report: Option<OpenerPhaseReport>,
     pub guide: Option<OpenerGuide>,
+    /// Guides for the other catalogued matches, which a reader may switch to;
+    /// `guide` stays empty for a tie, since none of them is preferred.
+    #[serde(default)]
+    pub alternative_guides: Vec<OpenerGuide>,
     pub(crate) recognition: Option<RoundRecognition>,
 }
 
@@ -98,6 +102,13 @@ pub(crate) fn analyze_round(
         recognition.as_ref(),
     )
     .and_then(|subject| build_guide(catalog, &subject, &observations, recognition.as_ref()));
+    let alternative_guides = alternative_guides(
+        catalog,
+        catalogued_board_match.as_ref(),
+        guide.as_ref(),
+        &observations,
+        |record_id| recognize_record(&installed.compiled, record_id, &observations),
+    );
 
     OpenerRoundAnalysis {
         assessments,
@@ -105,6 +116,7 @@ pub(crate) fn analyze_round(
         catalogued_board_match,
         report,
         guide,
+        alternative_guides,
         recognition,
     }
 }
