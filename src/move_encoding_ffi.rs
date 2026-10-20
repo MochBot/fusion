@@ -14,8 +14,7 @@
 //!
 //! Input convention: PIVOT (x, y) in Rust/game-engine coordinates. A converter
 //! that produces bbox-origin coordinates must transform them before calling;
-//! the bbox→pivot table is derived empirically against this oracle (see
-//! `training/tests/test_move_encoding_parity.py`).
+//! the bbox→pivot table is derived empirically against this oracle.
 //!
 //! Symbol exposed:
 //!   `fusion_encode_move_raw(piece_id, rotation, x, y, spin) -> i32`

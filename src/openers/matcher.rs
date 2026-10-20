@@ -3,7 +3,9 @@ use std::cmp::Ordering;
 use serde::{Deserialize, Serialize};
 
 use crate::openers::board::{cell_count, OPENER_BOARD_ROW_MASK};
-use crate::openers::target::{letter_masks_of, ShapeTarget, PIECE_LETTERS};
+use crate::openers::target::{
+    letter_masks_of, letter_planes, ShapeTarget, ShapeTargets, TargetHead, ROWS_PER_GROUP,
+};
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -24,11 +26,12 @@ pub struct BoardMatch {
 #[derive(Clone, Copy)]
 struct Candidate<'a> {
     target: &'a ShapeTarget,
+    head: TargetHead,
     overlap: u32,
 }
 
 pub(crate) fn match_board(
-    targets: &[ShapeTarget],
+    targets: &ShapeTargets,
     board_masks: &[u16],
     limit: usize,
     board_letters: Option<&[String]>,
@@ -42,53 +45,51 @@ pub(crate) fn match_board(
         Some(last) => &board_masks[..=last],
         None => &board_masks[..0],
     };
-    let board_letter_masks: Option<Vec<[u16; PIECE_LETTERS.len()]>> = board_letters.map(|rows| {
-        board_masks
-            .iter()
-            .enumerate()
-            .map(|(y, _)| {
-                rows.get(y)
-                    .map_or([0; PIECE_LETTERS.len()], |row| letter_masks_of(row))
-            })
-            .collect()
-    });
-    let opener_count = targets
-        .iter()
-        .map(|target| target.opener_ordinal as usize + 1)
-        .max()
-        .unwrap_or_default();
-    let mut best_per_opener: Vec<Option<Candidate<'_>>> = vec![None; opener_count];
-    for target in targets {
+    // Each board row: occupancy, then its letters in `letter_planes` form,
+    // packed four rows a group as the targets are. A board cell whose letter
+    // is missing or `X` has code 0, which matches no specific target letter,
+    // the string comparison's wildcard semantics. Rows past the board's last
+    // occupied one meet no target cell, so groups past it are not read.
+    let mut board_rows: Vec<[u64; 4]> = Vec::new();
+    for (y, mask) in board_masks.iter().enumerate() {
+        let [p0, p1, p2] = board_letters
+            .and_then(|rows| rows.get(y))
+            .map_or([0; 3], |row| letter_planes(&letter_masks_of(row)));
+        if y % ROWS_PER_GROUP == 0 {
+            board_rows.push([0; 4]);
+        }
+        let group = board_rows.last_mut().expect("a group was pushed");
+        let shift = 16 * (y % ROWS_PER_GROUP);
+        for (lane, value) in group.iter_mut().zip([*mask & OPENER_BOARD_ROW_MASK, p0, p1, p2]) {
+            *lane |= u64::from(value) << shift;
+        }
+    }
+    // Without board letters every cell matches on occupancy alone.
+    let letter_gate = if board_letters.is_some() { u64::MAX } else { 0 };
+    let mut best_per_opener: Vec<Option<Candidate<'_>>> = vec![None; targets.opener_count()];
+    for index in 0..targets.len() {
+        let (head, rows) = targets.packed(index);
         let mut overlap = 0;
-        match (board_letter_masks.as_deref(), target.letters.is_some()) {
-            (Some(board_letter_masks), true) => {
-                for (y, (board_row, target_row)) in board_masks.iter().zip(&target.rows).enumerate()
-                {
-                    let common = (*board_row & OPENER_BOARD_ROW_MASK) & *target_row;
-                    let lettered = target.lettered_cells.get(y).copied().unwrap_or_default();
-                    let mut kept = common & !lettered;
-                    if common & lettered != 0 {
-                        kept |= common
-                            & agreeing_letter_cells(
-                                &board_letter_masks[y],
-                                &target.letter_masks[y],
-                            );
-                    }
-                    overlap += kept.count_ones();
-                }
-            }
-            _ => {
-                for (board_row, target_row) in board_masks.iter().zip(&target.rows) {
-                    overlap += ((*board_row & OPENER_BOARD_ROW_MASK) & *target_row).count_ones();
-                }
-            }
+        for ([board_row, b0, b1, b2], [target_row, lettered, t0, t1, t2]) in
+            board_rows.iter().zip(rows)
+        {
+            let common = board_row & target_row;
+            // A common lettered cell counts only where both carry the same
+            // specific letter; a lettered cell without one (code 0) never does.
+            let disagree =
+                (lettered & letter_gate) & ((b0 ^ t0) | (b1 ^ t1) | (b2 ^ t2) | !(t0 | t1 | t2));
+            overlap += (common & !disagree).count_ones();
         }
         if overlap == 0 {
             continue;
         }
 
-        let candidate = Candidate { target, overlap };
-        let slot = &mut best_per_opener[target.opener_ordinal as usize];
+        let candidate = Candidate {
+            target: &targets[index],
+            head,
+            overlap,
+        };
+        let slot = &mut best_per_opener[head.opener_ordinal as usize];
         match slot {
             Some(incumbent) if compare_raw(candidate, *incumbent, board_cells).is_lt() => {
                 *incumbent = candidate;
@@ -99,29 +100,21 @@ pub(crate) fn match_board(
     }
 
     let mut ranked: Vec<_> = best_per_opener.into_iter().flatten().collect();
-    ranked.sort_by(|left, right| compare_raw(*left, *right, board_cells));
-    if limit > 0 {
+    // `ranked` is in ordinal order, so the ordinal tie-break reproduces the
+    // stable sort, and a total order lets selection keep its first `limit`.
+    let order = |left: &Candidate<'_>, right: &Candidate<'_>| {
+        compare_raw(*left, *right, board_cells)
+            .then(left.head.opener_ordinal.cmp(&right.head.opener_ordinal))
+    };
+    if limit > 0 && ranked.len() > limit {
+        ranked.select_nth_unstable_by(limit - 1, order);
         ranked.truncate(limit);
     }
+    ranked.sort_unstable_by(order);
     ranked
         .into_iter()
         .map(|candidate| to_match(candidate, board_cells))
         .collect()
-}
-
-/// Cells where the board and target carry the same specific piece letter.
-/// A board cell whose letter is missing or `X` matches no specific target
-/// letter, which preserves the string comparison's wildcard semantics.
-fn agreeing_letter_cells(
-    board: &[u16; PIECE_LETTERS.len()],
-    target: &[u16; PIECE_LETTERS.len()],
-) -> u16 {
-    board
-        .iter()
-        .zip(target)
-        .fold(0, |kept, (board_mask, target_mask)| {
-            kept | (board_mask & target_mask)
-        })
 }
 
 fn compare_raw(left: Candidate<'_>, right: Candidate<'_>, board_cells: u32) -> Ordering {
@@ -133,10 +126,7 @@ fn compare_raw(left: Candidate<'_>, right: Candidate<'_>, board_cells: u32) -> O
         _ => {}
     }
 
-    match (
-        left.target.letters.is_some(),
-        right.target.letters.is_some(),
-    ) {
+    match (left.head.colored, right.head.colored) {
         (true, false) => return Ordering::Less,
         (false, true) => return Ordering::Greater,
         _ => {}
@@ -149,8 +139,8 @@ fn compare_raw(left: Candidate<'_>, right: Candidate<'_>, board_cells: u32) -> O
         Ordering::Equal => {}
         ordering => return ordering,
     }
-    let left_progress = f64::from(left.overlap) / f64::from(left.target.cells);
-    let right_progress = f64::from(right.overlap) / f64::from(right.target.cells);
+    let left_progress = f64::from(left.overlap) / f64::from(left.head.cells);
+    let right_progress = f64::from(right.overlap) / f64::from(right.head.cells);
     match right_progress.total_cmp(&left_progress) {
         Ordering::Equal => left.target.opener_id.cmp(&right.target.opener_id),
         ordering => ordering,
@@ -181,7 +171,7 @@ mod tests {
 
     #[test]
     fn exact_occupancy_respects_piece_letters_for_weak_phase_matching() {
-        let targets = [ShapeTarget {
+        let targets = vec![ShapeTarget {
             opener_id: "fixture".to_owned(),
             opener_ordinal: 0,
             label: "Fixture".to_owned(),
@@ -196,7 +186,7 @@ mod tests {
         }];
 
         let matches = match_board(
-            &targets,
+            &targets.into(),
             &[0b0000001111],
             1,
             Some(&["ZZZZ______".to_owned()]),

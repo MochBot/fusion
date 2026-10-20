@@ -10,23 +10,30 @@
 //! removes most per-round compile work without changing any result.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 #[cfg(test)]
 use super::census::CompileCensus;
 #[cfg(test)]
 use super::compile::compile_recognition_subgraph;
 use super::compile::{compile_borrowed_records, CompileBudget};
-use super::graph::{CanonicalKey, RecognitionGraph, StateId, Transition};
+use super::graph::{CanonicalKey, FxMap, RecognitionGraph, StateId, Transition};
 #[cfg(all(test, not(target_arch = "wasm32")))]
 use super::profile::{CacheProfile, CacheRecordOutcome, CacheRecordProfile};
 use crate::openers::catalog::{OpenerCatalog, OpenerRecord};
 
-/// Compiled graphs for one immutable catalog. `None` caches compile failure
-/// or budget exclusion; missing record IDs are never cached.
+/// One record's compiled graph; `None` caches compile failure or budget
+/// exclusion. The cell compiles at most once, and callers that need the same
+/// cold record wait for it there, not on the whole cache.
+type RecordSlot = Arc<OnceLock<Option<Arc<RecognitionGraph>>>>;
+
+/// Compiled graphs for one immutable catalog. Missing record IDs are never
+/// cached.
 pub(crate) struct RecordGraphCache {
     catalog: OpenerCatalog,
-    records: Mutex<HashMap<String, Option<Arc<RecognitionGraph>>>>,
+    /// Held only to find or add a record's slot, never across a compile, so
+    /// concurrent rounds compile different records in parallel.
+    records: Mutex<HashMap<String, RecordSlot>>,
     /// First position per record id; duplicate ids keep the first occurrence.
     positions: HashMap<String, usize>,
 }
@@ -122,10 +129,6 @@ impl RecordGraphCache {
         let total_started = std::time::Instant::now();
         let mut parts: Vec<Arc<RecognitionGraph>> = Vec::with_capacity(shortlist.len());
         let mut compile_skipped = 0;
-        let mut records = match self.records.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
         for opener_id in shortlist {
             let Some(record) = self.resolve(opener_id) else {
                 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -138,51 +141,42 @@ impl RecordGraphCache {
                 }
                 continue;
             };
-            let compiled = match records.get(opener_id) {
-                Some(compiled) => {
-                    #[cfg(all(test, not(target_arch = "wasm32")))]
-                    if let Some(profile) = profile.as_mut() {
-                        profile.records.push(CacheRecordProfile {
-                            id: opener_id.clone(),
-                            outcome: if compiled.is_some() {
-                                CacheRecordOutcome::CachedSuccess
-                            } else {
-                                CacheRecordOutcome::CachedFailure
-                            },
-                            compile: None,
-                        });
-                    }
-                    compiled.clone()
+            let slot = Arc::clone(
+                match self.records.lock() {
+                    Ok(guard) => guard,
+                    Err(poisoned) => poisoned.into_inner(),
                 }
-                None => {
-                    #[cfg(all(test, not(target_arch = "wasm32")))]
-                    let cold_started = profile.as_ref().map(|_| std::time::Instant::now());
-                    let compiled = compile_borrowed_single_record(record);
-                    #[cfg(all(test, not(target_arch = "wasm32")))]
-                    let cold_elapsed = cold_started.map(|started| started.elapsed());
-                    #[cfg(all(test, not(target_arch = "wasm32")))]
-                    if let Some(profile) = profile.as_mut() {
-                        profile.records.push(CacheRecordProfile {
-                            id: opener_id.clone(),
-                            outcome: if compiled.is_some() {
-                                CacheRecordOutcome::ColdSuccess
-                            } else {
-                                CacheRecordOutcome::ColdFailure
-                            },
-                            compile: cold_elapsed,
-                        });
-                    }
-                    let compiled = compiled.map(Arc::new);
-                    records.insert(opener_id.clone(), compiled.clone());
-                    compiled
-                }
-            };
+                .entry(opener_id.clone())
+                .or_default(),
+            );
+            #[cfg(all(test, not(target_arch = "wasm32")))]
+            let cached = slot.get().is_some();
+            #[cfg(all(test, not(target_arch = "wasm32")))]
+            let cold_started = profile.as_ref().map(|_| std::time::Instant::now());
+            let compiled = slot
+                .get_or_init(|| compile_borrowed_single_record(record).map(Arc::new))
+                .clone();
+            #[cfg(all(test, not(target_arch = "wasm32")))]
+            if let Some(profile) = profile.as_mut() {
+                profile.records.push(CacheRecordProfile {
+                    id: opener_id.clone(),
+                    outcome: match (cached, compiled.is_some()) {
+                        (true, true) => CacheRecordOutcome::CachedSuccess,
+                        (true, false) => CacheRecordOutcome::CachedFailure,
+                        (false, true) => CacheRecordOutcome::ColdSuccess,
+                        (false, false) => CacheRecordOutcome::ColdFailure,
+                    },
+                    compile: (!cached)
+                        .then_some(cold_started)
+                        .flatten()
+                        .map(|started| started.elapsed()),
+                });
+            }
             match compiled {
                 Some(graph) => parts.push(graph),
                 None => compile_skipped += 1,
             }
         }
-        drop(records);
         if parts.is_empty() {
             #[cfg(all(test, not(target_arch = "wasm32")))]
             if let Some(profile) = profile.as_mut() {
@@ -266,9 +260,18 @@ pub(super) fn union_graphs(
     }
     let mut states = Vec::with_capacity(total_states);
     let mut out = Vec::with_capacity(total_states);
-    let mut exact_index: HashMap<CanonicalKey, Vec<StateId>> = HashMap::new();
+    let mut exact_index: FxMap<CanonicalKey, Vec<StateId>> = FxMap::default();
     for part in parts {
         let offset = states.len();
+        // Each part's index lists its states in order, so appending the parts
+        // in order keeps every key's states in merged order, as indexing the
+        // merged states afresh would, without a key built per state.
+        for (key, ids) in &part.exact_index {
+            exact_index
+                .entry(key.clone())
+                .or_default()
+                .extend(ids.iter().map(|id| StateId(id.0 + offset)));
+        }
         states.extend(part.states.iter().cloned());
         out.extend(part.out.iter().map(|transitions| {
             transitions
@@ -282,12 +285,15 @@ pub(super) fn union_graphs(
                 .collect::<Vec<_>>()
         }));
     }
-    for (index, state) in states.iter().enumerate() {
+    debug_assert!(states.iter().enumerate().all(|(index, state)| {
         exact_index
-            .entry(state.physical_key.occupancy_key())
-            .or_default()
-            .push(StateId(index));
-    }
+            .get(&state.physical_key.occupancy_key())
+            .is_some_and(|ids| ids.contains(&StateId(index)))
+    }));
+    debug_assert_eq!(exact_index.values().map(Vec::len).sum::<usize>(), states.len());
+    debug_assert!(exact_index
+        .values()
+        .all(|ids| ids.windows(2).all(|pair| pair[0].0 < pair[1].0)));
     let exact_index = exact_index
         .into_iter()
         .map(|(key, states)| (key, states.into_boxed_slice()))

@@ -13,7 +13,8 @@ use super::witness_catalog::{
 
 use super::catalogued_match::NodeBoards;
 use super::recognition::RecordGraphCache;
-use super::target::{build_targets, ShapeTarget};
+use super::shape_family::ShapeFamily;
+use super::target::{build_targets, ShapeTargets};
 
 mod validate;
 
@@ -39,7 +40,7 @@ pub(crate) struct OpenerCatalog {
 /// every round analyzed against it, including compiled record graphs, which
 /// are compiled lazily and retained inside the snapshot.
 pub(crate) struct InstalledCatalog {
-    pub targets: Vec<ShapeTarget>,
+    pub targets: ShapeTargets,
     pub node_boards: NodeBoards,
     pub runtime_search_shape_targets: Vec<RuntimeSearchShapeTarget>,
     pub compiled: RecordGraphCache,
@@ -99,6 +100,8 @@ pub(crate) struct OpenerRecord {
     pub tags: Vec<String>,
     #[serde(default)]
     pub links: Vec<OpenerLink>,
+    #[serde(default)]
+    pub shape_family: Option<ShapeFamily>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -289,6 +292,11 @@ pub(crate) fn parse_catalog(catalog_json_bytes: &[u8]) -> Result<OpenerCatalog, 
     }
     validate::validate_catalog(&catalog)?;
     Ok(catalog)
+}
+
+/// Validates one opener tree with the rules an installed catalog's trees pass.
+pub(crate) fn validate_opener_tree(tree: &[OpenerTreeNode]) -> Result<(), CatalogError> {
+    validate::validate_tree(tree)
 }
 
 pub(crate) fn installed_opener_catalog() -> Option<Arc<InstalledCatalog>> {

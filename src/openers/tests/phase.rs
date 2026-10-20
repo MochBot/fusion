@@ -5,7 +5,7 @@ mod openers {
         use fusion_engine::openers::phase::{
             assess_opener_phase, prepare_observations, OpenerAssessment, OpenerObservation,
         };
-        use fusion_engine::openers::target::build_targets;
+        use fusion_engine::openers::target::{build_targets, ShapeTargets};
         use serde::Deserialize;
 
         #[test]
@@ -82,7 +82,10 @@ mod openers {
                 }),
             ];
 
-            let assessments = assess_opener_phase(&[], &prepare_observations(&observations));
+            let assessments = assess_opener_phase(
+                &ShapeTargets::from(Vec::new()),
+                &prepare_observations(&observations),
+            );
 
             assert_eq!(assessments, vec![None, None, None]);
         }

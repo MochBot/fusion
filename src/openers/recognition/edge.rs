@@ -1,5 +1,3 @@
-use std::collections::{HashMap, HashSet};
-
 use super::compile::{
     mark_budget_exceeded, timed_stage, CompileBudget, CompileBudgetState, CompileError,
     CompileMetricEvent, CompileMetrics, CompileStage, PlacementSpec,
@@ -8,7 +6,8 @@ use super::frames::{DeclaredFrame, FrameError};
 #[cfg(test)]
 use super::graph::{cleared_rows, EpsilonReason};
 use super::graph::{
-    physical_shadow_of_declared, BridgeReason, CanonicalKey, GraphBuilder, StateId, TransitionLabel,
+    physical_shadow_of_declared, BridgeReason, CanonicalKey, FxMap, FxSet, GraphBuilder, StateId,
+    TransitionLabel,
 };
 use super::legality::LegalityVerdict;
 use super::record::{bridge_control, control, origin};
@@ -152,10 +151,10 @@ pub(super) fn compile_edge<O: CompileMetrics>(
             declared: declared_start.clone(),
             shifted: false,
         }];
-        let mut visited = HashSet::from([(*parent_state, 0u32)]);
-        let mut edge_states = HashSet::new();
-        let mut subsets = HashMap::new();
-        let mut transitions = HashMap::<StateId, Vec<StateId>>::new();
+        let mut visited: FxSet<(StateId, u32)> = [(*parent_state, 0u32)].into_iter().collect();
+        let mut edge_states = FxSet::default();
+        let mut subsets = FxMap::default();
+        let mut transitions = FxMap::<StateId, Vec<StateId>>::default();
         if wants_legal_orders {
             subsets.insert(*parent_state, 0u32);
         }
@@ -230,7 +229,7 @@ pub(super) fn compile_edge<O: CompileMetrics>(
                 let mut next_board = builder.board(current.state).clone();
                 let locked = next_board.lock(&target);
                 debug_assert_eq!(locked, mechanics);
-                if next_board.rows != next_declared.physical_board().rows {
+                if next_board.rows != next_declared.physical_rows() {
                     record_frame_inconsistency(
                         observer,
                         record,
@@ -610,8 +609,8 @@ fn complete_subset(placement_count: usize) -> u32 {
 
 fn count_paths(
     root: StateId,
-    subsets: &HashMap<StateId, u32>,
-    transitions: &HashMap<StateId, Vec<StateId>>,
+    subsets: &FxMap<StateId, u32>,
+    transitions: &FxMap<StateId, Vec<StateId>>,
     completed: &[StateId],
 ) -> u64 {
     let mut states = subsets
@@ -619,7 +618,7 @@ fn count_paths(
         .map(|(state, subset)| (*state, *subset))
         .collect::<Vec<_>>();
     states.sort_unstable_by_key(|(_, subset)| subset.count_ones());
-    let mut ways = HashMap::from([(root, 1u64)]);
+    let mut ways: FxMap<StateId, u64> = [(root, 1u64)].into_iter().collect();
     for (state, _) in states {
         let from_ways = ways.get(&state).copied().unwrap_or(0);
         for to in transitions.get(&state).into_iter().flatten() {

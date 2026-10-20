@@ -40,6 +40,7 @@ pub(crate) use cache::RecordGraphCache;
 #[cfg(test)]
 pub(crate) use compile::{compile_recognition_graph, CompileBudget, CompileError};
 pub(crate) use graph::RecognitionGraph;
+pub(super) use legality::{placement_cells, LegalityMemo, LegalityVerdict};
 
 #[cfg(test)]
 fn compile_catalog_census(

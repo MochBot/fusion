@@ -13,8 +13,9 @@ use crate::header::*;
 use crate::move_buffer::MoveBuffer;
 use crate::movegen::{generate, generate_playable};
 use crate::openers::{
-    analyze_opener_round, install_opener_runtime, AnalyzeError, CatalogError, OpenerInstallError,
-    OpenerInstallStats, OpenerRoundAnalysis, OpenerRoundInput, WitnessCatalogError,
+    analyze_opener_round, build_opener, install_opener_runtime, AnalyzeError, CatalogError,
+    OpenerBuildInput, OpenerBuildPlan, OpenerInstallError, OpenerInstallStats, OpenerRoundAnalysis,
+    OpenerRoundInput, WitnessCatalogError,
 };
 use crate::pathfinder;
 use crate::search::{search, SearchConfig, SearchRequest};
@@ -138,6 +139,41 @@ fn opener_round_payload(
         },
         None => OpenerWasmPayload::Error {
             error: invalid_opener_round_input(),
+        },
+    }
+}
+
+fn opener_build_payload_bytes(input_json_bytes: &[u8]) -> Vec<u8> {
+    let payload = opener_build_payload(serde_json::from_slice(input_json_bytes).ok());
+    serde_json::to_vec(&payload).unwrap_or_else(|error| {
+        let fallback = OpenerWasmPayload::<()>::Error {
+            error: OpenerWasmError {
+                code: "serializationFailed",
+                message: format!("opener build plan could not be serialized: {error}"),
+            },
+        };
+        serde_json::to_vec(&fallback).unwrap_or_default()
+    })
+}
+
+fn opener_build_payload(
+    parsed_input: Option<OpenerBuildInput>,
+) -> OpenerWasmPayload<OpenerBuildPlan> {
+    let Some(input) = parsed_input else {
+        return OpenerWasmPayload::Error {
+            error: OpenerWasmError {
+                code: "invalidInput",
+                message: "invalid opener build input".to_owned(),
+            },
+        };
+    };
+    match build_opener(&input) {
+        Ok(plan) => OpenerWasmPayload::Ok { data: plan },
+        Err(error) => OpenerWasmPayload::Error {
+            error: OpenerWasmError {
+                code: error.code(),
+                message: error.to_string(),
+            },
         },
     }
 }
@@ -542,6 +578,14 @@ pub fn install_opener_runtime_wasm(
 pub fn analyze_opener_round_wasm(input_json_bytes: &[u8]) -> Vec<u8> {
     opener_round_payload_bytes(input_json_bytes)
 }
+
+/// Plans how to build one catalogued opener node from a queue; takes and
+/// returns JSON bytes (`openers::build`).
+#[wasm_bindgen(js_name = "build_opener")]
+pub fn build_opener_wasm(input_json_bytes: &[u8]) -> Vec<u8> {
+    opener_build_payload_bytes(input_json_bytes)
+}
+
 
 // Batched expansion for offline search/labeling. Returns a fixed 46-float
 // record per legal placement: [attack, lines, b2b_after, combo_after,

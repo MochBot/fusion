@@ -59,7 +59,6 @@ pub(crate) fn seed_candidates(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
 
     use super::{seed_candidates, SeedBudget};
     use crate::openers::catalog::OpenerCatalog;
@@ -168,7 +167,7 @@ mod tests {
         RecognitionGraph {
             states: Vec::new(),
             out: Vec::new(),
-            exact_index: HashMap::from([(observed, exact.into())]),
+            exact_index: [(observed, exact.into())].into_iter().collect(),
             epsilon_order: Vec::new().into(),
             census: CompileCensus::new(1, 1, 1, 1),
         }

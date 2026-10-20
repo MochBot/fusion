@@ -11,41 +11,45 @@ pub(super) fn validate_catalog(catalog: &OpenerCatalog) -> Result<(), CatalogErr
         for rows in &record.search_shapes {
             validate_rows(rows)?;
         }
-        let node_ids: HashMap<u32, &OpenerTreeNode> =
-            record.tree.iter().map(|node| (node.id, node)).collect();
-        if node_ids.len() != record.tree.len() {
-            return invalid("tree node IDs must be unique per opener");
+        validate_tree(&record.tree)?;
+    }
+    Ok(())
+}
+
+pub(super) fn validate_tree(tree: &[OpenerTreeNode]) -> Result<(), CatalogError> {
+    let node_ids: HashMap<u32, &OpenerTreeNode> = tree.iter().map(|node| (node.id, node)).collect();
+    if node_ids.len() != tree.len() {
+        return invalid("tree node IDs must be unique per opener");
+    }
+    for node in tree {
+        validate_rows(&node.rows)?;
+        if let Some(rows) = &node.pre_clear_rows {
+            validate_rows(rows)?;
         }
-        for node in &record.tree {
-            validate_rows(&node.rows)?;
-            if let Some(rows) = &node.pre_clear_rows {
-                validate_rows(rows)?;
-            }
-            if node
-                .clear_rows
-                .as_ref()
-                .is_some_and(|rows| rows.iter().any(|row| *row >= 40))
-            {
-                return invalid("clear rows must be within the 40-row board");
-            }
-            if let Some(placements) = &node.placements {
-                for placement in placements {
-                    if !is_piece_letter(&placement.letter) {
-                        return invalid("placement letters must be one canonical tetromino");
-                    }
-                    if placement.cells.len() != 4 {
-                        return invalid("placements must contain exactly four cells");
-                    }
-                    let mut cells = HashSet::new();
-                    for [x, y] in &placement.cells {
-                        if *x >= 10 || *y >= 40 || !cells.insert((*x, *y)) {
-                            return invalid("placement cells must be unique and within the board");
-                        }
+        if node
+            .clear_rows
+            .as_ref()
+            .is_some_and(|rows| rows.iter().any(|row| *row >= 40))
+        {
+            return invalid("clear rows must be within the 40-row board");
+        }
+        if let Some(placements) = &node.placements {
+            for placement in placements {
+                if !is_piece_letter(&placement.letter) {
+                    return invalid("placement letters must be one canonical tetromino");
+                }
+                if placement.cells.len() != 4 {
+                    return invalid("placements must contain exactly four cells");
+                }
+                let mut cells = HashSet::new();
+                for [x, y] in &placement.cells {
+                    if *x >= 10 || *y >= 40 || !cells.insert((*x, *y)) {
+                        return invalid("placement cells must be unique and within the board");
                     }
                 }
             }
-            validate_parent_chain(node.parent, &node_ids)?;
         }
+        validate_parent_chain(node.parent, &node_ids)?;
     }
     Ok(())
 }

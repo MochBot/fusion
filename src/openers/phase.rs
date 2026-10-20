@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::openers::board::{cell_count, strip_garbage_rows, NormalizedBoard};
 use crate::openers::matcher::{match_board, BoardMatch};
-use crate::openers::target::ShapeTarget;
+use crate::openers::target::ShapeTargets;
 
 pub(crate) const OPENER_PHASE_LOCKS: usize = 14;
 const MATCH_LIMIT: usize = 8;
@@ -60,7 +60,7 @@ pub struct OpenerAssessment {
 }
 
 pub(crate) fn assess_opener_phase(
-    targets: &[ShapeTarget],
+    targets: &ShapeTargets,
     observations: &[Option<PreparedObservation>],
 ) -> Vec<Option<OpenerAssessment>> {
     let mut assessments: Vec<Option<OpenerAssessment>> = Vec::with_capacity(observations.len());

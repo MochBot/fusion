@@ -12,6 +12,7 @@ use crate::openers::phase::{
 };
 use crate::openers::recognition::round::{recognize_record, recognize_round, RoundRecognition};
 use crate::openers::report::{build_opener_report, OpenerPhaseReport};
+use crate::openers::shape_family::{match_shape_families, ShapeFamilyMatch};
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -44,6 +45,11 @@ pub struct OpenerRoundAnalysis {
     #[serde(default)]
     pub alternative_guides: Vec<OpenerGuide>,
     pub(crate) recognition: Option<RoundRecognition>,
+    /// Shape-family records (4-wide) whose shape a board of the round holds,
+    /// read from every observation given; omitted when there are none, so
+    /// rounds without one serialize as before.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shape_families: Vec<ShapeFamilyMatch>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -109,6 +115,7 @@ pub(crate) fn analyze_round(
         &observations,
         |record_id| recognize_record(&installed.compiled, record_id, &observations),
     );
+    let shape_families = match_shape_families(catalog, &observations);
 
     OpenerRoundAnalysis {
         assessments,
@@ -118,6 +125,7 @@ pub(crate) fn analyze_round(
         guide,
         alternative_guides,
         recognition,
+        shape_families,
     }
 }
 

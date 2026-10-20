@@ -180,7 +180,7 @@ impl Board {
         self.cols
     }
 
-    /// Rebuild cols cache from rows. Used after bulk mutations (clear_lines, spawn_garbage).
+    /// Rebuild cols cache from rows. Used after bulk mutations (clear_lines).
     fn rebuild_cols(&mut self) {
         self.cols = [0; COL_NB];
         for y in 0..BOARD_HEIGHT {
@@ -279,7 +279,19 @@ impl Board {
         for y in 0..n {
             self.rows[y] = garbage_row;
         }
-        self.rebuild_cols();
+        // Columns move up with their rows; each gains the new rows' cells.
+        // `n` is at most the board height (the row loop above indexes it).
+        let height_mask = (1u64 << BOARD_HEIGHT) - 1;
+        let new_rows = (1u64 << n) - 1;
+        for (c, col) in self.cols.iter_mut().enumerate() {
+            let filled = if c as i32 == x { 0 } else { new_rows };
+            *col = ((*col << n) | filled) & height_mask;
+        }
+        debug_assert_eq!(self.cols, {
+            let mut check = self.clone();
+            check.rebuild_cols();
+            check.cols
+        });
     }
 
     pub fn do_move(&mut self, m: &Move) -> i32 {
@@ -309,18 +321,43 @@ impl Board {
                 resulting_height: self.height(),
             };
         }
-
-        self.place(m);
-        let cleared_mask = self.line_clears();
-        if cleared_mask != 0 {
-            self.clear_lines(cleared_mask);
-        }
+        let cleared_mask = self.place_and_clear(m);
         LockMechanics {
             cleared_mask,
             lines_cleared: popcount(cleared_mask) as u8,
             is_pc: self.empty(),
             resulting_height: self.height(),
         }
+    }
+
+    /// `lock` of a move already known to be a legal lock (one move generation
+    /// produced for this board) on a board whose columns are in step with
+    /// its rows, as every board built through `from_rows`, `lock`, `clear`
+    /// and `spawn_garbage` is; the height comes from the columns.
+    pub fn lock_legal(&mut self, m: &Move) -> LockMechanics {
+        debug_assert!(self.legal_lock_placement(m));
+        let cleared_mask = self.place_and_clear(m);
+        let occupied = self.cols.iter().fold(0, |acc, &col| acc | col);
+        let resulting_height = 64 - occupied.leading_zeros();
+        debug_assert_eq!(resulting_height, self.height());
+        LockMechanics {
+            cleared_mask,
+            lines_cleared: popcount(cleared_mask) as u8,
+            is_pc: occupied == 0,
+            resulting_height,
+        }
+    }
+
+    /// Places `m` and clears the rows it fills; returns the cleared rows'
+    /// mask before compaction.
+    #[inline(always)]
+    fn place_and_clear(&mut self, m: &Move) -> Bitboard {
+        self.place(m);
+        let cleared_mask = self.line_clears();
+        if cleared_mask != 0 {
+            self.clear_lines(cleared_mask);
+        }
+        cleared_mask
     }
 
     /// Max occupied row index + 1 (= height)
@@ -535,6 +572,37 @@ mod tests {
                 }
             }
             assert_eq!(board.cols, oracle, "case={case} l={l:#x}");
+        }
+    }
+
+    #[test]
+    fn spawn_garbage_cols_match_rebuild_on_seeded_boards() {
+        let mut state = 0x6A5B_A6E0_2026_0929u64;
+        let mut xs = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        for case in 0..4000 {
+            let mut board = Board::new();
+            // Tall stacks too, so rows fall off the top.
+            let h = (xs() % (BOARD_HEIGHT as u64 + 1)) as usize;
+            for y in 0..h {
+                board.rows[y] = (xs() & 0x3FF) as u16;
+            }
+            board.rebuild_cols();
+            let lines = 1 + (xs() % 8) as i32;
+            let lines = if case % 500 == 0 {
+                BOARD_HEIGHT as i32
+            } else {
+                lines
+            };
+            let x = (xs() % COL_NB as u64) as i32;
+            board.spawn_garbage(lines, x);
+            let mut oracle = board.clone();
+            oracle.rebuild_cols();
+            assert_eq!(board.cols, oracle.cols, "case={case} lines={lines} x={x}");
         }
     }
 

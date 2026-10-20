@@ -245,6 +245,91 @@ pub fn calculate_attack_s2_tl_with_multiplier(
     garbage_cleared: u8,
     garbage_multiplier: f64,
 ) -> S2TlAttackOutcome {
+    calculate_attack_s2_tl_events(
+        lines,
+        spin,
+        pre_b2b,
+        pre_combo,
+        is_perfect_clear,
+        garbage_cleared,
+        garbage_multiplier,
+    )
+    .outcome
+}
+
+/// One lock's attack as Triangle sends it: a released surge split into three
+/// events, then the main event, then the perfect-clear event, with zero events
+/// dropped. Each event cancels and travels as its own garbage entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct S2TlAttackEvents {
+    pub outcome: S2TlAttackOutcome,
+    pub surge: u32,
+    /// Garbage rows this lock's clears took off the board, as Triangle's
+    /// `clearLines` counts them (a cleared row holding garbage).
+    pub garbage_cleared: u8,
+    events: [u32; 5],
+    len: u8,
+}
+
+impl S2TlAttackEvents {
+    pub fn events(&self) -> &[u32] {
+        &self.events[..usize::from(self.len)]
+    }
+
+    fn push(&mut self, amount: u32) {
+        if amount > 0 {
+            self.events[usize::from(self.len)] = amount;
+            self.len += 1;
+        }
+    }
+}
+
+pub fn calculate_attack_s2_tl_events(
+    lines: u8,
+    spin: SpinType,
+    pre_b2b: i32,
+    pre_combo: i32,
+    is_perfect_clear: bool,
+    garbage_cleared: u8,
+    garbage_multiplier: f64,
+) -> S2TlAttackEvents {
+    let (outcome, main_event, surge_event, pc_event) = s2_tl_attack_parts(
+        lines,
+        spin,
+        pre_b2b,
+        pre_combo,
+        is_perfect_clear,
+        garbage_cleared,
+        garbage_multiplier,
+    );
+    let mut events = S2TlAttackEvents {
+        outcome,
+        surge: surge_event,
+        garbage_cleared,
+        events: [0; 5],
+        len: 0,
+    };
+    if surge_event > 0 {
+        // JS Math.round on a positive third: floor(x + 0.5).
+        let third = (f64::from(surge_event) / 3.0 + 0.5).floor() as u32;
+        events.push(third);
+        events.push(third);
+        events.push(surge_event - 2 * third);
+    }
+    events.push(main_event);
+    events.push(pc_event);
+    events
+}
+
+fn s2_tl_attack_parts(
+    lines: u8,
+    spin: SpinType,
+    pre_b2b: i32,
+    pre_combo: i32,
+    is_perfect_clear: bool,
+    garbage_cleared: u8,
+    garbage_multiplier: f64,
+) -> (S2TlAttackOutcome, u32, u32, u32) {
     let difficult_clear = spin != SpinType::NoSpin || lines >= 4;
     let mut b2b_after = pre_b2b;
     let combo_after;
@@ -269,11 +354,16 @@ pub fn calculate_attack_s2_tl_with_multiplier(
     }
 
     if lines == 0 {
-        return S2TlAttackOutcome {
-            attack: 0,
-            b2b_after,
-            combo_after,
-        };
+        return (
+            S2TlAttackOutcome {
+                attack: 0,
+                b2b_after,
+                combo_after,
+            },
+            0,
+            0,
+            0,
+        );
     }
 
     let mut garbage = base_attack(lines, spin) as f64;
@@ -311,11 +401,16 @@ pub fn calculate_attack_s2_tl_with_multiplier(
         0
     };
 
-    S2TlAttackOutcome {
-        attack: main_event + surge_event + pc_event,
-        b2b_after,
-        combo_after,
-    }
+    (
+        S2TlAttackOutcome {
+            attack: main_event + surge_event + pc_event,
+            b2b_after,
+            combo_after,
+        },
+        main_event,
+        surge_event,
+        pc_event,
+    )
 }
 
 /// Banked surge potential at a given B2B count: linear in B2B, so the pre-sequence
@@ -325,6 +420,18 @@ pub fn calculate_attack_s2_tl_with_multiplier(
 /// yet, so breaking the chain forfeits the banked progress.
 pub fn surge_potential(b2b: i32, garbage_multiplier: f64) -> i64 {
     (b2b as f64 * garbage_multiplier).floor().max(0.0) as i64
+}
+
+/// The surge a break would release now: [`surge_potential`] from a chain of
+/// 4 on, nothing below it (a break below 4 releases no surge,
+/// `calculate_attack_full`'s `prev_b2b >= 4`). The race head's banked-surge
+/// input and its ammo (`board_net::sparse::record_potential`).
+pub fn banked_surge(b2b: i32, garbage_multiplier: f64) -> i64 {
+    if b2b >= 4 {
+        surge_potential(b2b, garbage_multiplier)
+    } else {
+        0
+    }
 }
 
 /// Parameters for the extended attack calculation.
@@ -960,5 +1067,46 @@ mod tests {
         assert_eq!(outcome.attack, 7);
         assert_eq!(outcome.b2b_after, 0);
         assert_eq!(outcome.combo_after, 1);
+    }
+
+    #[test]
+    fn test_s2_tl_events_sum_to_outcome_attack() {
+        for lines in 0..=4u8 {
+            for spin in [SpinType::NoSpin, SpinType::Mini, SpinType::Full] {
+                for pre_b2b in -1..=12 {
+                    for pre_combo in -1..=9 {
+                        for pc in [false, true] {
+                            for gc in [0u8, 2] {
+                                for mult in [1.0, 1.137, 2.5] {
+                                    let events = calculate_attack_s2_tl_events(
+                                        lines, spin, pre_b2b, pre_combo, pc, gc, mult,
+                                    );
+                                    let total: u32 = events.events().iter().sum();
+                                    assert_eq!(total, events.outcome.attack);
+                                    assert!(events.events().iter().all(|&e| e > 0));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_s2_tl_events_split_surge_like_triangle() {
+        // B2B x8 broken by a plain single: surge 8 split [3, 3, 2] ahead of the
+        // main event (a single with no combo sends nothing).
+        let events = calculate_attack_s2_tl_events(1, SpinType::NoSpin, 8, -1, false, 0, 1.0);
+        assert_eq!(events.surge, 8);
+        assert_eq!(events.events(), &[3, 3, 2]);
+        // Surge 4 splits [1, 1, 2]; surge 5 splits [2, 2, 1].
+        let four = calculate_attack_s2_tl_events(2, SpinType::NoSpin, 4, -1, false, 0, 1.0);
+        assert_eq!(four.events(), &[1, 1, 2, 1]);
+        let five = calculate_attack_s2_tl_events(2, SpinType::NoSpin, 5, -1, false, 0, 1.0);
+        assert_eq!(five.events(), &[2, 2, 1, 1]);
+        // Perfect clear trails the main event.
+        let pc = calculate_attack_s2_tl_events(4, SpinType::NoSpin, -1, -1, true, 0, 1.0);
+        assert_eq!(pc.events(), &[4, 5]);
     }
 }

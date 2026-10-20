@@ -59,28 +59,15 @@ fn column_heights(board: &Board) -> ([usize; COL_NB], usize) {
 fn holes_and_covered(board: &Board, heights: &[usize; COL_NB]) -> (i32, i32) {
     let mut holes = 0i32;
     let mut covered = 0i32;
-
-    for (x, &h) in heights.iter().enumerate() {
-        if h == 0 {
-            continue;
-        }
-
-        let below_mask = (1u64 << h) - 1;
-        let filled_below = board.cols[x] & below_mask;
-        let col_holes = h as i32 - filled_below.count_ones() as i32;
-        holes += col_holes;
-
-        if col_holes == 0 {
-            continue;
-        }
-
-        let empty_below = !board.cols[x] & below_mask;
-        let topmost_hole = 63usize - empty_below.leading_zeros() as usize;
-        let at_or_below_hole = (1u64 << (topmost_hole + 1)) - 1;
-        let cov = (filled_below & !at_or_below_hole).count_ones() as i32;
-        covered += cov.min(6);
+    for (&col, &h) in board.cols.iter().zip(heights) {
+        // Every filled cell of a column is below its height.
+        holes += h as i32 - col.count_ones() as i32;
+        let empty_below = !col & ((1u64 << h) - 1);
+        // One past the topmost hole, or 0 without holes (and then no cover).
+        let above = 64 - empty_below.leading_zeros();
+        let cov = ((col >> above).count_ones() as i32).min(6);
+        covered += i32::from(empty_below != 0) * cov;
     }
-
     (holes, covered)
 }
 
@@ -122,7 +109,7 @@ fn holes_and_covered_oracle(board: &Board, heights: &[usize; COL_NB]) -> (i32, i
 
 /// bumpiness: sum of |h[i]-h[i+1]| and (h[i]-h[i+1])^2
 /// skips the well column (deepest col with both neighbors taller)
-#[inline]
+#[cfg(test)]
 fn bumpiness(heights: &[usize; COL_NB], well_col: Option<usize>) -> (i32, i32) {
     let mut bump = 0i32;
     let mut bump_sq = 0i32;
@@ -192,9 +179,9 @@ fn row_transitions_oracle(board: &Board, max_height: usize) -> i32 {
     total
 }
 
-#[inline]
 /// find the deepest well column (both neighbors taller)
 /// returns (well_col, well_depth)
+#[cfg(test)]
 fn find_well(heights: &[usize; COL_NB]) -> (Option<usize>, i32) {
     let mut best_col = None;
     let mut best_depth = 0i32;
@@ -220,6 +207,34 @@ fn find_well(heights: &[usize; COL_NB]) -> (Option<usize>, i32) {
     (best_col, best_depth)
 }
 
+/// `find_well` then `bumpiness` without the well's transitions, in one pass
+/// with no data-dependent branches.
+#[inline]
+fn well_and_bumpiness(heights: &[usize; COL_NB]) -> (Option<usize>, i32, i32, i32) {
+    let h = heights.map(|h| h as i32);
+    let mut best_depth = 0i32;
+    let mut best_col = COL_NB;
+    for x in 0..COL_NB {
+        let left = if x == 0 { 40 } else { h[x - 1] };
+        let right = if x == COL_NB - 1 { 40 } else { h[x + 1] };
+        // Positive exactly when both neighbours are taller.
+        let depth = left.min(right) - h[x];
+        let better = depth > best_depth;
+        best_depth = if better { depth } else { best_depth };
+        best_col = if better { x } else { best_col };
+    }
+    let mut bump = 0i32;
+    let mut bump_sq = 0i32;
+    for i in 0..COL_NB - 1 {
+        let diff = h[i] - h[i + 1];
+        let keep = i32::from(i != best_col && i + 1 != best_col);
+        bump += keep * diff.abs();
+        bump_sq += keep * diff * diff;
+    }
+    let well = (best_col < COL_NB).then_some(best_col);
+    (well, best_depth, bump, bump_sq)
+}
+
 /// Detect T-spin double overhang setups.
 ///
 /// Scans for the minimal geometric signature:
@@ -228,55 +243,28 @@ fn find_well(heights: &[usize; COL_NB]) -> (Option<usize>, i32) {
 ///   col c:   empty at h-2 OR h-2 < 0 (cavity)
 ///
 /// Returns count of detected TSD-ready overhangs (0, 1, or 2).
+/// Columns are padded with an empty column on each side, which is never a
+/// wall and always open, as the board's edges are.
 #[inline]
 fn count_tsd_overhangs(board: &Board, heights: &[usize; COL_NB]) -> i32 {
+    let mut cols = [0u64; COL_NB + 2];
+    cols[1..=COL_NB].copy_from_slice(&board.cols);
     let mut count = 0i32;
-
     for c in 0..COL_NB {
-        let h = heights[c];
-        if h < 2 {
-            continue;
-        }
-
-        let top_bit = 1u64 << (h - 1);
-        let cavity_bit = 1u64 << (h - 2);
-        let col = board.cols[c];
-
-        // Overhang: filled at top, empty directly below
-        let has_overhang = (col & top_bit) != 0 && (col & cavity_bit) == 0;
-
-        if !has_overhang {
-            continue;
-        }
-
-        // Check for wall on either side providing the T-slot
-        let wall_left = c > 0
-            && heights[c - 1] >= h
-            && (board.cols[c - 1] & top_bit) != 0
-            && (board.cols[c - 1] & cavity_bit) != 0;
-
-        let wall_right = c < COL_NB - 1
-            && heights[c + 1] >= h
-            && (board.cols[c + 1] & top_bit) != 0
-            && (board.cols[c + 1] & cavity_bit) != 0;
-
-        // Need cavity on the opposite side of the wall
-        if wall_left {
-            let open_right = c < COL_NB - 1 && (board.cols[c + 1] & cavity_bit) == 0;
-            let open_right = open_right || c == COL_NB - 1;
-            if open_right {
-                count += 1;
-            }
-        }
-        if wall_right {
-            let open_left = c > 0 && (board.cols[c - 1] & cavity_bit) == 0;
-            let open_left = open_left || c == 0;
-            if open_left {
-                count += 1;
-            }
-        }
+        let h = heights[c] as u32;
+        // Top cell of the column and the one under it; none below height 2.
+        let top = (1u64 << h) >> 1;
+        let cavity = top >> 1;
+        let overhang = cavity != 0 && cols[c + 1] & cavity == 0;
+        let slot = top | cavity;
+        let (left, right) = (cols[c], cols[c + 2]);
+        let wall_left = left & slot == slot;
+        let wall_right = right & slot == slot;
+        let open_left = left & cavity == 0;
+        let open_right = right & cavity == 0;
+        count += i32::from(overhang)
+            * (i32::from(wall_left && open_right) + i32::from(wall_right && open_left));
     }
-
     count.min(2)
 }
 
@@ -359,18 +347,52 @@ fn four_wide_well_score(heights: &[usize; COL_NB]) -> f32 {
     score
 }
 
-pub fn evaluate(board: &Board, weights: &EvalWeights) -> f32 {
-    let (heights, max_h) = column_heights(board);
+/// The raw board-shape measurements `evaluate` weighs.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ShapeFeatures {
+    pub heights: [usize; COL_NB],
+    pub max_height: usize,
+    pub holes: i32,
+    pub covered: i32,
+    pub bumpiness: i32,
+    pub bumpiness_sq: i32,
+    pub row_transitions: i32,
+    pub well_column: Option<usize>,
+    pub well_depth: i32,
+    pub tsd_overhangs: i32,
+    pub four_wide: f32,
+}
 
+pub fn shape_features(board: &Board) -> ShapeFeatures {
+    let (heights, max_height) = column_heights(board);
     let (holes, covered) = holes_and_covered(board, &heights);
-    let (well_col, well_depth) = find_well(&heights);
-    let (bump, bump_sq) = bumpiness(&heights, well_col);
-    let r_transitions = row_transitions(board, max_h);
+    let (well_column, well_depth, bumpiness, bumpiness_sq) = well_and_bumpiness(&heights);
+    ShapeFeatures {
+        heights,
+        max_height,
+        holes,
+        covered,
+        bumpiness,
+        bumpiness_sq,
+        row_transitions: row_transitions(board, max_height),
+        well_column,
+        well_depth,
+        tsd_overhangs: count_tsd_overhangs(board, &heights),
+        four_wide: four_wide_well_score(&heights),
+    }
+}
 
+pub fn evaluate(board: &Board, weights: &EvalWeights) -> f32 {
+    evaluate_shape(&shape_features(board), weights)
+}
+
+/// `evaluate` of a board from its shape measurements.
+pub fn evaluate_shape(shape: &ShapeFeatures, weights: &EvalWeights) -> f32 {
+    let max_h = shape.max_height;
     let mut score = 0.0f32;
 
-    score += weights.holes * holes as f32;
-    score += weights.cell_coveredness * covered as f32;
+    score += weights.holes * shape.holes as f32;
+    score += weights.cell_coveredness * shape.covered as f32;
 
     score += weights.height * max_h as f32;
     if max_h > 10 {
@@ -380,17 +402,13 @@ pub fn evaluate(board: &Board, weights: &EvalWeights) -> f32 {
         score += weights.height_upper_quarter * (max_h - 15) as f32;
     }
 
-    score += weights.bumpiness * bump as f32;
-    score += weights.bumpiness_sq * bump_sq as f32;
-    score += weights.row_transitions * r_transitions as f32;
+    score += weights.bumpiness * shape.bumpiness as f32;
+    score += weights.bumpiness_sq * shape.bumpiness_sq as f32;
+    score += weights.row_transitions * shape.row_transitions as f32;
 
-    score += weights.well_depth * well_depth as f32;
-
-    let tsd_count = count_tsd_overhangs(board, &heights);
-    score += weights.tsd_overhang * tsd_count as f32;
-
-    let four_wide = four_wide_well_score(&heights);
-    score += weights.four_wide_well * four_wide;
+    score += weights.well_depth * shape.well_depth as f32;
+    score += weights.tsd_overhang * shape.tsd_overhangs as f32;
+    score += weights.four_wide_well * shape.four_wide;
 
     score
 }
@@ -573,6 +591,45 @@ mod tests {
         );
     }
 
+    fn check_well_bumpiness_parity(board: &Board, label: &str) {
+        let (heights, _) = column_heights(board);
+        let (well, depth) = find_well(&heights);
+        let (bump, bump_sq) = bumpiness(&heights, well);
+        assert_eq!(
+            well_and_bumpiness(&heights),
+            (well, depth, bump, bump_sq),
+            "{label} heights {heights:?}"
+        );
+    }
+
+    #[test]
+    fn well_and_bumpiness_matches_oracle() {
+        for (case, board) in edge_case_boards().into_iter().enumerate() {
+            check_well_bumpiness_parity(&board, &format!("edge case {case}"));
+        }
+        let mut rng = SplitMix64::new(0x9E37_79B9_7F4A_7C15);
+        for case in 0..100_000 {
+            let board = random_board(&mut rng, case);
+            check_well_bumpiness_parity(&board, &format!("random case {case}"));
+        }
+        // Ties between equal wells keep the first; heights beyond any board
+        // exercise the edge sentinels.
+        for heights in [
+            [3, 0, 3, 0, 3, 5, 5, 5, 5, 5],
+            [0; COL_NB],
+            [40; COL_NB],
+            [0, 40, 0, 40, 0, 40, 0, 40, 0, 40],
+        ] {
+            let (well, depth) = find_well(&heights);
+            let (bump, bump_sq) = bumpiness(&heights, well);
+            assert_eq!(
+                well_and_bumpiness(&heights),
+                (well, depth, bump, bump_sq),
+                "{heights:?}"
+            );
+        }
+    }
+
     fn check_tsd_overhang_parity(board: &Board, label: &str) {
         let (heights, _) = column_heights(board);
         assert_eq!(
@@ -630,7 +687,7 @@ mod tests {
             check_tsd_overhang_parity(&board, &format!("edge case {case}"));
         }
 
-        let mut rng = SplitMix64::new(0x9E37_79B9_7F4_A7C15);
+        let mut rng = SplitMix64::new(0x9E37_79B9_7F4A_7C15);
         for case in 0..100_000 {
             let board = random_board(&mut rng, case);
             check_tsd_overhang_parity(&board, &format!("random case {case}"));
@@ -707,5 +764,77 @@ mod tests {
         let (well_col, well_depth) = find_well(&heights);
         assert_eq!(well_col, Some(9));
         assert_eq!(well_depth, 4);
+    }
+
+    /// Times each shape feature on the boards in `LEAGUE_BENCH_BOARDS`, a file
+    /// of little-endian `[u16; 40]` boards.
+    #[test]
+    #[ignore]
+    fn bench_shape_features() {
+        use std::hint::black_box;
+        use std::time::Instant;
+        let Ok(path) = std::env::var("LEAGUE_BENCH_BOARDS") else {
+            eprintln!("set LEAGUE_BENCH_BOARDS");
+            return;
+        };
+        let bytes = std::fs::read(path).unwrap();
+        let (chunks, _) = bytes.as_chunks::<{ 2 * BOARD_HEIGHT }>();
+        let boards: Vec<Board> = chunks
+            .iter()
+            .map(|b| {
+                let (pairs, _) = b.as_chunks::<2>();
+                Board::from_rows(std::array::from_fn(|y| u16::from_le_bytes(pairs[y])))
+            })
+            .collect();
+        let n = boards.len() as f64;
+        let time = |name: &str, f: &dyn Fn(&Board) -> i64| {
+            let mut best = f64::MAX;
+            for _ in 0..7 {
+                let t = Instant::now();
+                let mut s = 0i64;
+                for b in &boards {
+                    s = s.wrapping_add(f(black_box(b)));
+                }
+                black_box(s);
+                best = best.min(t.elapsed().as_secs_f64() * 1e9 / n);
+            }
+            eprintln!("{name:>18}: {best:6.2} ns/board");
+        };
+        time("shape_features", &|b| {
+            let s = shape_features(b);
+            s.holes as i64 + s.tsd_overhangs as i64 + s.four_wide.to_bits() as i64
+        });
+        time("heights", &|b| column_heights(b).1 as i64);
+        time("+holes", &|b| {
+            let (h, _) = column_heights(b);
+            holes_and_covered(b, &h).0 as i64
+        });
+        time("+well_bump", &|b| {
+            let (h, _) = column_heights(b);
+            well_and_bumpiness(&h).3 as i64
+        });
+        time("+rowtrans", &|b| {
+            let (h, m) = column_heights(b);
+            row_transitions(b, m) as i64 + h[0] as i64
+        });
+        time("+tsd", &|b| {
+            let (h, _) = column_heights(b);
+            count_tsd_overhangs(b, &h) as i64
+        });
+        let mut bad = 0;
+        for b in &boards {
+            let (h, _) = column_heights(b);
+            let (wc, wd) = find_well(&h);
+            let (bu, bs) = bumpiness(&h, wc);
+            bad += usize::from(well_and_bumpiness(&h) != (wc, wd, bu, bs));
+            bad += usize::from(count_tsd_overhangs(b, &h) != count_tsd_overhangs_oracle(b, &h));
+            bad += usize::from(holes_and_covered(b, &h) != holes_and_covered_oracle(b, &h));
+        }
+        eprintln!("mismatches: {bad}");
+        assert_eq!(bad, 0);
+        time("+fourwide", &|b| {
+            let (h, _) = column_heights(b);
+            four_wide_well_score(&h).to_bits() as i64
+        });
     }
 }

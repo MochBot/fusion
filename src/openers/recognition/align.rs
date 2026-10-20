@@ -7,7 +7,7 @@ mod tests;
 use super::cost::{edit_cost, EditCosts, EditOps};
 use super::graph::{CanonicalKey, RecognitionGraph, StateId, StateOrigin};
 use super::retrieval::{seed_candidates, SeedBudget, Seeds};
-use frontier::{empty_ops, EditCostScratch, Frontier};
+use frontier::{empty_ops, AlignGraph, ConsumeScratch, Frontier};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Observation {
@@ -82,10 +82,9 @@ pub(crate) fn align_round_exact_retaining_record(
     budget: &AlignBudget,
     retained_record: Option<&str>,
 ) -> AlignmentResult {
+    let indexed = AlignGraph::new(graph);
     let mut frontier = Frontier::sized_for(graph);
-    let mut scratch_a = Frontier::sized_for(graph);
-    let mut scratch_b = Frontier::sized_for(graph);
-    let mut edit_scratch = EditCostScratch::sized_for(graph);
+    let mut scratch = ConsumeScratch::sized_for(&indexed);
     let mut per_lock = Vec::with_capacity(observations.len());
     let mut unknown_cost = 0;
     let mut initialized = false;
@@ -93,7 +92,7 @@ pub(crate) fn align_round_exact_retaining_record(
 
     for observation in observations {
         let Some(observation) = observation else {
-            frontier.consume_missing_observation(graph, costs, &mut scratch_a);
+            frontier.consume_missing_observation(&indexed, costs, &mut scratch.acc);
             let (ops, opaque_steps) = frontier.best_evidence().unwrap_or((empty_ops(), 0));
             per_lock.push(LockAlignment {
                 active_product_states: frontier.len(),
@@ -140,19 +139,12 @@ pub(crate) fn align_round_exact_retaining_record(
             }
             initialized = true;
         } else {
-            frontier.consume_observation(
-                graph,
-                &observation.key,
-                costs,
-                &mut scratch_a,
-                &mut scratch_b,
-                &mut edit_scratch,
-            );
+            frontier.consume_observation(&indexed, &observation.key, costs, &mut scratch);
             for state in seeds.exact {
                 frontier.insert_initial(graph, state, unknown_cost, empty_ops(), costs);
             }
         }
-        frontier.close_epsilon(graph, costs);
+        frontier.close_epsilon(&indexed, costs);
         let truncation = frontier.truncate(budget.max_active_product_states);
         let (ops, _) = frontier.best_evidence().unwrap_or((empty_ops(), 0));
         truncated |= truncation.truncated;

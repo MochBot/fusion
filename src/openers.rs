@@ -1,5 +1,6 @@
 mod analyze;
 mod board;
+mod build;
 mod catalog;
 mod catalogued_match;
 mod guide;
@@ -9,6 +10,7 @@ mod recognition;
 mod report;
 mod route;
 mod segments;
+mod shape_family;
 mod target;
 mod witness_catalog;
 
@@ -19,6 +21,7 @@ mod tests;
 pub(crate) use catalog::isolated_catalog_test;
 
 pub use analyze::{AnalyzeError, OpenerLockPolicy, OpenerRoundAnalysis, OpenerRoundInput};
+pub use build::{build_opener, OpenerBuildError, OpenerBuildInput, OpenerBuildPlan};
 pub use catalog::{
     install_opener_runtime, CatalogError, CatalogStats, OpenerInstallError, OpenerInstallStats,
 };
@@ -31,6 +34,7 @@ pub use guide::{
 pub use matcher::BoardMatch;
 pub use phase::{OpenerAssessment, OpenerObservation};
 pub use report::OpenerPhaseReport;
+pub use shape_family::{analyze_opener_shape_families, ShapeFamilyMatch, Well};
 pub use witness_catalog::{WitnessCatalogError, WitnessCatalogStats};
 
 pub use analyze::analyze_opener_round;

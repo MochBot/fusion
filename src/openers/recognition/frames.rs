@@ -93,6 +93,11 @@ impl DeclaredFrame {
         engine_board_from_masks(&self.physical_masks())
     }
 
+    /// `physical_board().rows` without building the board's column bitboards.
+    pub(super) fn physical_rows(&self) -> [u16; BOARD_HEIGHT] {
+        self.physical_masks().map(|mask| mask & FULL_ROW)
+    }
+
     pub(super) fn physical_letters(&self) -> [u8; BOARD_HEIGHT * 10] {
         let mut physical = [b'_'; BOARD_HEIGHT * 10];
         let mut write = 0;
@@ -149,7 +154,7 @@ impl DeclaredFrame {
     }
 
     pub(super) fn validate_start_board(&self, board: &Board) -> Result<(), FrameError> {
-        if self.physical_board().rows == board.rows {
+        if self.physical_rows() == board.rows {
             Ok(())
         } else {
             Err(FrameError::PhysicalStartMismatch)
@@ -177,7 +182,7 @@ impl DeclaredFrame {
         if declared_clears != expected_clears {
             return Err(FrameError::ClearRowsMismatch);
         }
-        if self.physical_board().rows == masks_to_board_rows(&node.rows, mirrored).rows {
+        if self.physical_rows() == masks_to_board_rows(&node.rows, mirrored).rows {
             Ok(())
         } else {
             Err(FrameError::PostClearRowsMismatch)
@@ -190,7 +195,7 @@ impl DeclaredFrame {
                 self.masks == masks_for_rows(&parent.rows, mirrored)
                     || self.masks == masks_for_node_pre_clear(parent, mirrored)
             }
-            None => self.physical_board().rows == Board::new().rows,
+            None => self.physical_rows() == Board::new().rows,
         }
     }
 

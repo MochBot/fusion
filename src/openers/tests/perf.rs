@@ -35,8 +35,10 @@ const LIVE_CATALOG: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/fixtures/openers/catalog-full.json"
 );
+// The digest covers the whole serialized analysis, including `guide` and
+// `alternativeGuides` for every tied opener.
 const EXPECTED_RECOGNITION_DIGEST: &str =
-    "eed18da10ca9ea166bc5562e151cf48e955cfcf4533adf6e855c7ee13be638d9";
+    "f35ca8269e971b7f8862e0e006cf668b491a67cb1f4d0d29bfa8619a45356ca3";
 
 #[derive(serde::Deserialize)]
 pub(crate) struct CapturedRound {
@@ -189,8 +191,9 @@ pub(crate) fn millis(duration: Duration) -> f64 {
 #[ignore]
 fn replay_round_stage_timing() {
     use crate::openers::catalogued_match::match_catalogued_boards_with_targets;
+    use crate::openers::guide::{alternative_guides, build_guide, select_subject};
     use crate::openers::phase::{assess_opener_phase, prepare_observations};
-    use crate::openers::recognition::round::recognize_round;
+    use crate::openers::recognition::round::{recognize_record, recognize_round};
 
     let (_scope, _detached) = install_live_catalog();
     let installed = installed_opener_catalog().expect("catalog should be installed");
@@ -200,6 +203,8 @@ fn replay_round_stage_timing() {
     let mut confirm = Duration::ZERO;
     let mut recognize_cold = Duration::ZERO;
     let mut recognize_warm = Duration::ZERO;
+    let mut guide = Duration::ZERO;
+    let mut alternatives = Duration::ZERO;
 
     for round in &rounds {
         // Normalization is shared by the three stage calls below, so it is timed
@@ -223,9 +228,10 @@ fn replay_round_stage_timing() {
         );
         confirm += started.elapsed();
 
+        let mut recognition = None;
         for lane in [&mut recognize_cold, &mut recognize_warm] {
             let started = Instant::now();
-            let _ = recognize_round(
+            recognition = recognize_round(
                 &installed.compiled,
                 &assessments,
                 matched.as_ref(),
@@ -233,17 +239,36 @@ fn replay_round_stage_timing() {
             );
             *lane += started.elapsed();
         }
+
+        // Guides run after recognition and their records are warm, so these
+        // lanes are warm costs.
+        let catalog = installed.catalog();
+        let started = Instant::now();
+        let primary = select_subject(catalog, matched.as_ref(), recognition.as_ref())
+            .and_then(|subject| build_guide(catalog, &subject, &prepared, recognition.as_ref()));
+        guide += started.elapsed();
+        let started = Instant::now();
+        let _ = alternative_guides(
+            catalog,
+            matched.as_ref(),
+            primary.as_ref(),
+            &prepared,
+            |record_id| recognize_record(&installed.compiled, record_id, &prepared),
+        );
+        alternatives += started.elapsed();
     }
 
     let count = rounds.len() as f64;
     println!(
-        "stage means over {} rounds: prepare {:.1} ms, assess {:.1} ms, confirm {:.1} ms, recognize first-seen {:.1} ms, recognize warm {:.1} ms",
+        "stage means over {} rounds: prepare {:.1} ms, assess {:.1} ms, confirm {:.1} ms, recognize first-seen {:.1} ms, recognize warm {:.1} ms, guide {:.1} ms, alternative guides {:.1} ms",
         rounds.len(),
         millis(prepare) / count,
         millis(assess) / count,
         millis(confirm) / count,
         millis(recognize_cold) / count,
-        millis(recognize_warm) / count
+        millis(recognize_warm) / count,
+        millis(guide) / count,
+        millis(alternatives) / count
     );
 }
 

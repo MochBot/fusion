@@ -45,6 +45,15 @@ pub(crate) const fn mirror_piece_letter(letter: char) -> char {
 }
 
 pub(crate) fn mirror_letter_row(row: &str) -> String {
+    // Catalog rows are ASCII, where a char is a byte: one allocation, no decoding.
+    if row.is_ascii() {
+        let mirrored = row
+            .bytes()
+            .rev()
+            .map(|letter| mirror_piece_letter(char::from(letter)) as u8)
+            .collect();
+        return String::from_utf8(mirrored).expect("mirrored ASCII is UTF-8");
+    }
     row.chars().rev().map(mirror_piece_letter).collect()
 }
 
@@ -124,6 +133,7 @@ mod tests {
         assert_eq!(mirror_mask_10(0b0000000001), 0b1000000000);
         assert_eq!(mirror_mask_10(0b1010000001), 0b1000000101);
         assert_eq!(mirror_letter_row("LJSZOITX__"), "__XTIOSZLJ");
+        assert_eq!(mirror_letter_row("LJ_é_SZ"), "SZ_é_LJ");
     }
 
     #[test]

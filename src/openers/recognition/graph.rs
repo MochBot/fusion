@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::hash::BuildHasherDefault;
 
 #[cfg(test)]
 use super::census::CompileCensus;
@@ -6,6 +7,11 @@ use super::legality::{LegalityCheck, LegalityMemo};
 use crate::board::Board;
 #[cfg(test)]
 use crate::board::LockMechanics;
+
+/// Maps and sets of the record compile, hashed with Fx rather than SipHash:
+/// they are looked up on every placement, and none is read in iteration order.
+pub(crate) type FxMap<K, V> = HashMap<K, V, BuildHasherDefault<crate::coach_beam::FxHasher64>>;
+pub(crate) type FxSet<K> = HashSet<K, BuildHasherDefault<crate::coach_beam::FxHasher64>>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct CanonicalKey {
@@ -50,19 +56,24 @@ impl CanonicalKey {
         masks: &[u16],
         letters: Option<&[u8]>,
     ) -> Self {
-        let masks = masks.to_vec();
-        let mirrored = masks.iter().copied().map(mirror_mask).collect::<Vec<_>>();
-        let letters = letters.map(|letters| letters.to_vec());
-        let mirrored_letters = letters.as_deref().map(mirror_letters);
-        let use_mirrored = mirrored < masks || (mirrored == masks && mirrored_letters < letters);
-        let (masks, letters) = if use_mirrored {
-            (mirrored, mirrored_letters)
-        } else {
-            (masks, letters)
+        // The lesser orientation, compared without building the other one.
+        let use_mirrored = match masks.iter().copied().map(mirror_mask).cmp(masks.iter().copied()) {
+            std::cmp::Ordering::Less => true,
+            std::cmp::Ordering::Greater => false,
+            std::cmp::Ordering::Equal => {
+                letters.is_some_and(|letters| mirror_letters(letters).as_slice() < letters)
+            }
         };
-        Self {
-            masks: masks.into_boxed_slice(),
-            letters: letters.map(Vec::into_boxed_slice),
+        if use_mirrored {
+            Self {
+                masks: masks.iter().copied().map(mirror_mask).collect(),
+                letters: letters.map(|letters| mirror_letters(letters).into_boxed_slice()),
+            }
+        } else {
+            Self {
+                masks: masks.into(),
+                letters: letters.map(Box::from),
+            }
         }
     }
 
@@ -140,7 +151,7 @@ pub(crate) struct Transition {
 pub(crate) struct RecognitionGraph {
     pub(crate) states: Vec<ModelState>,
     pub(crate) out: Vec<Vec<Transition>>,
-    pub(crate) exact_index: HashMap<CanonicalKey, Box<[StateId]>>,
+    pub(crate) exact_index: FxMap<CanonicalKey, Box<[StateId]>>,
     #[cfg(test)]
     pub(crate) epsilon_order: Box<[StateId]>,
     #[cfg(test)]
@@ -178,8 +189,8 @@ pub(crate) struct GraphBuilder {
     states: Vec<ModelState>,
     boards: Vec<Board>,
     out: Vec<Vec<Transition>>,
-    interned: HashMap<StateInternKey, StateId>,
-    bridged: HashSet<StateId>,
+    interned: FxMap<StateInternKey, StateId>,
+    bridged: FxSet<StateId>,
     legality: LegalityMemo,
 }
 
@@ -189,8 +200,8 @@ impl GraphBuilder {
             states: Vec::new(),
             boards: Vec::new(),
             out: Vec::new(),
-            interned: HashMap::new(),
-            bridged: HashSet::new(),
+            interned: FxMap::default(),
+            bridged: FxSet::default(),
             legality: LegalityMemo::default(),
         }
     }
@@ -299,7 +310,7 @@ impl GraphBuilder {
     }
 
     fn finish_inner(self, #[cfg(test)] census: CompileCensus) -> RecognitionGraph {
-        let mut exact_index: HashMap<CanonicalKey, Vec<StateId>> = HashMap::new();
+        let mut exact_index: FxMap<CanonicalKey, Vec<StateId>> = FxMap::default();
         for (index, state) in self.states.iter().enumerate() {
             let state_id = StateId(index);
             exact_index
@@ -343,14 +354,9 @@ pub(crate) fn physical_shadow_of_declared(declared: &Board) -> Board {
     shadow
 }
 
+/// Columns 0-9 mirrored; bits above column 9 drop.
 fn mirror_mask(mask: u16) -> u16 {
-    let mut mirrored = 0;
-    for x in 0..10 {
-        if mask & (1 << x) != 0 {
-            mirrored |= 1 << (9 - x);
-        }
-    }
-    mirrored
+    mask.reverse_bits() >> 6
 }
 
 fn mirror_letters(letters: &[u8]) -> Vec<u8> {
@@ -374,4 +380,17 @@ pub(crate) fn cleared_rows(mechanics: LockMechanics) -> Box<[u8]> {
     (0u8..40)
         .filter(|row| mechanics.cleared_mask & (1u64 << row) != 0)
         .collect()
+}
+
+#[cfg(test)]
+mod mirror_tests {
+    #[test]
+    fn mirror_mask_flips_columns_and_drops_bits_above_the_board() {
+        for mask in 0..=u16::MAX {
+            let expected = (0..10)
+                .filter(|x| mask & (1 << x) != 0)
+                .fold(0u16, |mirrored, x| mirrored | 1 << (9 - x));
+            assert_eq!(super::mirror_mask(mask), expected, "mask {mask:#06x}");
+        }
+    }
 }

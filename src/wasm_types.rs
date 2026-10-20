@@ -289,7 +289,7 @@ mod tests {
     use super::*;
 
     fn fixture_values(key: &str) -> Vec<String> {
-        let fixture = include_str!("../training/tests/fixtures/phase0_contract_fixture.txt");
+        let fixture = include_str!("../fixtures/contracts/phase0_contract_fixture.txt");
         fixture
             .lines()
             .find_map(|line| line.split_once('=').filter(|(k, _)| *k == key))

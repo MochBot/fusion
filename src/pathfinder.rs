@@ -146,28 +146,93 @@ fn classify_rotation_spin(
 // -- get_input --
 
 pub(crate) fn get_input(board: &Board, target: &Move, use_finesse: bool, force: bool) -> Inputs {
-    get_input_inner(board, target, use_finesse, force, target.piece())
+    get_input_inner(
+        board,
+        target,
+        target.piece(),
+        &KeyPath {
+            use_finesse,
+            force,
+            soft_drop: SoftDropMode::Row,
+            from: None,
+        },
+    )
 }
 
-fn get_input_inner(
-    board: &Board,
-    target: &Move,
-    use_finesse: bool,
-    force: bool,
-    p: Piece,
-) -> Inputs {
-    let cols = board.compute_cols();
-    let cm = CollisionMap::new(&cols, p);
+/// How a soft-drop press moves the piece.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SoftDropMode {
+    /// One row: the pathfinder's own model of the input.
+    Row,
+    /// To the row the piece cannot fall below, which is what a press does under
+    /// 41 SDF handling (Triangle's `#fall` uses `400 * subframe`). A path in
+    /// this mode only descends to rest, so intermediate heights come from
+    /// rotation kicks.
+    Slam,
+}
+
+/// The piece's state when the keys are computed, in the pathfinder's frame
+/// (pivot column and row, canonical rotation). `None` starts from the spawn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StartState {
+    pub x: i32,
+    pub y: i32,
+    pub rotation: Rotation,
+}
+
+/// How to look for a key sequence: the shift policy, whether the spawn cell may
+/// be forced, how a soft-drop press moves the piece, and where the piece is.
+#[derive(Clone, Copy, Debug)]
+pub struct KeyPath {
+    pub use_finesse: bool,
+    pub force: bool,
+    pub soft_drop: SoftDropMode,
+    pub from: Option<StartState>,
+}
+
+impl Default for KeyPath {
+    fn default() -> Self {
+        Self {
+            use_finesse: false,
+            force: false,
+            soft_drop: SoftDropMode::Slam,
+            from: None,
+        }
+    }
+}
+
+/// Triangle's gameplay key name for one pathfinder input.
+pub(crate) fn key_name(input: Input) -> &'static str {
+    match input {
+        Input::NoInput => "",
+        Input::ShiftLeft => "moveLeft",
+        Input::ShiftRight => "moveRight",
+        Input::DasLeft => "dasLeft",
+        Input::DasRight => "dasRight",
+        Input::RotateCw => "rotateCW",
+        Input::RotateCcw => "rotateCCW",
+        Input::RotateFlip => "rotate180",
+        Input::SoftDrop => "softDrop",
+        Input::HardDrop => "hardDrop",
+    }
+}
+
+/// The key sequence that places `target` on `board`, for Triangle's AdapterIO
+/// protocol. The keys are in play order and end with `hardDrop`; an empty result
+/// means no path exists in the given model.
+pub fn triangle_keys(board: &Board, target: &Move, path: &KeyPath) -> Vec<&'static str> {
+    get_input_inner(board, target, target.piece(), path)
+        .data
+        .iter()
+        .map(|&input| key_name(input))
+        .filter(|name| !name.is_empty())
+        .collect()
+}
+
+fn get_input_inner(board: &Board, target: &Move, p: Piece, path: &KeyPath) -> Inputs {
     let is_t = p == Piece::T && ACTIVE_RULES.enable_tspin;
     let is_allspin = p != Piece::T && p != Piece::O && ACTIVE_RULES.enable_allspin;
     let can_spin = is_t || is_allspin;
-    let spin_nb = if can_spin { SPIN_NB } else { 1 };
-
-    // searched[spin][col][rot] bitboard
-    let mut searched = vec![vec![vec![0u64; ROTATION_NB]; COL_NB]; spin_nb];
-
-    let mut vec: Vec<PathNode> = Vec::new();
-    let mut queue: VecDeque<GhostMove> = VecDeque::new();
 
     // Strict emission dedup: non-T NoSpin yields to Mini (`NoSpin &= !Mini`).
     // A later stuck rotation arrival claims the cell as Mini, so a NoSpin path
@@ -175,30 +240,153 @@ fn get_input_inner(
     // cell (checked after the search).
     let defer_nospin = is_allspin && target.spin() == SpinType::NoSpin;
     let mut deferred: Option<Inputs> = None;
+    let target_rc = canonical_r(p, target.rotation());
+    let (found, mini_locks) = walk_locks(board, p, path, |lock, nodes| {
+        if lock.x as i32 != target.x() || lock.y as i32 != target.y() || lock.rc != target_rc {
+            return None;
+        }
+        if can_spin && lock.spin != target.spin() as usize {
+            return None;
+        }
+        let result = trace_path(nodes, lock.node);
+        if defer_nospin {
+            deferred.get_or_insert(result);
+            None
+        } else {
+            Some(result)
+        }
+    });
+    if let Some(result) = found {
+        return result;
+    }
+
+    if let Some(path) = deferred {
+        let xu = target.x() as usize;
+        let rc = canonical_r(p, target.rotation()) as usize;
+        if mini_locks[xu][rc] & bb(target.y()) == 0 {
+            return path;
+        }
+    }
+
+    // target not found (or the NoSpin cell is Mini-claimed by strict dedup)
+    Inputs::new()
+}
+
+/// The row a piece at row `y` falls to in a column whose collision rows are
+/// `column`: one above the highest collision below it, or the floor.
+#[inline]
+fn rest_row(column: Bitboard, y: i8) -> i8 {
+    let below = column & bb_low(i32::from(y));
+    if below == 0 {
+        0
+    } else {
+        (64 - below.leading_zeros()) as i8
+    }
+}
+
+/// The kicks tried, in order, rotating `p` from `r` in direction `d`. The
+/// tables are `const`s, so they are read through static copies: indexing a
+/// `const` at run time can materialize the whole table per rotation.
+fn kicks_for(p: Piece, d: Direction, r: Rotation) -> &'static [Coordinates] {
+    static KICK_TABLE: [[[Offsets5; ROTATION_NB]; DIRECTION_NB]; 3] = KICKS;
+    static KICK_180_TABLE: [[Offsets6; ROTATION_NB]; 2] = KICKS_180;
+    if d == Direction::Flip {
+        let kicks = &KICK_180_TABLE[kick_180_index(p)][r as usize];
+        &kicks[..if !ACTIVE_RULES.srs_plus { 2 } else { kicks.len() }]
+    } else {
+        &KICK_TABLE[kick_index(p, ACTIVE_RULES.srs_plus)][d as usize][r as usize]
+    }
+}
+
+/// One hard-drop lock a popped search state reaches: its label stratum, column,
+/// row and canonical rotation, and the state's path node.
+#[derive(Clone, Copy)]
+struct WalkLock {
+    spin: usize,
+    x: usize,
+    y: i8,
+    rc: Rotation,
+    node: u16,
+}
+
+/// The key path to a state: its inputs from the start, then the hard drop.
+fn trace_path(nodes: &[PathNode], node: u16) -> Inputs {
+    let mut result = Inputs::new();
+    result.push(Input::HardDrop);
+    let mut idx = node;
+    while idx != GhostMove::root_index() {
+        result.push(nodes[idx as usize].input);
+        idx = nodes[idx as usize].prev;
+    }
+    result.reverse();
+    result
+}
+
+/// The pathfinder's breadth-first search from the start over rotations,
+/// shifts, DAS slides (finesse) and soft drops. Each popped state's hard-drop
+/// lock goes to `visit` in pop order, so a lock's first visit comes by its
+/// fewest inputs; `visit` returning a value ends the search. Returns that value
+/// and the cells some state locked as Mini.
+fn walk_locks<R>(
+    board: &Board,
+    p: Piece,
+    path: &KeyPath,
+    mut visit: impl FnMut(WalkLock, &[PathNode]) -> Option<R>,
+) -> (Option<R>, [[u64; ROTATION_NB]; COL_NB]) {
+    let use_finesse = path.use_finesse;
+    let force = path.force;
+    let soft_drop = path.soft_drop;
+    let cols = board.compute_cols();
+    let cm = CollisionMap::new(&cols, p);
+    let is_t = p == Piece::T && ACTIVE_RULES.enable_tspin;
+    let is_allspin = p != Piece::T && p != Piece::O && ACTIVE_RULES.enable_allspin;
+    let can_spin = is_t || is_allspin;
+    // searched[spin][col][rot] bitboard; spins past the first stay unused
+    // for a piece that cannot spin.
+    let mut searched = [[[0u64; ROTATION_NB]; COL_NB]; SPIN_NB];
+
+    // Every state enters once; most searches visit a few hundred.
+    let mut vec: Vec<PathNode> = Vec::with_capacity(512);
+    let mut queue: VecDeque<GhostMove> = VecDeque::with_capacity(512);
     let mut mini_locks = [[0u64; ROTATION_NB]; COL_NB];
 
-    // spawn
-    let spawn_y = if force {
-        // find lowest valid row >= spawn_row
-        let blocked = cm.get(SPAWN_COL, Rotation::North);
-        let above_spawn = !bb_low(ACTIVE_RULES.spawn_row);
-        let valid = !blocked & above_spawn;
-        if valid == 0 {
-            return Inputs::new();
+    // spawn, or the state the play request described
+    let (start_x, start_y, start_r) = match path.from {
+        Some(state) => {
+            if state.x < 0 || state.x >= COL_NB as i32 || state.y < 0 || state.y >= ROW_NB as i32 {
+                return (None, mini_locks);
+            }
+            let rc = canonical_r(p, state.rotation);
+            if !in_bounds(p, rc, state.x) || cm.get(state.x as usize, rc) & bb(state.y) != 0 {
+                return (None, mini_locks);
+            }
+            (state.x as i8, state.y as i8, state.rotation)
         }
-        ctz(valid) as i8
-    } else {
-        if cm.get(SPAWN_COL, Rotation::North) & bb(ACTIVE_RULES.spawn_row) != 0 {
-            return Inputs::new();
+        None => {
+            let spawn_y = if force {
+                // find lowest valid row >= spawn_row
+                let blocked = cm.get(SPAWN_COL, Rotation::North);
+                let above_spawn = !bb_low(ACTIVE_RULES.spawn_row);
+                let valid = !blocked & above_spawn;
+                if valid == 0 {
+                    return (None, mini_locks);
+                }
+                ctz(valid) as i8
+            } else {
+                if cm.get(SPAWN_COL, Rotation::North) & bb(ACTIVE_RULES.spawn_row) != 0 {
+                    return (None, mini_locks);
+                }
+                ACTIVE_RULES.spawn_row as i8
+            };
+            (SPAWN_COL as i8, spawn_y, Rotation::North)
         }
-        ACTIVE_RULES.spawn_row as i8
     };
 
-    searched[0][SPAWN_COL][Rotation::North as usize] |= bb(spawn_y as i32);
+    searched[0][start_x as usize][start_r as usize] |= bb(start_y as i32);
     queue.push_back(GhostMove {
-        r: Rotation::North,
-        x: SPAWN_COL as i8,
-        y: spawn_y,
+        r: start_r,
+        x: start_x,
+        y: start_y,
         i: GhostMove::root_index(),
         s: SpinType::NoSpin,
     });
@@ -209,12 +397,9 @@ fn get_input_inner(
         let y = m.y;
         let rc = canonical_r(p, r);
 
-        // harddrop: contiguous gravity descent. Steps one row at a time
-        // so the piece cannot teleport into a disconnected pocket.
-        let mut drop_y = y;
-        while drop_y > 0 && (cm.get(x, rc) & bb((drop_y - 1) as i32)) == 0 {
-            drop_y -= 1;
-        }
+        // harddrop: contiguous gravity descent, to the row above the highest
+        // collision below the piece, so it cannot pass into a disconnected pocket.
+        let drop_y = rest_row(cm.get(x, rc), y);
 
         if drop_y >= 0 {
             // Lock label: only when piece is already resting (drop_y == y);
@@ -228,30 +413,15 @@ fn get_input_inner(
                 mini_locks[x][rc as usize] |= bb(drop_y as i32);
             }
 
-            // check if this harddrop position == target
-            let target_r = target.rotation();
-            let target_rc = canonical_r(p, target_r);
-            if x as i32 == target.x() && drop_y as i32 == target.y() && rc == target_rc {
-                // check spin match
-                let target_spin = target.spin();
-                if !can_spin || sc == target_spin as usize {
-                    // trace back path
-                    let mut result = Inputs::new();
-                    result.push(Input::HardDrop);
-                    let mut idx = m.i;
-                    while idx != GhostMove::root_index() {
-                        result.push(vec[idx as usize].input);
-                        idx = vec[idx as usize].prev;
-                    }
-                    result.reverse();
-                    if defer_nospin {
-                        if deferred.is_none() {
-                            deferred = Some(result);
-                        }
-                    } else {
-                        return result;
-                    }
-                }
+            let lock = WalkLock {
+                spin: sc,
+                x,
+                y: drop_y,
+                rc,
+                node: m.i,
+            };
+            if let Some(found) = visit(lock, &vec) {
+                return (Some(found), mini_locks);
             }
         }
 
@@ -276,22 +446,10 @@ fn get_input_inner(
                 let rt = rotate(d, r);
                 let off = canonical_offset(p, r) - canonical_offset(p, rt);
 
-                let mut kick_buf = [Coordinates::new(0, 0); 6];
-                let kick_count = if d == Direction::Flip {
-                    let ki = kick_180_index(p);
-                    let arr = &KICKS_180[ki][r as usize];
-                    let n = if !ACTIVE_RULES.srs_plus { 2 } else { arr.len() };
-                    kick_buf[..n].copy_from_slice(&arr[..n]);
-                    n
-                } else {
-                    let ki = kick_index(p, ACTIVE_RULES.srs_plus);
-                    let arr = &KICKS[ki][d as usize][r as usize];
-                    kick_buf[..arr.len()].copy_from_slice(arr);
-                    arr.len()
-                };
+                let kicks = kicks_for(p, d, r);
 
                 let rt_c = canonical_r(p, rt);
-                for (k, &kick) in kick_buf.iter().enumerate().take(kick_count) {
+                for (k, &kick) in kicks.iter().enumerate() {
                     let x1 = m.x as i32 + kick.x as i32 + off.x as i32;
                     let y1 = y as i32 + kick.y as i32 + off.y as i32;
 
@@ -433,9 +591,13 @@ fn get_input_inner(
             }
         }
 
-        // softdrop
-        let y1 = y - 1;
-        if y1 >= 0 {
+        // softdrop. `Slam` descends to the row the piece cannot fall below, the
+        // way a press behaves under 41 SDF handling.
+        let y1 = match soft_drop {
+            SoftDropMode::Row => y - 1,
+            SoftDropMode::Slam => rest_row(cm.get(x, canonical_r(p, r)), y),
+        };
+        if y1 >= 0 && y1 < y {
             let rc = canonical_r(p, r);
             if cm.get(x, rc) & bb(y1 as i32) == 0 {
                 let s_idx = if can_spin {
@@ -463,17 +625,83 @@ fn get_input_inner(
         }
     }
 
-    if let Some(path) = deferred {
-        let xu = target.x() as usize;
-        let rc = canonical_r(p, target.rotation()) as usize;
-        if mini_locks[xu][rc] & bb(target.y()) == 0 {
-            return path;
+    (None, mini_locks)
+}
+
+/// The key presses, hard drop included, of the path `get_input(board, target,
+/// true, false)` finds, for every lock of a piece from one search: a lock's
+/// first visit in the walk is where `get_input` stops. The DAS slides only
+/// shortcut shifts, so the plain search reaches the same locks.
+pub(crate) struct LockPresses {
+    piece: Piece,
+    can_spin: bool,
+    is_allspin: bool,
+    /// By `[spin][x][canonical rotation][y]`; 0 where no path locks.
+    presses: Vec<u16>,
+    mini_locks: [[u64; ROTATION_NB]; COL_NB],
+}
+
+impl LockPresses {
+    fn index(spin: usize, x: usize, rc: usize, y: usize) -> usize {
+        ((spin * COL_NB + x) * ROTATION_NB + rc) * ROW_NB + y
+    }
+
+    pub(crate) fn new(board: &Board, piece: Piece) -> Self {
+        let is_t = piece == Piece::T && ACTIVE_RULES.enable_tspin;
+        let is_allspin = piece != Piece::T && piece != Piece::O && ACTIVE_RULES.enable_allspin;
+        let mut presses = vec![0u16; SPIN_NB * COL_NB * ROTATION_NB * ROW_NB];
+        let path = KeyPath {
+            use_finesse: true,
+            force: false,
+            soft_drop: SoftDropMode::Row,
+            from: None,
+        };
+        let (_, mini_locks) = walk_locks(board, piece, &path, |lock, nodes| {
+            let slot =
+                &mut presses[Self::index(lock.spin, lock.x, lock.rc as usize, lock.y as usize)];
+            if *slot == 0 {
+                // The hard drop, then one press per node back to the start.
+                let mut depth = 1u16;
+                let mut idx = lock.node;
+                while idx != GhostMove::root_index() {
+                    depth += 1;
+                    idx = nodes[idx as usize].prev;
+                }
+                *slot = depth;
+            }
+            None::<()>
+        });
+        Self {
+            piece,
+            can_spin: is_t || is_allspin,
+            is_allspin,
+            presses,
+            mini_locks,
         }
     }
 
-    // target not found (or the NoSpin cell is Mini-claimed by strict dedup)
-    Inputs::new()
+    /// `get_input(board, target, true, false).size()`, or `None` when empty.
+    pub(crate) fn get(&self, target: &Move) -> Option<u32> {
+        debug_assert_eq!(target.piece(), self.piece);
+        let (x, y) = (usize::try_from(target.x()).ok()?, usize::try_from(target.y()).ok()?);
+        if x >= COL_NB || y >= ROW_NB {
+            return None;
+        }
+        let rc = canonical_r(self.piece, target.rotation()) as usize;
+        if self.is_allspin
+            && target.spin() == SpinType::NoSpin
+            && self.mini_locks[x][rc] & bb(target.y()) != 0
+        {
+            return None;
+        }
+        let spin = if self.can_spin { target.spin() as usize } else { 0 };
+        match self.presses[Self::index(spin, x, rc, y)] {
+            0 => None,
+            presses => Some(u32::from(presses)),
+        }
+    }
 }
+
 
 pub(crate) struct ReachLocks {
     pub(crate) piece: Piece,
@@ -578,22 +806,8 @@ pub(crate) fn reachable_locks(board: &Board, p: Piece, force: bool) -> ReachLock
                     let rt = rotate(d, r);
                     let off = canonical_offset(p, r) - canonical_offset(p, rt);
 
-                    let mut kick_buf = [Coordinates::new(0, 0); 6];
-                    let kick_count = if d == Direction::Flip {
-                        let ki = kick_180_index(p);
-                        let arr = &KICKS_180[ki][r as usize];
-                        let n = if !ACTIVE_RULES.srs_plus { 2 } else { arr.len() };
-                        kick_buf[..n].copy_from_slice(&arr[..n]);
-                        n
-                    } else {
-                        let ki = kick_index(p, ACTIVE_RULES.srs_plus);
-                        let arr = &KICKS[ki][d as usize][r as usize];
-                        kick_buf[..arr.len()].copy_from_slice(arr);
-                        arr.len()
-                    };
-
                     let rt_c = canonical_r(p, rt);
-                    for (k, &kick) in kick_buf.iter().enumerate().take(kick_count) {
+                    for (k, &kick) in kicks_for(p, d, r).iter().enumerate() {
                         let x1 = m.x as i32 + kick.x as i32 + off.x as i32;
                         let y1 = y as i32 + kick.y as i32 + off.y as i32;
 
@@ -712,6 +926,183 @@ pub(crate) fn reachable_locks(board: &Board, p: Piece, force: bool) -> ReachLock
 
         ReachLocks { piece: p, locks }
     })
+}
+
+/// Replays a key path, reporting the piece state (pivot column and row, true
+/// rotation) at the spawn and after every input that moved it. `soft_drop`
+/// mirrors the search model, and `from` starts where a piece that already
+/// left the spawn row is. Returns the lock the path ends in.
+pub(crate) fn replay_inputs(
+    board: &Board,
+    p: Piece,
+    force: bool,
+    from: Option<(i32, i32, Rotation)>,
+    soft_drop: SoftDropMode,
+    inputs: &Inputs,
+    visit: &mut dyn FnMut(i32, i32, Rotation),
+) -> Option<(i32, i32, Rotation, SpinType)> {
+    let cols = board.compute_cols();
+    let cm = CollisionMap::new(&cols, p);
+    let is_t = p == Piece::T && ACTIVE_RULES.enable_tspin;
+    let is_allspin = p != Piece::T && p != Piece::O && ACTIVE_RULES.enable_allspin;
+    let can_spin = is_t || is_allspin;
+
+    let (mut x, mut y, mut r) = match from {
+        Some((sx, sy, sr)) => {
+            let rc = canonical_r(p, sr);
+            if sx < 0 || !in_bounds(p, rc, sx) || sy < 0 || sy >= ROW_NB as i32 {
+                return None;
+            }
+            if cm.get(sx as usize, rc) & bb(sy) != 0 {
+                return None;
+            }
+            (sx, sy, sr)
+        }
+        None => {
+            let y: i32 = if force {
+                let blocked = cm.get(SPAWN_COL, Rotation::North);
+                let valid = !blocked & !bb_low(ACTIVE_RULES.spawn_row);
+                if valid == 0 {
+                    return None;
+                }
+                ctz(valid) as i32
+            } else {
+                if cm.get(SPAWN_COL, Rotation::North) & bb(ACTIVE_RULES.spawn_row) != 0 {
+                    return None;
+                }
+                ACTIVE_RULES.spawn_row
+            };
+            (SPAWN_COL as i32, y, Rotation::North)
+        }
+    };
+    let mut s = SpinType::NoSpin;
+    visit(x, y, r);
+
+    for (idx, &inp) in inputs.data.iter().enumerate() {
+        match inp {
+            Input::HardDrop => {
+                if idx + 1 != inputs.data.len() {
+                    return None;
+                }
+                let rc = canonical_r(p, r);
+                let mut drop_y = y;
+                while drop_y > 0 && cm.get(x as usize, rc) & bb(drop_y - 1) == 0 {
+                    drop_y -= 1;
+                }
+                let label = if can_spin && drop_y == y {
+                    s
+                } else {
+                    SpinType::NoSpin
+                };
+                visit(x, drop_y, r);
+                return Some((x, drop_y, rc, label));
+            }
+            Input::ShiftLeft | Input::ShiftRight => {
+                let dx = if inp == Input::ShiftLeft { -1 } else { 1 };
+                let x1 = x + dx;
+                let rc = canonical_r(p, r);
+                if x1 < 0 || !in_bounds(p, rc, x1) || cm.get(x1 as usize, rc) & bb(y) != 0 {
+                    return None;
+                }
+                x = x1;
+                s = SpinType::NoSpin;
+                visit(x, y, r);
+            }
+            Input::DasLeft | Input::DasRight => {
+                let dx = if inp == Input::DasLeft { -1 } else { 1 };
+                let rc = canonical_r(p, r);
+                let mut x1 = x;
+                loop {
+                    let nx = x1 + dx;
+                    if nx < 0 || !in_bounds(p, rc, nx) || cm.get(nx as usize, rc) & bb(y) != 0 {
+                        break;
+                    }
+                    x1 = nx;
+                }
+                if x1 == x {
+                    return None;
+                }
+                x = x1;
+                s = SpinType::NoSpin;
+                visit(x, y, r);
+            }
+            Input::SoftDrop => {
+                let rc = canonical_r(p, r);
+                let y1 = match soft_drop {
+                    SoftDropMode::Row => y - 1,
+                    SoftDropMode::Slam => {
+                        let mut rest = y;
+                        while rest > 0 && cm.get(x as usize, rc) & bb(rest - 1) == 0 {
+                            rest -= 1;
+                        }
+                        rest
+                    }
+                };
+                if y1 < 0 || y1 >= y || cm.get(x as usize, rc) & bb(y1) != 0 {
+                    return None;
+                }
+                y = y1;
+                s = SpinType::NoSpin;
+                visit(x, y, r);
+            }
+            Input::RotateCw | Input::RotateCcw | Input::RotateFlip => {
+                if p == Piece::O {
+                    return None;
+                }
+                let d = match inp {
+                    Input::RotateCw => Direction::Cw,
+                    Input::RotateCcw => Direction::Ccw,
+                    _ => Direction::Flip,
+                };
+                if d == Direction::Flip && !ACTIVE_RULES.enable_180 {
+                    return None;
+                }
+                let rt = rotate(d, r);
+                let off = canonical_offset(p, r) - canonical_offset(p, rt);
+                let mut kick_buf = [Coordinates::new(0, 0); 6];
+                let kick_count = if d == Direction::Flip {
+                    let ki = kick_180_index(p);
+                    let arr = &KICKS_180[ki][r as usize];
+                    let n = if !ACTIVE_RULES.srs_plus { 2 } else { arr.len() };
+                    kick_buf[..n].copy_from_slice(&arr[..n]);
+                    n
+                } else {
+                    let ki = kick_index(p, ACTIVE_RULES.srs_plus);
+                    let arr = &KICKS[ki][d as usize][r as usize];
+                    kick_buf[..arr.len()].copy_from_slice(arr);
+                    arr.len()
+                };
+                let mut applied = false;
+                let rt_c = canonical_r(p, rt);
+                for (k, &kick) in kick_buf.iter().enumerate().take(kick_count) {
+                    let x1 = x + kick.x as i32 + off.x as i32;
+                    let y1 = y + kick.y as i32 + off.y as i32;
+                    if x1 < 0 || y1 < 0 || !in_bounds(p, rt_c, x1) || y1 >= ROW_NB as i32 {
+                        continue;
+                    }
+                    if cm.get(x1 as usize, rt_c) & bb(y1) != 0 {
+                        continue;
+                    }
+                    s = if can_spin {
+                        classify_rotation_spin(board, &cm, is_t, is_allspin, x1, y1, rt, rt_c, k)
+                    } else {
+                        SpinType::NoSpin
+                    };
+                    x = x1;
+                    y = y1;
+                    r = rt;
+                    applied = true;
+                    break;
+                }
+                if !applied {
+                    return None;
+                }
+                visit(x, y, r);
+            }
+            Input::NoInput => return None,
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -1434,141 +1825,20 @@ mod tests {
         force: bool,
         inputs: &Inputs,
     ) -> Option<(i32, i32, Rotation, SpinType)> {
-        let cols = board.compute_cols();
-        let cm = CollisionMap::new(&cols, p);
-        let is_t = p == Piece::T && ACTIVE_RULES.enable_tspin;
-        let is_allspin = p != Piece::T && p != Piece::O && ACTIVE_RULES.enable_allspin;
-        let can_spin = is_t || is_allspin;
+        simulate_inputs_from(board, p, force, None, SoftDropMode::Row, inputs)
+    }
 
-        let mut x = SPAWN_COL as i32;
-        let mut y: i32 = if force {
-            let blocked = cm.get(SPAWN_COL, Rotation::North);
-            let valid = !blocked & !bb_low(ACTIVE_RULES.spawn_row);
-            if valid == 0 {
-                return None;
-            }
-            ctz(valid) as i32
-        } else {
-            if cm.get(SPAWN_COL, Rotation::North) & bb(ACTIVE_RULES.spawn_row) != 0 {
-                return None;
-            }
-            ACTIVE_RULES.spawn_row
-        };
-        let mut r = Rotation::North;
-        let mut s = SpinType::NoSpin;
-
-        for (idx, &inp) in inputs.data.iter().enumerate() {
-            match inp {
-                Input::HardDrop => {
-                    if idx + 1 != inputs.data.len() {
-                        return None;
-                    }
-                    let rc = canonical_r(p, r);
-                    let mut drop_y = y;
-                    while drop_y > 0 && cm.get(x as usize, rc) & bb(drop_y - 1) == 0 {
-                        drop_y -= 1;
-                    }
-                    let label = if can_spin && drop_y == y {
-                        s
-                    } else {
-                        SpinType::NoSpin
-                    };
-                    return Some((x, drop_y, rc, label));
-                }
-                Input::ShiftLeft | Input::ShiftRight => {
-                    let dx = if inp == Input::ShiftLeft { -1 } else { 1 };
-                    let x1 = x + dx;
-                    let rc = canonical_r(p, r);
-                    if x1 < 0 || !in_bounds(p, rc, x1) || cm.get(x1 as usize, rc) & bb(y) != 0 {
-                        return None;
-                    }
-                    x = x1;
-                    s = SpinType::NoSpin;
-                }
-                Input::DasLeft | Input::DasRight => {
-                    let dx = if inp == Input::DasLeft { -1 } else { 1 };
-                    let rc = canonical_r(p, r);
-                    let mut x1 = x;
-                    loop {
-                        let nx = x1 + dx;
-                        if nx < 0 || !in_bounds(p, rc, nx) || cm.get(nx as usize, rc) & bb(y) != 0 {
-                            break;
-                        }
-                        x1 = nx;
-                    }
-                    if x1 == x {
-                        return None;
-                    }
-                    x = x1;
-                    s = SpinType::NoSpin;
-                }
-                Input::SoftDrop => {
-                    let rc = canonical_r(p, r);
-                    if y == 0 || cm.get(x as usize, rc) & bb(y - 1) != 0 {
-                        return None;
-                    }
-                    y -= 1;
-                    s = SpinType::NoSpin;
-                }
-                Input::RotateCw | Input::RotateCcw | Input::RotateFlip => {
-                    if p == Piece::O {
-                        return None;
-                    }
-                    let d = match inp {
-                        Input::RotateCw => Direction::Cw,
-                        Input::RotateCcw => Direction::Ccw,
-                        _ => Direction::Flip,
-                    };
-                    if d == Direction::Flip && !ACTIVE_RULES.enable_180 {
-                        return None;
-                    }
-                    let rt = rotate(d, r);
-                    let off = canonical_offset(p, r) - canonical_offset(p, rt);
-                    let mut kick_buf = [Coordinates::new(0, 0); 6];
-                    let kick_count = if d == Direction::Flip {
-                        let ki = kick_180_index(p);
-                        let arr = &KICKS_180[ki][r as usize];
-                        let n = if !ACTIVE_RULES.srs_plus { 2 } else { arr.len() };
-                        kick_buf[..n].copy_from_slice(&arr[..n]);
-                        n
-                    } else {
-                        let ki = kick_index(p, ACTIVE_RULES.srs_plus);
-                        let arr = &KICKS[ki][d as usize][r as usize];
-                        kick_buf[..arr.len()].copy_from_slice(arr);
-                        arr.len()
-                    };
-                    let mut applied = false;
-                    let rt_c = canonical_r(p, rt);
-                    for (k, &kick) in kick_buf.iter().enumerate().take(kick_count) {
-                        let x1 = x + kick.x as i32 + off.x as i32;
-                        let y1 = y + kick.y as i32 + off.y as i32;
-                        if x1 < 0 || y1 < 0 || !in_bounds(p, rt_c, x1) || y1 >= ROW_NB as i32 {
-                            continue;
-                        }
-                        if cm.get(x1 as usize, rt_c) & bb(y1) != 0 {
-                            continue;
-                        }
-                        s = if can_spin {
-                            classify_rotation_spin(
-                                board, &cm, is_t, is_allspin, x1, y1, rt, rt_c, k,
-                            )
-                        } else {
-                            SpinType::NoSpin
-                        };
-                        x = x1;
-                        y = y1;
-                        r = rt;
-                        applied = true;
-                        break;
-                    }
-                    if !applied {
-                        return None;
-                    }
-                }
-                Input::NoInput => return None,
-            }
-        }
-        None
+    /// Replays a key path. `soft_drop` mirrors the search model, and `from`
+    /// starts where a piece that already left the spawn row is.
+    fn simulate_inputs_from(
+        board: &Board,
+        p: Piece,
+        force: bool,
+        from: Option<(i32, i32, Rotation)>,
+        soft_drop: SoftDropMode,
+        inputs: &Inputs,
+    ) -> Option<(i32, i32, Rotation, SpinType)> {
+        replay_inputs(board, p, force, from, soft_drop, inputs, &mut |_, _, _| {})
     }
 
     fn move_for_lock(p: Piece, s_idx: usize, x: i32, y: i32, ri: usize) -> Option<Move> {
@@ -1874,6 +2144,61 @@ mod tests {
     }
 
     #[test]
+    fn rest_row_matches_one_row_steps() {
+        let mut st = 0xD20F_5EED_2026_1019u64;
+        for _ in 0..20_000 {
+            let column = xs(&mut st) & bb_low(ROW_NB as i32);
+            for y in 0..ROW_NB as i8 {
+                if column & bb(i32::from(y)) != 0 {
+                    continue;
+                }
+                let mut stepped = y;
+                while stepped > 0 && column & bb(i32::from(stepped - 1)) == 0 {
+                    stepped -= 1;
+                }
+                assert_eq!(rest_row(column, y), stepped, "column {column:#x} y {y}");
+            }
+        }
+    }
+
+    #[test]
+    fn lock_presses_match_get_input_on_seeded_boards() {
+        let mut st = 0x5EED_1F07_2026_1019u64;
+        for _ in 0..30 {
+            let h = 1 + (xs(&mut st) % 18) as usize;
+            let mut rows = vec![0u16; h];
+            for r in rows.iter_mut() {
+                *r = (xs(&mut st) as u16) & 0x03FF;
+            }
+            let b = board_from_rows(&rows);
+            for &p in &ALL_PIECES {
+                let presses = LockPresses::new(&b, p);
+                for s_idx in 0..SPIN_NB {
+                    for x in -1..=COL_NB as i32 {
+                        for ri in 0..ROTATION_NB {
+                            // Locks rest within a few rows of the stack; above
+                            // it every target is a miss.
+                            for y in 0..=(h as i32 + 4) {
+                                let Some(target) = move_for_lock(p, s_idx, x, y, ri) else {
+                                    continue;
+                                };
+                                let finesse = get_input(&b, &target, true, false).size();
+                                let plain = get_input(&b, &target, false, false).size();
+                                assert_eq!(finesse > 0, plain > 0, "rows={rows:?} {target:?}");
+                                assert_eq!(
+                                    presses.get(&target),
+                                    (finesse > 0).then_some(finesse as u32),
+                                    "rows={rows:?} {target:?}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     #[ignore]
     fn get_input_matches_strict_generate_on_2k_boards() {
         let mut st = 0x6F1D_F01D_2026_0707u64;
@@ -1924,5 +2249,154 @@ mod tests {
         let inputs = get_input(&board, &target, false, false);
         assert!(!inputs.data.is_empty());
         assert_eq!(*inputs.data.last().unwrap(), Input::HardDrop);
+    }
+
+    #[test]
+    fn key_names_cover_every_input() {
+        let named = [
+            Input::ShiftLeft,
+            Input::ShiftRight,
+            Input::DasLeft,
+            Input::DasRight,
+            Input::RotateCw,
+            Input::RotateCcw,
+            Input::RotateFlip,
+            Input::SoftDrop,
+            Input::HardDrop,
+        ];
+        assert_eq!(key_name(Input::NoInput), "");
+        let mut seen: Vec<&str> = named.iter().map(|&i| key_name(i)).collect();
+        assert!(seen.iter().all(|name| !name.is_empty()));
+        seen.sort_unstable();
+        let count = seen.len();
+        seen.dedup();
+        assert_eq!(seen.len(), count, "key names must be distinct");
+        assert_eq!(key_name(Input::ShiftLeft), "moveLeft");
+        assert_eq!(key_name(Input::DasRight), "dasRight");
+        assert_eq!(key_name(Input::RotateFlip), "rotate180");
+        assert_eq!(key_name(Input::SoftDrop), "softDrop");
+        assert_eq!(key_name(Input::HardDrop), "hardDrop");
+    }
+
+    #[test]
+    fn triangle_keys_track_the_path_and_end_with_a_hard_drop() {
+        let board = Board::new();
+        let target = Move::new(Piece::I, Rotation::North, SPAWN_COL as i32 - 2, 0, false);
+        let inputs = get_input(&board, &target, false, false);
+        let row = KeyPath {
+            soft_drop: SoftDropMode::Row,
+            ..KeyPath::default()
+        };
+        let names = triangle_keys(&board, &target, &row);
+        let expected: Vec<&str> = inputs.data.iter().map(|&i| key_name(i)).collect();
+        assert_eq!(names, expected);
+        assert_eq!(names.last(), Some(&"hardDrop"));
+        assert!(
+            names.contains(&"moveLeft"),
+            "an I left of spawn must shift left"
+        );
+        // Unreachable targets yield no keys rather than a partial path.
+        let blocked = board_from_rows(&[0x03FF]);
+        let unreachable = Move::new(Piece::I, Rotation::North, SPAWN_COL as i32, 0, false);
+        assert!(triangle_keys(&blocked, &unreachable, &row).is_empty());
+        assert!(triangle_keys(&blocked, &unreachable, &KeyPath::default()).is_empty());
+    }
+
+    // The property the adapter relies on: a slam-model path, replayed with a
+    // press that descends to rest, lands on the lock the caller asked for. Empty
+    // results are allowed (some strict locks need an intermediate height); a
+    // non-empty path that replays elsewhere is a bug.
+    #[test]
+    fn slam_paths_replay_to_their_target() {
+        let mut st = 0x5EED_5A1A_D40B_2026u64;
+        let mut boards = 0u64;
+        let mut paths = 0u64;
+        while boards < 25 {
+            let Some(rows) = seeded_holey_rows(&mut st) else {
+                continue;
+            };
+            let b = board_from_rows(&rows);
+            boards += 1;
+            for &p in &ALL_PIECES {
+                let reach = reachable_locks(&b, p, false);
+                for s_idx in 0..SPIN_NB {
+                    for x in 0..COL_NB {
+                        for ri in 0..ROTATION_NB {
+                            let mut bits = reach.locks[s_idx][x][ri];
+                            while bits != 0 {
+                                let y = ctz(bits) as i32;
+                                bits &= bits - 1;
+                                let Some(target) = move_for_lock(p, s_idx, x as i32, y, ri) else {
+                                    continue;
+                                };
+                                let inputs = get_input_inner(&b, &target, p, &KeyPath::default());
+                                if inputs.data.is_empty() {
+                                    continue;
+                                }
+                                let sim = simulate_inputs_from(
+                                    &b,
+                                    p,
+                                    false,
+                                    None,
+                                    SoftDropMode::Slam,
+                                    &inputs,
+                                );
+                                assert_eq!(
+                                    sim,
+                                    Some((
+                                        x as i32,
+                                        y,
+                                        canonical_r(p, target.rotation()),
+                                        target.spin()
+                                    )),
+                                    "slam path replays elsewhere p={p:?} s={s_idx} x={x} y={y} \
+                                     ri={ri} rows={rows:?}"
+                                );
+                                paths += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(paths > 0, "no slam path was checked");
+    }
+
+    // A piece already at rest cannot be rotated or shifted at the spawn height,
+    // so the path has to start where the piece is.
+    #[test]
+    fn a_start_state_replaces_the_spawn() {
+        let board = Board::new();
+        let target = Move::new(Piece::I, Rotation::North, 5, 0, false);
+        let spawn_path = triangle_keys(&board, &target, &KeyPath::default());
+        assert!(spawn_path.contains(&"hardDrop"));
+        let from_rest = triangle_keys(
+            &board,
+            &target,
+            &KeyPath {
+                from: Some(StartState {
+                    x: 4,
+                    y: 0,
+                    rotation: Rotation::North,
+                }),
+                ..KeyPath::default()
+            },
+        );
+        assert_eq!(from_rest, vec!["moveRight", "hardDrop"]);
+        // A start state that collides yields no path.
+        let blocked = board_from_rows(&[0x03FF]);
+        assert!(triangle_keys(
+            &blocked,
+            &target,
+            &KeyPath {
+                from: Some(StartState {
+                    x: 4,
+                    y: 0,
+                    rotation: Rotation::North,
+                }),
+                ..KeyPath::default()
+            },
+        )
+        .is_empty());
     }
 }

@@ -197,6 +197,26 @@ additive catalogued-board matcher. The existing tree and possible-build phase
 targets are not rewritten. Runtime must not infer source intent from earliest
 reachability.
 
+### Shape Families
+
+A record with `shapeFamily` is recognized by its board shape alone, built in any
+piece order over any number of locks, instead of by a catalogued route. Such a
+record has no tree and no `searchShapes`, so route recognition skips it and
+round analysis gives the same output with or without it.
+`analyze_opener_shape_families` takes the same
+`OpenerRoundInput`, reads every observation it is given (not only the 14-lock
+window), and returns each family record with the first observation whose
+garbage-stripped board has the shape. See
+[`shape_family.rs`](../../src/openers/shape_family.rs).
+
+The one family is `4-wide`: a well of four columns (0-3, 3-6 or 6-9) with, from
+the floor, at most three residue rows (the six stack columns full and 1-8 cells
+in the well), then at least six rows with the stack full and the well empty. In
+real rounds the shape first appears around lock 13-14 of a 4-wide build, about ten locks
+before its combo starts. A well that is open only for a moment never has six
+full stack rows over a residue. An unknown `shapeFamily` value fails catalog
+parsing.
+
 ## Shortlist And Compilation
 
 ### Shortlist Contract
@@ -212,7 +232,16 @@ returns `None` for no usable board or no eligible compiled record. See
 Each snapshot lazily compiles shortlisted records independently and caches both
 successes and compile failures. Missing IDs are not cached. A record that fails
 compilation or reaches a compile budget is counted in `shortlistCompileSkipped`
-and excluded; production never exposes a budget-truncated record.
+and excluded; production never exposes a budget-truncated record. A record
+compiles at most once per snapshot, outside the cache's map lock: concurrent
+rounds compile different cold records in parallel and wait only on a record
+another thread is already compiling.
+
+Placement legality answers each (board, piece) from one spawn search
+(`pathfinder::reachable_locks`), and skips the search for a bare placement that
+drops straight from open air into its column. The test profile's debug
+assertion checks that shortcut against the search on every call. See
+[`placement_is_srs_legal`](../../src/openers/recognition/legality.rs).
 
 A singleton reuses its immutable graph after the total-budget check. Multiple
 parts first use a bounded graph union. If the union cannot fit, `merged_compile`
@@ -464,6 +493,18 @@ See [`accepted exclusions`](../../src/openers/recognition/census.rs) and
 Do not weaken the authored G1 gates to accommodate a catalog, bridge, or
 performance regression. Improve the catalog/frame semantics or make an explicit
 reviewed budget decision instead.
+
+### Output Identity And Throughput
+
+`tests/openers_perf.rs` pins the SHA-256 of every serialized
+`OpenerRoundAnalysis` for the 34 replay rounds in
+`fixtures/openers/perf/replay-round-inputs.json` against the full catalog, and
+for the parity rounds against the full and mini catalogs. A speedup must keep
+every digest; `OPENER_PERF_OUT=DIR` writes each round's JSON for diffing. The
+same file times install, first and warm rounds, and labeling throughput
+(whole rounds and the first 20 locks, `OPENER_THROUGHPUT_THREADS`). Run both
+on the fast profile with `--ignored --test-threads=1`.
+`openers::tests::perf_compile_all` times compiling every record one by one.
 
 ### Behavioral Battery
 
